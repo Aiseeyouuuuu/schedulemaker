@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>sked.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F5F6F3;
+    --surface:#FFFFFF;
+    --ink:#1C2430;
+    --navy:#0B2545;
+    --navy-2:#13315C;
+    --gold:#F2B134;
+    --gold-ink:#7A5300;
+    --line:#DCE1E5;
+    --muted:#6B7480;
+    --danger:#C8553D;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Work Sans',sans-serif;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 80px;}
+
+  /* ---- header ---- */
+  .app-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px;flex-wrap:wrap;}
+  .wordmark{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:var(--navy);letter-spacing:-0.5px;}
+  .wordmark span{color:var(--gold-ink);}
+  .tagline{font-size:13px;color:var(--muted);margin-top:2px;font-family:'IBM Plex Mono',monospace;letter-spacing:0.2px;}
+  .whoami{font-size:13px;color:var(--muted);text-align:right;}
+  .whoami b{color:var(--navy);font-family:'Space Grotesk',sans-serif;}
+
+  /* ---- tabs ---- */
+  .tabs{display:flex;gap:6px;border-bottom:2px solid var(--navy);margin-bottom:20px;}
+  .tab-btn{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;
+    background:var(--line);color:var(--muted);border:none;
+    padding:10px 18px;border-radius:10px 10px 0 0;cursor:pointer;
+    transform:translateY(2px);transition:transform .15s, background .15s, color .15s;
+  }
+  .tab-btn:hover{color:var(--navy);}
+  .tab-btn.active{background:var(--navy);color:#fff;transform:translateY(0);}
+
+  /* ---- panels / cards ---- */
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:18px;}
+  .panel h3{font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 12px;color:var(--navy);}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+
+  textarea{
+    width:100%;min-height:90px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+    border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical;background:#FAFBFA;
+  }
+  input[type=text], input[type=time], select{
+    font-family:'Work Sans',sans-serif;font-size:13.5px;border:1px solid var(--line);
+    border-radius:8px;padding:8px 10px;background:#fff;
+  }
+  button{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;
+    border:none;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--navy);color:#fff;
+    transition:opacity .15s;
+  }
+  button:hover{opacity:.88;}
+  button.ghost{background:transparent;color:var(--navy);border:1px solid var(--navy);}
+  button.gold{background:var(--gold);color:var(--gold-ink);}
+  button.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);padding:4px 8px;font-size:12px;}
+  button.small{padding:6px 10px;font-size:12px;}
+
+  /* ---- search + dropdown hybrid ---- */
+  .combo{position:relative;flex:1;min-width:240px;}
+  .combo input{width:100%;padding:10px 12px;}
+  .combo-list{
+    position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;
+    border:1px solid var(--line);border-radius:8px;max-height:260px;overflow:auto;
+    box-shadow:0 8px 20px rgba(11,37,69,0.12);z-index:20;display:none;
+  }
+  .combo-list.open{display:block;}
+  .combo-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #F0F1EF;font-size:13px;}
+  .combo-item:last-child{border-bottom:none;}
+  .combo-item:hover{background:#F4F6F4;}
+  .combo-item .code{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--navy);margin-right:8px;}
+  .combo-item .meta{color:var(--muted);font-size:11.5px;}
+  .combo-empty{padding:12px;color:var(--muted);font-size:12.5px;}
+  .clash-tag{
+    flex:none;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:10.5px;
+    color:var(--danger);border:1px solid var(--danger);border-radius:20px;padding:2px 8px;
+    white-space:nowrap;
+  }
+
+  /* ---- staging table ---- */
+  table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:12.5px;}
+  table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
+  table.stage td{padding:4px 6px;border-bottom:1px solid #F0F1EF;}
+  table.stage input{width:100%;border:1px solid transparent;background:transparent;padding:4px 5px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;}
+  table.stage input:focus{border-color:var(--line);background:#fff;}
+  table.stage tr:hover td{background:#FAFBF9;}
+
+  /* ---- chips ---- */
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;
+    border:1px solid var(--line);background:#fff;font-size:12.5px;cursor:pointer;user-select:none;
+  }
+  .chip.active{border-color:var(--navy);background:var(--navy);color:#fff;}
+  .chip .dot{width:9px;height:9px;border-radius:50%;flex:none;}
+  .chip .x{margin-left:2px;opacity:.6;font-weight:700;}
+  .chip .x:hover{opacity:1;}
+
+  /* ---- grid (departure board) ---- */
+  .board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
+  .board-head{display:grid;grid-template-columns:64px repeat(6,1fr);border-bottom:2px solid var(--navy);}
+  .board-head div{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:var(--navy);
+    padding:10px 6px;text-align:center;border-left:1px solid var(--line);
+  }
+  .board-head div:first-child{border-left:none;}
+  .board-body{position:relative;display:grid;grid-template-columns:64px repeat(6,1fr);}
+  .time-col{display:flex;flex-direction:column;}
+  .time-cell{
+    height:48px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);
+    text-align:right;padding-right:6px;border-top:1px solid #EEF0EE;position:relative;top:-6px;
+  }
+  .day-col{position:relative;border-left:1px solid var(--line);}
+  .day-col .gridline{position:absolute;left:0;right:0;height:1px;background:#EEF0EE;}
+  .block{
+    position:absolute;left:3px;right:3px;border-radius:6px;overflow:hidden;
+    padding:5px 7px;font-size:11px;line-height:1.3;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.12);
+  }
+  .block .code{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:11.5px;display:block;}
+  .block .title{opacity:.92;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .block .room{opacity:.8;font-size:10px;display:block;}
+  .block .del{
+    position:absolute;top:2px;right:4px;background:rgba(0,0,0,0.25);color:#fff;
+    width:16px;height:16px;border-radius:50%;font-size:10px;line-height:16px;text-align:center;
+  }
+  .block.conflict{outline:2px solid var(--danger);}
+  .block.removable{cursor:pointer;}
+  .block.removable:hover{filter:brightness(0.9);}
+  .ghost-block{
+    position:absolute;left:3px;right:3px;border-radius:6px;pointer-events:none;z-index:6;
+    border:2px dashed var(--navy);background:rgba(11,37,69,0.14);
+  }
+  .ghost-block.ghost-clash{border-color:var(--danger);background:rgba(200,85,61,0.18);}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+  .legend .item{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);}
+  .legend .dot{width:10px;height:10px;border-radius:50%;}
+
+  .empty{padding:26px;text-align:center;color:var(--muted);font-size:13px;}
+  .empty b{color:var(--navy);}
+
+  .friend-manage{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+
+  .modal-backdrop{position:fixed;inset:0;background:rgba(11,37,69,0.45);display:flex;align-items:center;justify-content:center;z-index:100;}
+  .modal{background:#fff;border-radius:12px;padding:26px;width:340px;text-align:center;}
+  .modal h2{font-family:'Space Grotesk',sans-serif;color:var(--navy);margin-top:0;}
+  .modal input{width:100%;margin:14px 0;text-align:center;font-size:15px;padding:10px;}
+
+  @media (max-width: 720px){
+    .board-head, .board-body{grid-template-columns:44px repeat(6,minmax(60px,1fr));overflow-x:auto;}
+    .wrap{padding:16px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+/* ============================= STORAGE HELPERS ============================= */
+async function sGet(key, shared=false){
+  try{ const r = await window.storage.get(key, shared); return r ? JSON.parse(r.value) : null; }
+  catch(e){ return null; }
+}
+async function sSet(key, value, shared=false){
+  try{ await window.storage.set(key, JSON.stringify(value), shared); }
+  catch(e){ console.error('storage set failed', key, e); }
+}
+
+// Two saves firing close together (e.g. adding two classes back-to-back) can
+// race and hit the backend as conflicting concurrent writes. Chaining every
+// save through one queue means the second write always waits for the first
+// to finish instead of racing it.
+let __saveChain = Promise.resolve();
+function queueSave(fn){
+  __saveChain = __saveChain.then(fn, fn).catch(e=>console.error('queued save failed', e));
+  return __saveChain;
+}
+
+/* ============================= TIME / DAY HELPERS ============================= */
+const DAY_ORDER = ['Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAY_LABEL = {Mon:'MON',Tue:'TUE',Wed:'WED',Thu:'THU',Fri:'FRI',Sat:'SAT'};
+
+function parseDays(raw){
+  if(!raw) return [];
+  const s = raw.toUpperCase().replace(/[^MTWHFS]/g,'');
+  const out = [];
+  let i=0;
+  while(i<s.length){
+    if(s[i]==='T' && s[i+1]==='H'){ out.push('Thu'); i+=2; }
+    else if(s[i]==='M'){ out.push('Mon'); i++; }
+    else if(s[i]==='T'){ out.push('Tue'); i++; }
+    else if(s[i]==='W'){ out.push('Wed'); i++; }
+    else if(s[i]==='H'){ out.push('Thu'); i++; }
+    else if(s[i]==='F'){ out.push('Fri'); i++; }
+    else if(s[i]==='S'){ out.push('Sat'); i++; }
+    else i++;
+  }
+  return [...new Set(out)];
+}
+
+function timeToMinutes(str){
+  if(!str) return null;
+  str = str.trim().toUpperCase();
+  const m = str.match(/(\d{1,2})[:.](\d{2})\s*(AM|PM)?/);
+  if(!m) return null;
+  let h = parseInt(m[1],10), min = parseInt(m[2],10);
+  const ap = m[3];
+  if(ap==='PM' && h<12) h+=12;
+  if(ap==='AM' && h===12) h=0;
+  if(!ap && h<7) h+=12; // heuristic: bare "1:00" in a class-time context usually means 1PM
+  return h*60+min;
+}
+
+function minutesToLabel(mins){
+  if(mins==null) return '';
+  let h = Math.floor(mins/60), m = mins%60;
+  const ap = h>=12 ? 'PM':'AM';
+  let h12 = h%12; if(h12===0) h12=12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ap}`;
+}
+
+/* ============================= AISIS HTML TABLE PARSER (exact) ============================= */
+function militaryToMinutes(str){
+  str = String(str).padStart(4,'0');
+  const h = parseInt(str.slice(0,2),10), m = parseInt(str.slice(2),10);
+  if(Number.isNaN(h)||Number.isNaN(m)) return null;
+  return h*60+m;
+}
+
+function looksLikeHtml(text){ return /<\s*(td|tr|table)\b/i.test(text); }
+
+// Parses AISIS's public classSkeds.do result table. Returns one staged row
+// per meeting line (a section with lecture+lab on different days/times yields
+// two rows sharing the same code+section) — these get grouped back together
+// when confirmed into the catalog.
+function parseAisisHtml(html){
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const trs = [...doc.querySelectorAll('tr')];
+  const staged = [];
+
+  for(const tr of trs){
+    const cells = [...tr.querySelectorAll('td.text02')];
+    if(cells.length < 7) continue; // header rows use text04, not a data row
+
+    const cellText = (i)=>{
+      if(!cells[i]) return '';
+      return cells[i].innerHTML
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .trim();
+    };
+
+    const code = cellText(0);
+    if(!code) continue;
+    const section = cellText(1);
+    const title = cellText(2);
+    const units = cellText(3);
+    const timeRaw = cellText(4);
+    const roomRaw = cellText(5);
+    const instructor = cellText(6);
+    const remarks = cellText(11);
+
+    // Time cell often looks like "M-TH 0800-0930\n(FULLY ONSITE)" — drop the
+    // parenthetical modality line, keep one line per actual meeting.
+    const timeLines = timeRaw.split('\n').map(s=>s.trim()).filter(s=>s && !/^\(.*\)$/.test(s));
+    const roomLines = roomRaw.split('\n').map(s=>s.trim()).filter(Boolean);
+
+    const pushRow = (days, start, end, room)=> staged.push({
+      id: 'stg_'+Math.random().toString(36).slice(2,9),
+      code, section, title, units, days, start, end, room, instructor, remarks
+    });
+
+    if(!timeLines.length){ pushRow([], null, null, roomLines[0]||''); continue; }
+
+    timeLines.forEach((line, idx)=>{
+      const dayMatch = line.match(/^([A-Za-z-]+)/);
+      const timeMatch = line.match(/(\d{3,4})\s*-\s*(\d{3,4})/);
+      const days = dayMatch ? parseDays(dayMatch[1]) : [];
+      const start = timeMatch ? militaryToMinutes(timeMatch[1]) : null;
+      const end = timeMatch ? militaryToMinutes(timeMatch[2]) : null;
+      const room = roomLines[idx] || roomLines[0] || '';
+      pushRow(days, start, end, room);
+    });
+  }
+  return staged;
+}
+
+/* ============================= LINE PARSER (best-effort, plain text fallback) ============================= */
+function parseScheduleText(text){
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const rows = [];
+  const dayTimeRe = /\b([MTWHFS](?:[MTWHFS]){0,4})\s*[\s,\/-]*\s*(\d{1,2}[:.]\d{2}\s*(?:[AaPp][Mm])?)\s*-\s*(\d{1,2}[:.]\d{2}\s*(?:[AaPp][Mm])?)/;
+  const codeRe = /\b([A-Z]{2,6})\s?-?\s?(\d{1,4}[A-Z]?)\b/;
+  const unitsRe = /\b(\d(?:\.\d)?)\s*(?:units?)?\b(?=.*$)/i;
+
+  for(const line of lines){
+    const dt = line.match(dayTimeRe);
+    const cm = line.match(codeRe);
+    if(!dt && !cm) continue; // skip lines with no useful signal at all
+
+    let remainder = line;
+    let days=[], start=null, end=null;
+    if(dt){
+      days = parseDays(dt[1]);
+      start = timeToMinutes(dt[2]);
+      end = timeToMinutes(dt[3]);
+      remainder = remainder.replace(dt[0],' ');
+    }
+    let code='', section='';
+    if(cm){
+      code = (cm[1]+' '+cm[2]).trim();
+      remainder = remainder.replace(cm[0],' ');
+      // guess a short section token right after where code was
+      const secMatch = remainder.match(/^\s*([A-Z0-9]{1,3})\b/);
+      if(secMatch && secMatch[1].length<=3){ section = secMatch[1]; remainder = remainder.replace(secMatch[0],' '); }
+    }
+    let units='';
+    const um = remainder.match(/\b([1-6](?:\.\d)?)\b/);
+    if(um){ units = um[1]; }
+
+    remainder = remainder.replace(/\s{2,}/g,' ').replace(/[|;,]{1,}/g,' ').trim();
+
+    rows.push({
+      id: 'stg_'+Math.random().toString(36).slice(2,9),
+      code: code || '',
+      section: section || '',
+      title: remainder || '',
+      units: units || '',
+      days, start, end,
+      room: '',
+      instructor: ''
+    });
+  }
+  return rows;
+}
+
+/* ============================= APP STATE ============================= */
+const MEMBER_COLORS = ['#0B2545','#C8553D','#2A9D8F','#6A4C93','#E08E45','#3D6B9E','#8F5D5D','#4E7A51'];
+
+let state = {
+  catalog: [],       // shared master list of sections {id,code,section,title,units,instructor,remarks,meetings:[{days,start,end,room}]}
+  members: [],       // shared [{id,name,color}]
+  schedules: {},      // shared { memberId: [entryId,...] }  -- entries reference catalog OR are inline manual objects
+  manualEntries: {},  // shared { memberId: {entryId: entryObj} } for manual (non-catalog) additions
+  meId: null,
+  activeTab: 'mine',   // mine | friends | combined
+  friendEditingId: null,
+  combinedOn: new Set(),
+  staged: [],          // pending parsed rows awaiting confirmation
+};
+
+async function loadAll(){
+  state.catalog = (await sGet('catalog', true)) || [];
+  state.members = (await sGet('members', true)) || [];
+  state.schedules = (await sGet('schedules', true)) || {};
+  state.manualEntries = (await sGet('manualEntries', true)) || {};
+  state.meId = await sGet('me-id', false);
+}
+
+async function saveCatalog(){ return queueSave(()=> sSet('catalog', state.catalog, true)); }
+async function saveMembers(){ return queueSave(()=> sSet('members', state.members, true)); }
+async function saveSchedules(){ return queueSave(()=> sSet('schedules', state.schedules, true)); }
+async function saveManual(){ return queueSave(()=> sSet('manualEntries', state.manualEntries, true)); }
+
+function colorForIndex(i){ return MEMBER_COLORS[i % MEMBER_COLORS.length]; }
+
+function getMember(id){ return state.members.find(m=>m.id===id); }
+
+function catalogKey(code, section){
+  return (code||'').trim().toUpperCase().replace(/\s+/g,' ') + '|' + (section||'').trim().toUpperCase().replace(/\s+/g,' ');
+}
+
+function entryFor(id){
+  // id could be a catalog id or a manual entry id
+  const c = state.catalog.find(c=>c.id===id);
+  if(c) return c;
+  for(const mid in state.manualEntries){ if(state.manualEntries[mid][id]) return state.manualEntries[mid][id]; }
+  return null;
+}
+
+// a and b are single meetings: {days, start, end}
+function meetingOverlap(a,b){
+  if(a.start==null||a.end==null||b.start==null||b.end==null) return false;
+  const shareDay = a.days.some(d=>b.days.includes(d));
+  if(!shareDay) return false;
+  return a.start < b.end && b.start < a.end;
+}
+
+// entries carry .meetings[]; conflict if any meeting pair between the two overlaps
+function entriesConflict(entryA, entryB){
+  return (entryA.meetings||[]).some(ma=>(entryB.meetings||[]).some(mb=>meetingOverlap(ma,mb)));
+}
+
+/* ============================= RENDER ROOT ============================= */
+async function boot(){
+  if(window.__skedBooted) return;
+  window.__skedBooted = true;
+  await loadAll();
+  if(!state.meId){ renderNamePrompt(); return; }
+  render();
+}
+
+function el(html){ const d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstElementChild; }
+// A <tr> set via a plain div's innerHTML gets silently dropped by the HTML
+// parser (table rows outside a <table> aren't valid) — this wraps it in a
+// real <table><tbody> first so the row actually gets created.
+function elRow(trHtml){
+  const t = document.createElement('table');
+  t.innerHTML = `<tbody>${trHtml.trim()}</tbody>`;
+  return t.querySelector('tr');
+}
+
+// Native window.confirm()/alert() are disabled in many sandboxed preview
+// iframes (including this one) — they silently no-op instead of throwing,
+// which looks exactly like "the button did nothing." This is a real modal
+// built from scratch so confirmations actually work.
+function showToast(message){
+  const toast = el(`<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:var(--navy);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;
+    font-family:'Space Grotesk',sans-serif;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,0.2);
+    z-index:200;">${message}</div>`);
+  document.body.appendChild(toast);
+  setTimeout(()=> toast.remove(), 3000);
+}
+
+function customConfirm(message){
+  return new Promise(resolve=>{
+    const backdrop = el(`
+      <div class="modal-backdrop">
+        <div class="modal" style="text-align:left;">
+          <h2 style="text-align:center;">Are you sure?</h2>
+          <p class="hint" style="white-space:pre-line;">${message}</p>
+          <div class="row" style="justify-content:center;margin-top:16px;">
+            <button class="ghost" id="ccCancel">Cancel</button>
+            <button style="background:var(--danger);" id="ccOk">Yes, clear it</button>
+          </div>
+        </div>
+      </div>`);
+    document.body.appendChild(backdrop);
+    backdrop.querySelector('#ccCancel').onclick = ()=>{ backdrop.remove(); resolve(false); };
+    backdrop.querySelector('#ccOk').onclick = ()=>{ backdrop.remove(); resolve(true); };
+  });
+}
+function $(sel,root=document){ return root.querySelector(sel); }
+function $all(sel,root=document){ return [...root.querySelectorAll(sel)]; }
+
+function renderNamePrompt(){
+  const app = $('#app');
+  app.innerHTML = '';
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>sked.</h2>
+        <p class="hint">What should we call you? Friends will see this name when you share your combined view.</p>
+        <input id="nameInput" type="text" placeholder="e.g. Marco" />
+        <button id="nameGo">Continue</button>
+      </div>
+    </div>`);
+  app.appendChild(backdrop);
+  const nameInput = backdrop.querySelector('#nameInput');
+  const nameGo = backdrop.querySelector('#nameGo');
+  if(!nameInput || !nameGo) return; // defensive: modal wasn't attached as expected
+  nameGo.onclick = async ()=>{
+    const val = nameInput.value.trim();
+    if(!val) return;
+    const id = 'm_'+Math.random().toString(36).slice(2,9);
+    const color = colorForIndex(state.members.length);
+    state.members.push({id, name: val, color});
+    state.schedules[id] = state.schedules[id] || [];
+    state.manualEntries[id] = state.manualEntries[id] || {};
+    state.meId = id;
+    await saveMembers(); await saveSchedules(); await saveManual();
+    await sSet('me-id', id, false);
+    render();
+  };
+  nameInput.addEventListener('keydown', e=>{ if(e.key==='Enter') nameGo.click(); });
+}
+
+function render(){
+  const app = $('#app');
+  app.innerHTML = '';
+  app.appendChild(renderHeader());
+  app.appendChild(renderTabs());
+  if(state.activeTab==='mine') app.appendChild(renderMemberEditor(state.meId));
+  else if(state.activeTab==='friends') app.appendChild(renderFriendsTab());
+  else app.appendChild(renderCombinedTab());
+}
+
+function renderHeader(){
+  const me = getMember(state.meId);
+  return el(`
+    <div class="app-header">
+      <div>
+        <div class="wordmark">sked<span>.</span></div>
+        <div class="tagline">// your week, plotted</div>
+      </div>
+      <div class="whoami">signed in as<br/><b>${me?me.name:''}</b></div>
+    </div>`);
+}
+
+function renderTabs(){
+  const wrap = el(`<div class="tabs"></div>`);
+  [['mine','My Sked'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
+    const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
+    b.onclick = ()=>{ state.activeTab=key; render(); };
+    wrap.appendChild(b);
+  });
+  return wrap;
+}
+
+/* ============================= IMPORT / STAGING ============================= */
+function renderImportPanel(){
+  const panel = el(`
+    <div class="panel">
+      <h3>Import the public class schedule</h3>
+      <p class="hint">Copy the block listing from AISIS's public schedule page and paste it below. The parser will do its best to pick out course codes, days, and times — you'll get a chance to fix anything before it's added.</p>
+      <textarea id="importText" placeholder="Paste the schedule — either the raw text, or the page's HTML (View Source) for exact results..."></textarea>
+      <div class="row" style="margin-top:10px;">
+        <button id="parseBtn">Parse pasted content</button>
+        <button class="ghost" id="sampleBtn">Load sample data</button>
+        <button class="ghost" id="clearCatalogBtn" style="margin-left:auto;border-color:var(--danger);color:var(--danger);">Clear catalog</button>
+      </div>
+      <div id="stageArea"></div>
+    </div>`);
+
+  panel.querySelector('#clearCatalogBtn').onclick = async ()=>{
+    if(!state.catalog.length) return;
+    const ok = await customConfirm(
+      `Clear all ${state.catalog.length} classes from the shared catalog?\n\n`+
+      `Anyone who already picked a class FROM the catalog will lose it from their grid. `+
+      `Classes added manually are stored separately and won't be affected.`
+    );
+    if(!ok) return;
+    const n = state.catalog.length;
+    state.catalog = [];
+    await saveCatalog();
+    render();
+    showToast(`Cleared ${n} classes from the catalog.`);
+  };
+
+  panel.querySelector('#parseBtn').onclick = ()=>{
+    const text = panel.querySelector('#importText').value;
+    state.staged = looksLikeHtml(text) ? parseAisisHtml(text) : parseScheduleText(text);
+    renderStageTable(panel.querySelector('#stageArea'));
+  };
+  panel.querySelector('#sampleBtn').onclick = ()=>{
+    const sample = [
+      'CSCI 30 A Introduction to Computing 3.0 MWF 09:00-10:00 AM SEC-A101 Dela Cruz',
+      'MATH 21 B Mathematical Analysis 1 3.0 TTH 10:30-12:00 PM SEC-B203 Santos',
+      'PHILO 11 C Philosophy of the Human Person 3.0 TH 01:00-02:30 PM LS-301 Reyes',
+      'THEO 11 A Foundations of Faith 3.0 MWF 02:00-03:00 PM LS-102 Bautista',
+      'ARTA 10 D Art Appreciation 3.0 S 09:00-12:00 PM FINE-ARTS Garcia'
+    ].join('\n');
+    panel.querySelector('#importText').value = sample;
+    state.staged = parseScheduleText(sample);
+    renderStageTable(panel.querySelector('#stageArea'));
+  };
+  return panel;
+}
+
+function renderStageTable(container){
+  container.innerHTML = '';
+  if(!state.staged.length){ return; }
+  const table = el(`
+    <table class="stage">
+      <thead><tr>
+        <th>Code</th><th>Sec</th><th>Title</th><th>Units</th><th>Days</th><th>Start</th><th>End</th><th>Room</th><th>Remarks</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>`);
+  const tbody = table.querySelector('tbody');
+  state.staged.forEach((row,idx)=>{
+    const tr = elRow(`
+      <tr>
+        <td><input value="${row.code}" data-f="code"/></td>
+        <td><input value="${row.section}" data-f="section" style="width:40px"/></td>
+        <td><input value="${row.title}" data-f="title" style="width:100%"/></td>
+        <td><input value="${row.units}" data-f="units" style="width:36px"/></td>
+        <td><input value="${row.days.join('')}" data-f="days" style="width:56px"/></td>
+        <td><input value="${row.start!=null?minutesToLabel(row.start):''}" data-f="start" style="width:70px"/></td>
+        <td><input value="${row.end!=null?minutesToLabel(row.end):''}" data-f="end" style="width:70px"/></td>
+        <td><input value="${row.room}" data-f="room" style="width:70px"/></td>
+        <td><input value="${row.remarks||''}" data-f="remarks" style="width:80px"/></td>
+        <td><button class="danger small" data-del>×</button></td>
+      </tr>`);
+    tr.querySelectorAll('input').forEach(inp=>{
+      const commit = ()=>{
+        const f = inp.dataset.f;
+        if(f==='days') row.days = parseDays(inp.value);
+        else if(f==='start'||f==='end') row[f] = timeToMinutes(inp.value);
+        else row[f] = inp.value;
+      };
+      inp.addEventListener('input', commit);
+      inp.addEventListener('change', commit);
+    });
+    tr.querySelector('[data-del]').onclick = ()=>{ state.staged.splice(idx,1); renderStageTable(container); };
+    tbody.appendChild(tr);
+  });
+  container.appendChild(table);
+  const btnRow = el(`<div class="row" style="margin-top:12px;"><button class="gold" id="confirmAdd">Add ${state.staged.length} to shared catalog</button><span class="hint">Everyone with this link can pick from the catalog.</span></div>`);
+  btnRow.querySelector('#confirmAdd').onclick = async ()=>{
+    // Group meeting-rows sharing the same code+section into one entry —
+    // this is what keeps a lecture+lab pair (or MWF+TH split) bundled together.
+    const groups = new Map();
+    state.staged.forEach(r=>{
+      const key = catalogKey(r.code, r.section);
+      if(!groups.has(key)){
+        groups.set(key, {
+          code: r.code, section: r.section, title: r.title, units: r.units,
+          instructor: r.instructor, remarks: r.remarks, meetings: []
+        });
+      } else {
+        // A section can span multiple staged rows (e.g. lecture + lab meeting
+        // lines). Previously only the FIRST row's title/units/instructor/remarks
+        // were kept — an edit made on a later row for the same section was
+        // silently dropped. Any row can now update these shared fields.
+        const g = groups.get(key);
+        if(r.code) g.code = r.code;
+        if(r.section) g.section = r.section;
+        if(r.title) g.title = r.title;
+        if(r.units) g.units = r.units;
+        if(r.instructor) g.instructor = r.instructor;
+        if(r.remarks) g.remarks = r.remarks;
+      }
+      groups.get(key).meetings.push({days: r.days, start: r.start, end: r.end, room: r.room});
+    });
+    // Re-importing a class that's already in the catalog REPLACES it in
+    // place (same key = same code+section, matched case/whitespace-insensitively)
+    // rather than duplicating it, and keeps the original id so anyone who
+    // already added it keeps pointing at the corrected data instead of it
+    // silently vanishing from their grid.
+    let added=0, replaced=0;
+    groups.forEach((entry, key)=>{
+      const idx = state.catalog.findIndex(c => catalogKey(c.code, c.section) === key);
+      if(idx>-1){ entry.id = state.catalog[idx].id; state.catalog[idx] = entry; replaced++; }
+      else{ entry.id = 'c_'+Math.random().toString(36).slice(2,9); state.catalog.push(entry); added++; }
+    });
+    state.staged = [];
+    await saveCatalog();
+    render();
+    const parts = [];
+    if(added) parts.push(`${added} added`);
+    if(replaced) parts.push(`${replaced} replaced`);
+    showToast(`Catalog updated — ${parts.join(', ') || 'no changes'}.`);
+  };
+  container.appendChild(btnRow);
+}
+
+/* ============================= ADD-CLASS SEARCH+DROPDOWN ============================= */
+function renderAddClassBar(memberId, boardEl){
+  const wrap = el(`
+    <div class="panel">
+      <h3>Add a class</h3>
+      <div class="row">
+        <div class="combo">
+          <input type="text" id="searchInput" placeholder="Search by code or title, e.g. CSCI 30..." autocomplete="off" />
+          <div class="combo-list" id="comboList"></div>
+        </div>
+        <button class="ghost" id="manualToggle">+ Add manually</button>
+      </div>
+      <div id="manualForm" style="display:none;margin-top:12px;"></div>
+    </div>`);
+
+  const input = wrap.querySelector('#searchInput');
+  const list = wrap.querySelector('#comboList');
+
+  function renderList(){
+    const q = input.value.trim().toLowerCase();
+    const matches = state.catalog.filter(c=>{
+      const hay = (c.code+' '+c.title+' '+c.section).toLowerCase();
+      return q.length===0 ? true : hay.includes(q);
+    }).slice(0,30);
+    list.innerHTML = '';
+    if(!state.catalog.length){
+      list.innerHTML = `<div class="combo-empty">The shared catalog is empty. Import the public schedule above first.</div>`;
+    } else if(!matches.length){
+      list.innerHTML = `<div class="combo-empty">No matches. Try a different course code, or add manually.</div>`;
+    } else {
+      matches.forEach(c=>{
+        const meta = (c.meetings||[]).map(m=>
+          `${m.days.map(d=>DAY_LABEL[d]).join('/')} ${m.start!=null?minutesToLabel(m.start):''}${m.end!=null?' – '+minutesToLabel(m.end):''}${m.room?' · '+m.room:''}`
+        ).join('; ');
+        const remarkTag = c.remarks && c.remarks!=='-' ? ` <span style="color:var(--danger)">(${c.remarks})</span>` : '';
+
+        // Clash check: everything already on this member's grid, excluding
+        // other sections of the SAME course (so browsing alternate sections
+        // of one class never falsely flags against itself).
+        const existing = (state.schedules[memberId]||[])
+          .map(entryFor).filter(Boolean)
+          .filter(e => (e.code||'').trim() !== (c.code||'').trim());
+        const clashes = existing.some(e => entriesConflict(c, e));
+        const clashTag = clashes ? `<span class="clash-tag">clashes</span>` : '';
+
+        const item = el(`<div class="combo-item">
+          <div class="row" style="justify-content:space-between;gap:8px;">
+            <span><span class="code">${c.code||'—'} ${c.section||''}</span>${c.title||''}${remarkTag}</span>
+            ${clashTag}
+          </div>
+          <div class="meta">${meta}</div>
+        </div>`);
+        item.onclick = async ()=>{
+          state.schedules[memberId] = state.schedules[memberId]||[];
+          if(!state.schedules[memberId].includes(c.id)) state.schedules[memberId].push(c.id);
+          await saveSchedules();
+          input.value=''; list.classList.remove('open');
+          boardEl.__clearGhosts();
+          render();
+        };
+        item.addEventListener('mouseenter', ()=>{
+          boardEl.__clearGhosts();
+          (c.meetings||[]).forEach(m=>{
+            if(m.start==null||m.end==null||!m.days.length) return;
+            m.days.forEach(day=>{
+              const colIdx = DAY_ORDER.indexOf(day);
+              if(colIdx<0) return;
+              const top = ((m.start-BOARD_START)/30)*ROW_H;
+              const height = Math.max(((m.end-m.start)/30)*ROW_H, 22);
+              const ghost = el(`<div class="ghost-block ${clashes?'ghost-clash':''}" style="top:${top}px;height:${height}px;"></div>`);
+              boardEl.__dayCols[colIdx].appendChild(ghost);
+            });
+          });
+        });
+        item.addEventListener('mouseleave', ()=> boardEl.__clearGhosts());
+        list.appendChild(item);
+      });
+    }
+  }
+  input.addEventListener('focus', ()=>{ renderList(); list.classList.add('open'); });
+  input.addEventListener('input', renderList);
+  document.addEventListener('click', (e)=>{
+    if(!wrap.contains(e.target)){ list.classList.remove('open'); boardEl.__clearGhosts(); }
+  });
+
+  wrap.querySelector('#manualToggle').onclick = ()=>{
+    const mf = wrap.querySelector('#manualForm');
+    mf.style.display = mf.style.display==='none' ? 'block' : 'none';
+    if(mf.style.display==='block') renderManualForm(mf, memberId);
+  };
+
+  return wrap;
+}
+
+function renderManualForm(container, memberId){
+  container.innerHTML = '';
+  const form = el(`
+    <div class="row" style="flex-wrap:wrap;">
+      <input type="text" id="mCode" placeholder="Code (CSCI 30)" style="width:120px"/>
+      <input type="text" id="mSec" placeholder="Sec" style="width:50px"/>
+      <input type="text" id="mTitle" placeholder="Title" style="width:180px"/>
+      <input type="text" id="mDays" placeholder="Days (MWF)" style="width:90px"/>
+      <input type="text" id="mStart" placeholder="Start (9:00 AM)" style="width:110px"/>
+      <input type="text" id="mEnd" placeholder="End (10:00 AM)" style="width:110px"/>
+      <input type="text" id="mRoom" placeholder="Room" style="width:90px"/>
+      <button id="mAdd">Add</button>
+    </div>`);
+  form.querySelector('#mAdd').onclick = async ()=>{
+    const entry = {
+      id: 'man_'+Math.random().toString(36).slice(2,9),
+      code: form.querySelector('#mCode').value,
+      section: form.querySelector('#mSec').value,
+      title: form.querySelector('#mTitle').value,
+      units:'', instructor:'', remarks:'',
+      meetings: [{
+        days: parseDays(form.querySelector('#mDays').value),
+        start: timeToMinutes(form.querySelector('#mStart').value),
+        end: timeToMinutes(form.querySelector('#mEnd').value),
+        room: form.querySelector('#mRoom').value,
+      }],
+    };
+    state.manualEntries[memberId] = state.manualEntries[memberId]||{};
+    state.manualEntries[memberId][entry.id] = entry;
+    state.schedules[memberId] = state.schedules[memberId]||[];
+    state.schedules[memberId].push(entry.id);
+    await saveManual(); await saveSchedules();
+    render();
+  };
+  container.appendChild(form);
+}
+
+/* ============================= MEMBER EDITOR (My Sked / Friend edit) ============================= */
+function renderMemberEditor(memberId){
+  const member = getMember(memberId);
+  const wrap = el(`<div></div>`);
+  wrap.appendChild(renderImportPanel());
+
+  const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
+  const boardEl = renderBoard([{member, entries, color: member?member.color:'#0B2545'}], true);
+
+  wrap.appendChild(renderAddClassBar(memberId, boardEl));
+  if(!entries.length){
+    wrap.appendChild(el(`<p class="hint" style="margin:0 0 12px;">No classes yet for <b>${member?member.name:''}</b>. Search above to add one — hover a result to preview it on the grid below first.</p>`));
+  }
+  wrap.appendChild(boardEl);
+  return wrap;
+}
+
+/* ============================= FRIENDS TAB ============================= */
+function renderFriendsTab(){
+  const wrap = el(`<div></div>`);
+  const manage = el(`
+    <div class="panel">
+      <h3>Friends</h3>
+      <div class="friend-manage" id="chipRow"></div>
+      <div class="row">
+        <input type="text" id="friendName" placeholder="Friend's name" style="width:200px"/>
+        <button id="addFriend">Add friend</button>
+      </div>
+      <p class="hint">Adding a friend here creates a shared profile — anyone with this page's link can view or add to it. Great for building a group schedule together.</p>
+    </div>`);
+  const chipRow = manage.querySelector('#chipRow');
+  state.members.filter(m=>m.id!==state.meId).forEach(m=>{
+    const chip = el(`<div class="chip ${state.friendEditingId===m.id?'active':''}"><span class="dot" style="background:${m.color}"></span>${m.name}</div>`);
+    chip.onclick = ()=>{ state.friendEditingId = m.id; render(); };
+    chipRow.appendChild(chip);
+  });
+  manage.querySelector('#addFriend').onclick = async ()=>{
+    const val = manage.querySelector('#friendName').value.trim();
+    if(!val) return;
+    const id = 'm_'+Math.random().toString(36).slice(2,9);
+    const color = colorForIndex(state.members.length);
+    state.members.push({id,name:val,color});
+    state.schedules[id]=[]; state.manualEntries[id]={};
+    await saveMembers(); await saveSchedules(); await saveManual();
+    state.friendEditingId = id;
+    render();
+  };
+  wrap.appendChild(manage);
+
+  if(!state.members.filter(m=>m.id!==state.meId).length){
+    wrap.appendChild(el(`<div class="empty">No friends added yet. Add one above to start building their schedule.</div>`));
+    return wrap;
+  }
+  if(!state.friendEditingId || !getMember(state.friendEditingId)){
+    state.friendEditingId = state.members.find(m=>m.id!==state.meId).id;
+  }
+  wrap.appendChild(renderMemberEditor(state.friendEditingId));
+  return wrap;
+}
+
+/* ============================= COMBINED TAB ============================= */
+function renderCombinedTab(){
+  const wrap = el(`<div></div>`);
+  if(state.combinedOn.size===0){ state.members.forEach(m=>state.combinedOn.add(m.id)); }
+  const toggleRow = el(`<div class="panel"><h3>Show on combined view</h3><div class="row" id="toggles"></div></div>`);
+  const toggles = toggleRow.querySelector('#toggles');
+  state.members.forEach(m=>{
+    const on = state.combinedOn.has(m.id);
+    const chip = el(`<div class="chip ${on?'active':''}"><span class="dot" style="background:${m.color}"></span>${m.name}</div>`);
+    chip.onclick = ()=>{
+      if(state.combinedOn.has(m.id)) state.combinedOn.delete(m.id); else state.combinedOn.add(m.id);
+      render();
+    };
+    toggles.appendChild(chip);
+  });
+  wrap.appendChild(toggleRow);
+
+  const groups = state.members.filter(m=>state.combinedOn.has(m.id)).map(m=>({
+    member:m, color:m.color, entries:(state.schedules[m.id]||[]).map(entryFor).filter(Boolean)
+  }));
+
+  if(!groups.length || groups.every(g=>!g.entries.length)){
+    wrap.appendChild(el(`<div class="empty">Nothing to show yet. Turn on a member above, and make sure they've added classes.</div>`));
+    return wrap;
+  }
+
+  const legend = el(`<div class="legend"></div>`);
+  groups.forEach(g=>legend.appendChild(el(`<div class="item"><span class="dot" style="background:${g.color}"></span>${g.member.name}</div>`)));
+  wrap.appendChild(legend);
+  wrap.appendChild(renderBoard(groups, false));
+  return wrap;
+}
+
+/* ============================= BOARD (weekly grid) ============================= */
+const BOARD_START = 7*60;   // 7:00 AM
+const BOARD_END = 21*60;    // 9:00 PM
+const ROW_H = 48;           // px per 30 min
+
+// Greedy interval-lane packing: overlapping blocks on the same day get
+// assigned side-by-side lanes instead of drawing directly on top of each
+// other. Mutates each block with __lane / __laneCount.
+function packDayBlocks(blocks){
+  const sorted = [...blocks].sort((a,b)=>a.start-b.start);
+  let cluster = null;
+  const clusters = [];
+  for(const b of sorted){
+    if(!cluster || b.start >= cluster.maxEnd){
+      cluster = {items:[], laneEnds:[], maxEnd:-Infinity};
+      clusters.push(cluster);
+    }
+    let lane = cluster.laneEnds.findIndex(end=>end<=b.start);
+    if(lane===-1){ lane = cluster.laneEnds.length; cluster.laneEnds.push(b.end); }
+    else cluster.laneEnds[lane] = b.end;
+    b.__lane = lane;
+    cluster.items.push(b);
+    cluster.maxEnd = Math.max(cluster.maxEnd, b.end);
+  }
+  clusters.forEach(c=>{ const n=c.laneEnds.length; c.items.forEach(it=> it.__laneCount = n); });
+  return sorted;
+}
+
+function renderBoard(groups, allowDelete){
+  const totalRows = (BOARD_END-BOARD_START)/30;
+  const board = el(`
+    <div class="board">
+      <div class="board-head">
+        <div></div>
+        ${DAY_ORDER.map(d=>`<div>${DAY_LABEL[d]}</div>`).join('')}
+      </div>
+      <div class="board-body" style="height:${totalRows*ROW_H}px;">
+        <div class="time-col"></div>
+        ${DAY_ORDER.map(()=>`<div class="day-col"></div>`).join('')}
+      </div>
+    </div>`);
+  const body = board.querySelector('.board-body');
+  const timeCol = board.querySelector('.time-col');
+  for(let t=BOARD_START;t<BOARD_END;t+=60){
+    timeCol.appendChild(el(`<div class="time-cell" style="height:${ROW_H*2}px;">${minutesToLabel(t)}</div>`));
+  }
+  const dayCols = [...body.querySelectorAll('.day-col')];
+  dayCols.forEach(col=>{
+    for(let r=0;r<totalRows;r++){
+      col.appendChild(el(`<div class="gridline" style="top:${r*ROW_H}px;"></div>`));
+    }
+  });
+  board.__dayCols = dayCols; // used by the search dropdown to draw hover previews
+  board.__clearGhosts = ()=> board.querySelectorAll('.ghost-block').forEach(n=>n.remove());
+
+  // Flatten every meeting of every entry into per-day block descriptors,
+  // one entry can have several meetings (e.g. lecture MWF + lab TH).
+  const perDay = DAY_ORDER.map(()=>[]);
+  groups.forEach(g=>{
+    g.entries.forEach(entry=>{
+      const conflict = g.entries.some(other=>other!==entry && entriesConflict(entry,other));
+      (entry.meetings||[]).forEach(meeting=>{
+        if(meeting.start==null||meeting.end==null||!meeting.days.length) return;
+        meeting.days.forEach(day=>{
+          const colIdx = DAY_ORDER.indexOf(day);
+          if(colIdx<0) return;
+          perDay[colIdx].push({start:meeting.start, end:meeting.end, room:meeting.room, entry, group:g, conflict});
+        });
+      });
+    });
+  });
+
+  perDay.forEach((dayBlocks, colIdx)=>{
+    packDayBlocks(dayBlocks);
+    dayBlocks.forEach(b=>{
+      const top = ((b.start-BOARD_START)/30)*ROW_H;
+      const height = Math.max(((b.end-b.start)/30)*ROW_H, 22);
+      const laneCount = b.__laneCount || 1;
+      const widthPct = 100/laneCount;
+      const leftPct = b.__lane*widthPct;
+      const blk = el(`
+        <div class="block ${b.conflict?'conflict':''} ${allowDelete?'removable':''}"
+             style="top:${top}px;height:${height}px;left:calc(${leftPct}% + 3px);width:calc(${widthPct}% - 6px);background:${b.group.color};"
+             ${allowDelete?'title="Click to remove"':''}>
+          <span class="code">${b.entry.code||'—'} ${b.entry.section||''}</span>
+          <span class="title">${b.entry.title||''}</span>
+          ${b.room?`<span class="room">${b.room}</span>`:''}
+          ${allowDelete?'<span class="del">×</span>':''}
+        </div>`);
+      if(allowDelete){
+        blk.onclick = async ()=>{
+          const mid = b.group.member.id;
+          state.schedules[mid] = (state.schedules[mid]||[]).filter(id=>id!==b.entry.id);
+          await saveSchedules();
+          render();
+        };
+      }
+      dayCols[colIdx].appendChild(blk);
+    });
+  });
+
+  return board;
+}
+
+boot();
+</script>
+</body>
+</html>
