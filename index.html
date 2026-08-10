@@ -926,49 +926,62 @@ function renderStageTable(container){
   container.appendChild(table);
   const btnRow = el(`<div class="row" style="margin-top:12px;"><button class="gold" id="confirmAdd">Add ${state.staged.length} to shared catalog</button><span class="hint">Everyone with this link can pick from the catalog.</span></div>`);
   btnRow.querySelector('#confirmAdd').onclick = async ()=>{
-    // Group meeting-rows sharing the same code+section into one entry —
-    // this is what keeps a lecture+lab pair (or MWF+TH split) bundled together.
-    const groups = new Map();
-    state.staged.forEach(r=>{
-      const key = catalogKey(r.code, r.section);
-      if(!groups.has(key)){
-        groups.set(key, {
-          code: r.code, section: r.section, title: r.title, units: r.units,
-          instructor: r.instructor, remarks: r.remarks, meetings: []
-        });
-      } else {
-        // A section can span multiple staged rows (e.g. lecture + lab meeting
-        // lines). Previously only the FIRST row's title/units/instructor/remarks
-        // were kept — an edit made on a later row for the same section was
-        // silently dropped. Any row can now update these shared fields.
-        const g = groups.get(key);
-        if(r.code) g.code = r.code;
-        if(r.section) g.section = r.section;
-        if(r.title) g.title = r.title;
-        if(r.units) g.units = r.units;
-        if(r.instructor) g.instructor = r.instructor;
-        if(r.remarks) g.remarks = r.remarks;
-      }
-      groups.get(key).meetings.push({days: r.days, start: r.start, end: r.end, room: r.room});
-    });
-    // Re-importing a class that's already in the catalog REPLACES it in
-    // place (same key = same code+section, matched case/whitespace-insensitively)
-    // rather than duplicating it, and keeps the original id so anyone who
-    // already added it keeps pointing at the corrected data instead of it
-    // silently vanishing from their grid.
-    let added=0, replaced=0;
-    groups.forEach((entry, key)=>{
-      const idx = state.catalog.findIndex(c => catalogKey(c.code, c.section) === key);
-      if(idx>-1){ entry.id = state.catalog[idx].id; state.catalog[idx] = entry; replaced++; }
-      else{ entry.id = 'c_'+Math.random().toString(36).slice(2,9); state.catalog.push(entry); added++; }
-    });
-    state.staged = [];
-    await saveCatalog();
-    render();
-    const parts = [];
-    if(added) parts.push(`${added} added`);
-    if(replaced) parts.push(`${replaced} replaced`);
-    showToast(`Catalog updated — ${parts.join(', ') || 'no changes'}.`);
+    // Guard against double-clicks / repeated reimports stacking multiple
+    // large writes on top of each other before the first one resolves —
+    // that's what floods Firestore's write stream (resource-exhausted).
+    const btn = btnRow.querySelector('#confirmAdd');
+    if(btn.disabled) return;
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = 'Saving…';
+    try{
+      // Group meeting-rows sharing the same code+section into one entry —
+      // this is what keeps a lecture+lab pair (or MWF+TH split) bundled together.
+      const groups = new Map();
+      state.staged.forEach(r=>{
+        const key = catalogKey(r.code, r.section);
+        if(!groups.has(key)){
+          groups.set(key, {
+            code: r.code, section: r.section, title: r.title, units: r.units,
+            instructor: r.instructor, remarks: r.remarks, meetings: []
+          });
+        } else {
+          // A section can span multiple staged rows (e.g. lecture + lab meeting
+          // lines). Previously only the FIRST row's title/units/instructor/remarks
+          // were kept — an edit made on a later row for the same section was
+          // silently dropped. Any row can now update these shared fields.
+          const g = groups.get(key);
+          if(r.code) g.code = r.code;
+          if(r.section) g.section = r.section;
+          if(r.title) g.title = r.title;
+          if(r.units) g.units = r.units;
+          if(r.instructor) g.instructor = r.instructor;
+          if(r.remarks) g.remarks = r.remarks;
+        }
+        groups.get(key).meetings.push({days: r.days, start: r.start, end: r.end, room: r.room});
+      });
+      // Re-importing a class that's already in the catalog REPLACES it in
+      // place (same key = same code+section, matched case/whitespace-insensitively)
+      // rather than duplicating it, and keeps the original id so anyone who
+      // already added it keeps pointing at the corrected data instead of it
+      // silently vanishing from their grid.
+      let added=0, replaced=0;
+      groups.forEach((entry, key)=>{
+        const idx = state.catalog.findIndex(c => catalogKey(c.code, c.section) === key);
+        if(idx>-1){ entry.id = state.catalog[idx].id; state.catalog[idx] = entry; replaced++; }
+        else{ entry.id = 'c_'+Math.random().toString(36).slice(2,9); state.catalog.push(entry); added++; }
+      });
+      state.staged = [];
+      await saveCatalog();
+      render();
+      const parts = [];
+      if(added) parts.push(`${added} added`);
+      if(replaced) parts.push(`${replaced} replaced`);
+      showToast(`Catalog updated — ${parts.join(', ') || 'no changes'}.`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   };
   container.appendChild(btnRow);
 }
