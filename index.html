@@ -3,21 +3,24 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>sked.</title>
+<title>Schedule Maker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#F5F6F3;
+    --bg:#F0F3FD;
     --surface:#FFFFFF;
-    --ink:#1C2430;
-    --navy:#0B2545;
-    --navy-2:#13315C;
-    --gold:#F2B134;
-    --gold-ink:#7A5300;
-    --line:#DCE1E5;
-    --muted:#6B7480;
-    --danger:#C8553D;
+    --ink:#2A2E3D;
+    --navy:#4169E1;
+    --navy-2:#8AA3EC;
+    --navy-text:#2A4492;
+    --navy-ink:#FFFFFF;
+    --navy-rgb:65,105,225;
+    --gold:#C9E4DE;
+    --gold-ink:#3F5C4E;
+    --line:#D9E1F9;
+    --muted:#6B7290;
+    --danger:#C24F6A;
     --radius:10px;
   }
   *{box-sizing:border-box;}
@@ -26,26 +29,30 @@
 
   /* ---- header ---- */
   .app-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px;flex-wrap:wrap;}
-  .wordmark{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:var(--navy);letter-spacing:-0.5px;}
-  .wordmark span{color:var(--gold-ink);}
+  .wordmark{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:var(--navy-text);letter-spacing:-0.5px;}
   .tagline{font-size:13px;color:var(--muted);margin-top:2px;font-family:'IBM Plex Mono',monospace;letter-spacing:0.2px;}
   .whoami{font-size:13px;color:var(--muted);text-align:right;}
-  .whoami b{color:var(--navy);font-family:'Space Grotesk',sans-serif;}
+  .whoami b{color:var(--navy-text);font-family:'Space Grotesk',sans-serif;}
+  .edit-name-btn{
+    background:transparent;border:none;color:var(--muted);cursor:pointer;
+    font-size:12px;padding:0 2px;border-radius:4px;vertical-align:middle;
+  }
+  .edit-name-btn:hover{color:var(--navy-text);opacity:1;}
 
   /* ---- tabs ---- */
-  .tabs{display:flex;gap:6px;border-bottom:2px solid var(--navy);margin-bottom:20px;}
+  .tabs{display:flex;gap:6px;border-bottom:2px solid var(--navy-text);margin-bottom:20px;}
   .tab-btn{
     font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;
     background:var(--line);color:var(--muted);border:none;
     padding:10px 18px;border-radius:10px 10px 0 0;cursor:pointer;
     transform:translateY(2px);transition:transform .15s, background .15s, color .15s;
   }
-  .tab-btn:hover{color:var(--navy);}
-  .tab-btn.active{background:var(--navy);color:#fff;transform:translateY(0);}
+  .tab-btn:hover{color:var(--navy-text);}
+  .tab-btn.active{background:var(--navy);color:var(--navy-ink);transform:translateY(0);}
 
   /* ---- panels / cards ---- */
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:18px;}
-  .panel h3{font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 12px;color:var(--navy);}
+  .panel h3{font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 12px;color:var(--navy-text);}
   .hint{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5;}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 
@@ -59,11 +66,11 @@
   }
   button{
     font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;
-    border:none;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--navy);color:#fff;
+    border:none;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--navy);color:var(--navy-ink);
     transition:opacity .15s;
   }
   button:hover{opacity:.88;}
-  button.ghost{background:transparent;color:var(--navy);border:1px solid var(--navy);}
+  button.ghost{background:transparent;color:var(--navy-text);border:1px solid var(--navy-text);}
   button.gold{background:var(--gold);color:var(--gold-ink);}
   button.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);padding:4px 8px;font-size:12px;}
   button.small{padding:6px 10px;font-size:12px;}
@@ -74,13 +81,13 @@
   .combo-list{
     position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;
     border:1px solid var(--line);border-radius:8px;max-height:260px;overflow:auto;
-    box-shadow:0 8px 20px rgba(11,37,69,0.12);z-index:20;display:none;
+    box-shadow:0 8px 20px rgba(0,0,0,0.1);z-index:20;display:none;
   }
   .combo-list.open{display:block;}
   .combo-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #F0F1EF;font-size:13px;}
   .combo-item:last-child{border-bottom:none;}
   .combo-item:hover{background:#F4F6F4;}
-  .combo-item .code{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--navy);margin-right:8px;}
+  .combo-item .code{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--navy-text);margin-right:8px;}
   .combo-item .meta{color:var(--muted);font-size:11.5px;}
   .combo-empty{padding:12px;color:var(--muted);font-size:12.5px;}
   .clash-tag{
@@ -100,18 +107,23 @@
   /* ---- chips ---- */
   .chip{
     display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;
-    border:1px solid var(--line);background:#fff;font-size:12.5px;cursor:pointer;user-select:none;
+    border:1px solid var(--line);background:#fff;font-size:12.5px;user-select:none;cursor:pointer;
   }
-  .chip.active{border-color:var(--navy);background:var(--navy);color:#fff;}
+  .chip.active{border-color:var(--navy-text);background:var(--navy);color:var(--navy-ink);}
   .chip .dot{width:9px;height:9px;border-radius:50%;flex:none;}
-  .chip .x{margin-left:2px;opacity:.6;font-weight:700;}
+  .chip .x{margin-left:2px;opacity:.6;font-weight:700;cursor:pointer;}
   .chip .x:hover{opacity:1;}
+  .chip-label{cursor:pointer;}
+  .chip-dot{
+    width:12px;height:12px;border-radius:50%;flex:none;padding:0;cursor:pointer;
+    border:1.5px solid rgba(0,0,0,0.15);
+  }
 
   /* ---- grid (departure board) ---- */
   .board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
-  .board-head{display:grid;grid-template-columns:64px repeat(6,1fr);border-bottom:2px solid var(--navy);}
+  .board-head{display:grid;grid-template-columns:64px repeat(6,1fr);border-bottom:2px solid var(--navy-text);}
   .board-head div{
-    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:var(--navy);
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:var(--navy-text);
     padding:10px 6px;text-align:center;border-left:1px solid var(--line);
   }
   .board-head div:first-child{border-left:none;}
@@ -137,9 +149,20 @@
   .block.conflict{outline:2px solid var(--danger);}
   .block.removable{cursor:pointer;}
   .block.removable:hover{filter:brightness(0.9);}
+  .swatch-btn{
+    position:absolute;bottom:3px;left:5px;width:13px;height:13px;border-radius:50%;
+    background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);
+    border:1.5px solid rgba(255,255,255,0.85);cursor:pointer;padding:0;
+  }
+  .swatch-popover{
+    position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px;
+    display:grid;grid-template-columns:repeat(4,1fr);gap:5px;z-index:200;box-shadow:0 6px 16px rgba(0,0,0,0.18);
+  }
+  .swatch-dot{width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(0,0,0,0.12);cursor:pointer;padding:0;}
+  .swatch-dot:hover{transform:scale(1.15);}
   .ghost-block{
     position:absolute;left:3px;right:3px;border-radius:6px;pointer-events:none;z-index:6;
-    border:2px dashed var(--navy);background:rgba(11,37,69,0.14);
+    border:2px dashed var(--navy-text);background:rgba(var(--navy-rgb),0.18);
   }
   .ghost-block.ghost-clash{border-color:var(--danger);background:rgba(200,85,61,0.18);}
   .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
@@ -147,13 +170,13 @@
   .legend .dot{width:10px;height:10px;border-radius:50%;}
 
   .empty{padding:26px;text-align:center;color:var(--muted);font-size:13px;}
-  .empty b{color:var(--navy);}
+  .empty b{color:var(--navy-text);}
 
   .friend-manage{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
 
-  .modal-backdrop{position:fixed;inset:0;background:rgba(11,37,69,0.45);display:flex;align-items:center;justify-content:center;z-index:100;}
+  .modal-backdrop{position:fixed;inset:0;background:rgba(107,92,160,0.45);display:flex;align-items:center;justify-content:center;z-index:100;}
   .modal{background:#fff;border-radius:12px;padding:26px;width:340px;text-align:center;}
-  .modal h2{font-family:'Space Grotesk',sans-serif;color:var(--navy);margin-top:0;}
+  .modal h2{font-family:'Space Grotesk',sans-serif;color:var(--navy-text);margin-top:0;}
   .modal input{width:100%;margin:14px 0;text-align:center;font-size:15px;padding:10px;}
 
   @media (max-width: 720px){
@@ -165,14 +188,82 @@
 <body>
 <div class="wrap" id="app"></div>
 
+<!-- ====== FIREBASE (syncs the shared course catalog only) ======
+  Fill in FIREBASE_CONFIG below with your own project's config object
+  (Firebase console → Project settings → your web app → SDK setup and
+  configuration). Until you do, apiKey stays 'PASTE_YOUR_API_KEY_HERE'
+  and the app automatically falls back to per-browser localStorage —
+  nothing breaks, the shared catalog just won't sync across different
+  visitors' devices until this is filled in. Everyone's own schedule,
+  friends, and colors are personal and never touch Firestore, filled-in
+  config or not. -->
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
+<script>
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyASQrZ_38HBGTrT2-9kqWEwmwZRPQlrup0",
+    authDomain: "schedule-maker-5ad14.firebaseapp.com",
+    projectId: "schedule-maker-5ad14",
+    storageBucket: "schedule-maker-5ad14.firebasestorage.app",
+    messagingSenderId: "293795346593",
+    appId: "1:293795346593:web:b54c2160140d9e144158e0"
+    measurementId: "G-M0M5ZWC0BP"
+  };
+  let __db = null;
+  if(FIREBASE_CONFIG.apiKey !== "PASTE_YOUR_API_KEY_HERE"){
+    try{
+      firebase.initializeApp(FIREBASE_CONFIG);
+      __db = firebase.firestore();
+    }catch(e){ console.error('Firebase init failed', e); }
+  }
+</script>
+
 <script>
 /* ============================= STORAGE HELPERS ============================= */
+// Only the CATALOG is shared=true (same course listing for the whole
+// school, so it syncs via Firestore to every visitor once configured).
+// Everything else — members, schedules, manual entries, block colors,
+// groups, your own name/id/theme — is personal (shared=false) and stays
+// local to that individual's own browser, never written to Firestore, so
+// one person's schedule/friends list is never visible to another visitor.
+// Personal-tier fallback order:
+//   1. window.storage — only exists inside a Claude artifact preview.
+//   2. localStorage — real-deployment fallback, per-browser, so nothing is
+//      lost for that person even though it isn't synced across devices.
+function hasArtifactStorage(){ return typeof window.storage !== 'undefined' && window.storage; }
+function lsKey(key, shared){ return 'sked:'+(shared?'shared':'me')+':'+key; }
+
 async function sGet(key, shared=false){
-  try{ const r = await window.storage.get(key, shared); return r ? JSON.parse(r.value) : null; }
+  if(shared && __db){
+    try{
+      const snap = await __db.collection('sked_shared').doc(key).get();
+      return snap.exists ? snap.data().value : null;
+    }catch(e){ console.error('firestore get failed', key, e); /* fall through */ }
+  }
+  if(hasArtifactStorage()){
+    try{ const r = await window.storage.get(key, shared); return r ? JSON.parse(r.value) : null; }
+    catch(e){ /* fall through to local fallback */ }
+  }
+  try{ const raw = localStorage.getItem(lsKey(key, shared)); return raw ? JSON.parse(raw) : null; }
   catch(e){ return null; }
 }
 async function sSet(key, value, shared=false){
-  try{ await window.storage.set(key, JSON.stringify(value), shared); }
+  if(shared && __db){
+    try{
+      // Firestore rejects `undefined` fields; a JSON round-trip strips them
+      // the same way JSON.stringify already did for the other two tiers.
+      const clean = JSON.parse(JSON.stringify(value));
+      await __db.collection('sked_shared').doc(key).set({
+        value: clean, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      return;
+    }catch(e){ console.error('firestore set failed', key, e); /* fall through */ }
+  }
+  if(hasArtifactStorage()){
+    try{ await window.storage.set(key, JSON.stringify(value), shared); return; }
+    catch(e){ /* fall through to local fallback */ }
+  }
+  try{ localStorage.setItem(lsKey(key, shared), JSON.stringify(value)); }
   catch(e){ console.error('storage set failed', key, e); }
 }
 
@@ -190,22 +281,49 @@ function queueSave(fn){
 const DAY_ORDER = ['Mon','Tue','Wed','Thu','Fri','Sat'];
 const DAY_LABEL = {Mon:'MON',Tue:'TUE',Wed:'WED',Thu:'THU',Fri:'FRI',Sat:'SAT'};
 
-function parseDays(raw){
-  if(!raw) return [];
-  const s = raw.toUpperCase().replace(/[^MTWHFS]/g,'');
+const SINGLE_LETTER_DAY = {M:'Mon', T:'Tue', W:'Wed', H:'Thu', F:'Fri', S:'Sat'};
+const WORD_DAY = {
+  MON:'Mon', MONDAY:'Mon',
+  TU:'Tue', TUE:'Tue', TUES:'Tue', TUESDAY:'Tue',
+  WED:'Wed', WEDNESDAY:'Wed',
+  TH:'Thu', THU:'Thu', THUR:'Thu', THURS:'Thu', THURSDAY:'Thu',
+  FRI:'Fri', FRIDAY:'Fri',
+  SA:'Sat', SAT:'Sat', SATURDAY:'Sat',
+  SU:'Sun', SUN:'Sun', SUNDAY:'Sun',
+};
+
+// Fallback for a blended run of single-letter codes with no delimiter at
+// all, e.g. "MWF" or "TTH".
+function scanBlendedDayLetters(token){
   const out = [];
   let i=0;
-  while(i<s.length){
-    if(s[i]==='T' && s[i+1]==='H'){ out.push('Thu'); i+=2; }
-    else if(s[i]==='M'){ out.push('Mon'); i++; }
-    else if(s[i]==='T'){ out.push('Tue'); i++; }
-    else if(s[i]==='W'){ out.push('Wed'); i++; }
-    else if(s[i]==='H'){ out.push('Thu'); i++; }
-    else if(s[i]==='F'){ out.push('Fri'); i++; }
-    else if(s[i]==='S'){ out.push('Sat'); i++; }
+  while(i<token.length){
+    if(token[i]==='T' && token[i+1]==='H'){ out.push('Thu'); i+=2; }
+    else if(SINGLE_LETTER_DAY[token[i]]){ out.push(SINGLE_LETTER_DAY[token[i]]); i++; }
     else i++;
   }
-  return [...new Set(out)];
+  return out;
+}
+
+// AISIS mixes single-letter codes ("M-TH") with whole abbreviations
+// ("W-SAT"). Naively stripping anything that isn't M/T/W/H/F/S would turn
+// "SAT" into "ST" (dropping the A) and misread it as Saturday + Tuesday —
+// so whole-word tokens are matched first, and the letter-by-letter scan is
+// only used as a fallback for genuinely delimiter-less runs like "MWF".
+function parseDays(raw){
+  if(!raw) return [];
+  const tokens = raw.toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+  const out = [];
+  tokens.forEach(tok=>{
+    if(tok.length===1){
+      if(SINGLE_LETTER_DAY[tok]) out.push(SINGLE_LETTER_DAY[tok]);
+    } else if(WORD_DAY[tok]){
+      out.push(WORD_DAY[tok]);
+    } else {
+      out.push(...scanBlendedDayLetters(tok));
+    }
+  });
+  return [...new Set(out)].filter(d=> DAY_ORDER.includes(d));
 }
 
 function timeToMinutes(str){
@@ -347,33 +465,159 @@ function parseScheduleText(text){
 
 /* ============================= APP STATE ============================= */
 const MEMBER_COLORS = ['#0B2545','#C8553D','#2A9D8F','#6A4C93','#E08E45','#3D6B9E','#8F5D5D','#4E7A51'];
+const PASTEL_COLORS = ['#FADADD','#FFE5B4','#FFFACD','#D9F2D9','#D6EAF8','#E0D6F5','#F5D6E0','#D6F5EC'];
 
 let state = {
   catalog: [],       // shared master list of sections {id,code,section,title,units,instructor,remarks,meetings:[{days,start,end,room}]}
   members: [],       // shared [{id,name,color}]
   schedules: {},      // shared { memberId: [entryId,...] }  -- entries reference catalog OR are inline manual objects
   manualEntries: {},  // shared { memberId: {entryId: entryObj} } for manual (non-catalog) additions
+  blockColors: {},    // shared { memberId: { entryId: '#hex' } } -- per-person color override for a class block
+  groups: [],          // shared [{id, name, memberIds:[...]}] -- named subsets of members for quick Combined filtering
   meId: null,
   activeTab: 'mine',   // mine | friends | combined
   friendEditingId: null,
+  activeGroupId: null, // which group's members are currently shown in Combined view, or null for everyone
   combinedOn: new Set(),
   staged: [],          // pending parsed rows awaiting confirmation
 };
 
 async function loadAll(){
   state.catalog = (await sGet('catalog', true)) || [];
-  state.members = (await sGet('members', true)) || [];
-  state.schedules = (await sGet('schedules', true)) || {};
-  state.manualEntries = (await sGet('manualEntries', true)) || {};
+  state.members = (await sGet('members', false)) || [];
+  state.schedules = (await sGet('schedules', false)) || {};
+  state.manualEntries = (await sGet('manualEntries', false)) || {};
+  state.blockColors = (await sGet('blockColors', false)) || {};
+  state.groups = (await sGet('groups', false)) || [];
   state.meId = await sGet('me-id', false);
 }
 
 async function saveCatalog(){ return queueSave(()=> sSet('catalog', state.catalog, true)); }
-async function saveMembers(){ return queueSave(()=> sSet('members', state.members, true)); }
-async function saveSchedules(){ return queueSave(()=> sSet('schedules', state.schedules, true)); }
-async function saveManual(){ return queueSave(()=> sSet('manualEntries', state.manualEntries, true)); }
+async function saveMembers(){ return queueSave(()=> sSet('members', state.members, false)); }
+async function saveSchedules(){ return queueSave(()=> sSet('schedules', state.schedules, false)); }
+async function saveManual(){ return queueSave(()=> sSet('manualEntries', state.manualEntries, false)); }
+async function saveBlockColors(){ return queueSave(()=> sSet('blockColors', state.blockColors, false)); }
+async function saveGroups(){ return queueSave(()=> sSet('groups', state.groups, false)); }
+
+function getBlockColor(memberId, entryId, fallback){
+  return (state.blockColors[memberId] && state.blockColors[memberId][entryId]) || fallback;
+}
+function setBlockColor(memberId, entryId, color){
+  state.blockColors[memberId] = state.blockColors[memberId] || {};
+  state.blockColors[memberId][entryId] = color;
+}
+
+async function removeMember(id){
+  if(id === state.meId) return; // never allow removing yourself from here
+  state.members = state.members.filter(m=>m.id!==id);
+  delete state.schedules[id];
+  delete state.manualEntries[id];
+  delete state.blockColors[id];
+  state.combinedOn.delete(id);
+  if(state.friendEditingId === id) state.friendEditingId = null;
+  state.groups.forEach(g=>{ g.memberIds = g.memberIds.filter(mid=>mid!==id); });
+  if(state.activeGroupId){
+    const g = state.groups.find(gr=>gr.id===state.activeGroupId);
+    if(!g) state.activeGroupId = null;
+  }
+  await saveMembers();
+  await saveSchedules();
+  await saveManual();
+  await saveBlockColors();
+  await saveGroups();
+}
 
 function colorForIndex(i){ return MEMBER_COLORS[i % MEMBER_COLORS.length]; }
+
+// Picks black or white text depending on background luminance, so a light
+// pastel block doesn't end up with unreadable white text.
+function getContrastTextColor(hex){
+  const c = (hex||'').replace('#','');
+  if(c.length!==6) return '#FFFFFF';
+  const r = parseInt(c.substr(0,2),16)/255, g = parseInt(c.substr(2,2),16)/255, b = parseInt(c.substr(4,2),16)/255;
+  const lin = v => v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+  const L = 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
+  return L > 0.5 ? '#1C2430' : '#FFFFFF';
+}
+
+/* ============================= THEME ============================= */
+// A handful of pastel presets to pick from, plus a native color input for
+// a fully custom accent. Only the accent color is stored — every other
+// theme variable (background tint, borders, text-on-accent contrast) is
+// derived from it so a custom pick always stays readable.
+const THEME_PRESETS = [
+  {name:'Royal Blue',   hex:'#4169E1'},
+  {name:'Pastel Yellow', hex:'#E3A62A'},
+  {name:'Pastel Lavender', hex:'#9C8FC7'},
+  {name:'Pastel Mint',   hex:'#5FAE96'},
+  {name:'Pastel Blush',  hex:'#D97D96'},
+  {name:'Pastel Sky',    hex:'#6FA8D9'},
+  {name:'Pastel Peach',  hex:'#E0955F'},
+];
+const DEFAULT_THEME = THEME_PRESETS[0].hex;
+
+function hexToRgb(hex){
+  const c = (hex||'').replace('#','');
+  return { r:parseInt(c.substr(0,2),16), g:parseInt(c.substr(2,2),16), b:parseInt(c.substr(4,2),16) };
+}
+function rgbToHex(r,g,b){
+  const h = v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0');
+  return '#'+h(r)+h(g)+h(b);
+}
+// Blends `hex` toward `target` (white/black) by `amt` (0..1).
+function mixHex(hex, target, amt){
+  const a = hexToRgb(hex), b = hexToRgb(target);
+  return rgbToHex(a.r+(b.r-a.r)*amt, a.g+(b.g-a.g)*amt, a.b+(b.b-a.b)*amt);
+}
+function lightenHex(hex, amt){ return mixHex(hex, '#FFFFFF', amt); }
+function darkenHex(hex, amt){ return mixHex(hex, '#000000', amt); }
+
+// Sets every theme CSS variable from a single accent color and (optionally)
+// persists it to the user's own storage so it's personal, not shared.
+async function applyTheme(hex, persist){
+  if(!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+  const root = document.documentElement.style;
+  const rgb = hexToRgb(hex);
+  root.setProperty('--navy', hex);
+  root.setProperty('--navy-2', lightenHex(hex, 0.35));
+  root.setProperty('--navy-text', darkenHex(hex, 0.35));
+  root.setProperty('--navy-ink', getContrastTextColor(hex));
+  root.setProperty('--navy-rgb', `${rgb.r},${rgb.g},${rgb.b}`);
+  root.setProperty('--bg', lightenHex(hex, 0.92));
+  root.setProperty('--line', lightenHex(hex, 0.8));
+  state.themeHex = hex;
+  if(persist) await queueSave(()=> sSet('theme', hex, false));
+}
+async function loadTheme(){
+  const saved = await sGet('theme', false);
+  await applyTheme((saved && /^#[0-9A-Fa-f]{6}$/.test(saved)) ? saved : DEFAULT_THEME, false);
+}
+
+function openThemePicker(anchorEl){
+  document.querySelectorAll('.swatch-popover').forEach(p=>p.remove());
+  const rect = anchorEl.getBoundingClientRect();
+  const popover = el(`<div class="swatch-popover" style="top:${rect.bottom+4}px;right:${window.innerWidth-rect.right}px;left:auto;grid-template-columns:repeat(3,1fr);width:190px;"></div>`);
+  THEME_PRESETS.forEach(p=>{
+    const dot = el(`<button class="swatch-dot" title="${p.name}" style="background:${p.hex};"></button>`);
+    dot.onclick = (e)=>{ e.stopPropagation(); popover.remove(); applyTheme(p.hex, true).then(render); };
+    popover.appendChild(dot);
+  });
+  const customWrap = el(`<label class="swatch-dot" title="Custom color" style="background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;"></label>`);
+  const customInput = el(`<input type="color" value="${state.themeHex||DEFAULT_THEME}" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />`);
+  customWrap.appendChild(customInput);
+  customInput.onchange = (e)=>{ popover.remove(); applyTheme(e.target.value, true).then(render); };
+  popover.appendChild(customWrap);
+  document.body.appendChild(popover);
+  setTimeout(()=>{
+    const closeHandler = (ev)=>{
+      if(!popover.contains(ev.target) && ev.target!==anchorEl){
+        popover.remove();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    document.addEventListener('click', closeHandler);
+  }, 0);
+}
 
 function getMember(id){ return state.members.find(m=>m.id===id); }
 
@@ -406,6 +650,7 @@ function entriesConflict(entryA, entryB){
 async function boot(){
   if(window.__skedBooted) return;
   window.__skedBooted = true;
+  await loadTheme();
   await loadAll();
   if(!state.meId){ renderNamePrompt(); return; }
   render();
@@ -427,11 +672,41 @@ function elRow(trHtml){
 // built from scratch so confirmations actually work.
 function showToast(message){
   const toast = el(`<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
-    background:var(--navy);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;
+    background:var(--navy);color:var(--navy-ink);padding:10px 18px;border-radius:20px;font-size:13px;
     font-family:'Space Grotesk',sans-serif;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,0.2);
     z-index:200;">${message}</div>`);
   document.body.appendChild(toast);
   setTimeout(()=> toast.remove(), 3000);
+}
+
+// Reusable popover of color swatches anchored under `anchorEl`. Positioned
+// with position:fixed so it isn't clipped by any overflow:hidden ancestor
+// (blocks on the board clip their own content for text truncation). Always
+// includes a color-wheel swatch at the end for a fully custom pick.
+function openColorPicker(anchorEl, colors, onPick, currentColor){
+  document.querySelectorAll('.swatch-popover').forEach(p=>p.remove());
+  const rect = anchorEl.getBoundingClientRect();
+  const popover = el(`<div class="swatch-popover" style="top:${rect.bottom+4}px;left:${rect.left}px;"></div>`);
+  colors.forEach(color=>{
+    const dot = el(`<button class="swatch-dot" style="background:${color};"></button>`);
+    dot.onclick = (e)=>{ e.stopPropagation(); popover.remove(); onPick(color); };
+    popover.appendChild(dot);
+  });
+  const customWrap = el(`<label class="swatch-dot" title="Custom color" style="background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;"></label>`);
+  const customInput = el(`<input type="color" value="${currentColor||'#6B5CA0'}" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />`);
+  customWrap.appendChild(customInput);
+  customInput.onchange = (e)=>{ popover.remove(); onPick(e.target.value); };
+  popover.appendChild(customWrap);
+  document.body.appendChild(popover);
+  setTimeout(()=>{
+    const closeHandler = (ev)=>{
+      if(!popover.contains(ev.target) && ev.target!==anchorEl){
+        popover.remove();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    document.addEventListener('click', closeHandler);
+  }, 0);
 }
 
 function customConfirm(message){
@@ -461,7 +736,7 @@ function renderNamePrompt(){
   const backdrop = el(`
     <div class="modal-backdrop">
       <div class="modal">
-        <h2>sked.</h2>
+        <h2>Schedule Maker</h2>
         <p class="hint">What should we call you? Friends will see this name when you share your combined view.</p>
         <input id="nameInput" type="text" placeholder="e.g. Marco" />
         <button id="nameGo">Continue</button>
@@ -487,6 +762,39 @@ function renderNamePrompt(){
   nameInput.addEventListener('keydown', e=>{ if(e.key==='Enter') nameGo.click(); });
 }
 
+// Lets the signed-in user fix a typo in their own name after the fact —
+// updates their member record (shared) so friends see the corrected name
+// wherever it's displayed.
+function openEditNameModal(){
+  const me = getMember(state.meId);
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Edit your name</h2>
+        <p class="hint">Friends will see the updated name wherever your schedule is shown.</p>
+        <input id="editNameInput" type="text" value="${(me?me.name:'').replace(/"/g,'&quot;')}" />
+        <div class="row" style="justify-content:center;margin-top:6px;">
+          <button class="ghost" id="editNameCancel">Cancel</button>
+          <button id="editNameSave">Save</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#editNameInput');
+  input.focus(); input.select();
+  backdrop.querySelector('#editNameCancel').onclick = ()=> backdrop.remove();
+  const save = async ()=>{
+    const val = input.value.trim();
+    if(!val){ backdrop.remove(); return; }
+    const m = getMember(state.meId);
+    if(m){ m.name = val; await saveMembers(); }
+    backdrop.remove();
+    render();
+  };
+  backdrop.querySelector('#editNameSave').onclick = save;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') save(); });
+}
+
 function render(){
   const app = $('#app');
   app.innerHTML = '';
@@ -499,19 +807,27 @@ function render(){
 
 function renderHeader(){
   const me = getMember(state.meId);
-  return el(`
+  const header = el(`
     <div class="app-header">
       <div>
-        <div class="wordmark">sked<span>.</span></div>
-        <div class="tagline">// your week, plotted</div>
+        <div class="wordmark">Schedule Maker</div>
+        <div class="tagline">your sem, plotted</div>
       </div>
-      <div class="whoami">signed in as<br/><b>${me?me.name:''}</b></div>
+      <div class="row" style="align-items:center;gap:14px;">
+        <button class="swatch-btn" id="themeBtn" title="Change theme color"
+          style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
+        <div class="whoami">signed in as<br/><b>${me?me.name:''}</b> <button id="editNameBtn" class="edit-name-btn" title="Edit your name">✎</button></div>
+      </div>
     </div>`);
+  const themeBtn = header.querySelector('#themeBtn');
+  themeBtn.onclick = (e)=>{ e.stopPropagation(); openThemePicker(themeBtn); };
+  header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
+  return header;
 }
 
 function renderTabs(){
   const wrap = el(`<div class="tabs"></div>`);
-  [['mine','My Sked'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
+  [['mine','My Schedule'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
     const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
     b.onclick = ()=>{ state.activeTab=key; render(); };
     wrap.appendChild(b);
@@ -690,7 +1006,7 @@ function renderAddClassBar(memberId, boardEl){
       matches.forEach(c=>{
         const meta = (c.meetings||[]).map(m=>
           `${m.days.map(d=>DAY_LABEL[d]).join('/')} ${m.start!=null?minutesToLabel(m.start):''}${m.end!=null?' – '+minutesToLabel(m.end):''}${m.room?' · '+m.room:''}`
-        ).join('; ');
+        ).join('; ') + (c.instructor ? ` · ${c.instructor}` : '');
         const remarkTag = c.remarks && c.remarks!=='-' ? ` <span style="color:var(--danger)">(${c.remarks})</span>` : '';
 
         // Clash check: everything already on this member's grid, excluding
@@ -711,7 +1027,12 @@ function renderAddClassBar(memberId, boardEl){
         </div>`);
         item.onclick = async ()=>{
           state.schedules[memberId] = state.schedules[memberId]||[];
-          if(!state.schedules[memberId].includes(c.id)) state.schedules[memberId].push(c.id);
+          if(!state.schedules[memberId].includes(c.id)){
+            const colorIdx = state.schedules[memberId].length;
+            state.schedules[memberId].push(c.id);
+            setBlockColor(memberId, c.id, PASTEL_COLORS[colorIdx % PASTEL_COLORS.length]);
+            await saveBlockColors();
+          }
           await saveSchedules();
           input.value=''; list.classList.remove('open');
           boardEl.__clearGhosts();
@@ -781,21 +1102,23 @@ function renderManualForm(container, memberId){
     state.manualEntries[memberId] = state.manualEntries[memberId]||{};
     state.manualEntries[memberId][entry.id] = entry;
     state.schedules[memberId] = state.schedules[memberId]||[];
+    const colorIdx = state.schedules[memberId].length;
     state.schedules[memberId].push(entry.id);
-    await saveManual(); await saveSchedules();
+    setBlockColor(memberId, entry.id, PASTEL_COLORS[colorIdx % PASTEL_COLORS.length]);
+    await saveManual(); await saveSchedules(); await saveBlockColors();
     render();
   };
   container.appendChild(form);
 }
 
-/* ============================= MEMBER EDITOR (My Sked / Friend edit) ============================= */
+/* ============================= MEMBER EDITOR (My Schedule / Friend edit) ============================= */
 function renderMemberEditor(memberId){
   const member = getMember(memberId);
   const wrap = el(`<div></div>`);
   wrap.appendChild(renderImportPanel());
 
   const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
-  const boardEl = renderBoard([{member, entries, color: member?member.color:'#0B2545'}], true);
+  const boardEl = renderBoard([{member, entries, color: member?member.color:'#6B5CA0'}], true);
 
   wrap.appendChild(renderAddClassBar(memberId, boardEl));
   if(!entries.length){
@@ -803,6 +1126,75 @@ function renderMemberEditor(memberId){
   }
   wrap.appendChild(boardEl);
   return wrap;
+}
+
+/* ============================= GROUPS ============================= */
+function renderGroupsPanel(){
+  const panel = el(`
+    <div class="panel">
+      <h3>Groups</h3>
+      <div class="friend-manage" id="groupChipRow"></div>
+      <div class="row" style="margin-top:8px;">
+        <input type="text" id="newGroupName" placeholder="Group name — e.g. Blocktimers" style="width:220px"/>
+        <button id="startGroupBtn">Create group</button>
+      </div>
+      <div id="groupPicker" style="display:none;"></div>
+      <p class="hint">Group people into custom sets — by block, org, or barkada — so Combined view can show just one set at a time instead of toggling everyone.</p>
+    </div>`);
+
+  const chipRow = panel.querySelector('#groupChipRow');
+  state.groups.forEach(g=>{
+    const chip = el(`<div class="chip">
+      <span class="chip-label" style="cursor:default;">${g.name} <span style="opacity:.65;">(${g.memberIds.length})</span></span>
+      <span class="x" title="Delete group">×</span>
+    </div>`);
+    chip.querySelector('.x').onclick = async ()=>{
+      const ok = await customConfirm(`Delete the group "${g.name}"?\n\nThis only removes the group itself — members and their classes are unaffected.`);
+      if(!ok) return;
+      state.groups = state.groups.filter(x=>x.id!==g.id);
+      if(state.activeGroupId===g.id) state.activeGroupId = null;
+      await saveGroups();
+      render();
+    };
+    chipRow.appendChild(chip);
+  });
+  if(!state.groups.length){
+    chipRow.appendChild(el(`<span class="hint" style="margin:0;">No groups yet.</span>`));
+  }
+
+  const picker = panel.querySelector('#groupPicker');
+  const selected = new Set();
+  function openPicker(){
+    picker.style.display = 'block';
+    picker.innerHTML = '';
+    picker.appendChild(el(`<p class="hint" style="margin:10px 0 6px;">Who's in this group?</p>`));
+    const row = el(`<div class="friend-manage"></div>`);
+    state.members.forEach(m=>{
+      const chip = el(`<div class="chip"><span class="dot" style="background:${m.color}"></span>${m.name}${m.id===state.meId?' (you)':''}</div>`);
+      chip.onclick = ()=>{
+        if(selected.has(m.id)){ selected.delete(m.id); chip.classList.remove('active'); }
+        else { selected.add(m.id); chip.classList.add('active'); }
+      };
+      row.appendChild(chip);
+    });
+    picker.appendChild(row);
+    const saveBtn = el(`<button class="gold" style="margin-top:10px;">Save group</button>`);
+    saveBtn.onclick = async ()=>{
+      const name = panel.querySelector('#newGroupName').value.trim();
+      if(!name || !selected.size) return;
+      state.groups.push({id:'g_'+Math.random().toString(36).slice(2,9), name, memberIds:[...selected]});
+      await saveGroups();
+      render();
+    };
+    picker.appendChild(saveBtn);
+  }
+  panel.querySelector('#startGroupBtn').onclick = ()=>{
+    const name = panel.querySelector('#newGroupName').value.trim();
+    if(!name) return;
+    openPicker();
+  };
+
+  return panel;
 }
 
 /* ============================= FRIENDS TAB ============================= */
@@ -816,12 +1208,32 @@ function renderFriendsTab(){
         <input type="text" id="friendName" placeholder="Friend's name" style="width:200px"/>
         <button id="addFriend">Add friend</button>
       </div>
-      <p class="hint">Adding a friend here creates a shared profile — anyone with this page's link can view or add to it. Great for building a group schedule together.</p>
+      <p class="hint">Friends you add here are saved to your own browser only — great for building a combined view of you and the people you're comparing schedules with, without it being visible to anyone else who opens this site.</p>
     </div>`);
   const chipRow = manage.querySelector('#chipRow');
   state.members.filter(m=>m.id!==state.meId).forEach(m=>{
-    const chip = el(`<div class="chip ${state.friendEditingId===m.id?'active':''}"><span class="dot" style="background:${m.color}"></span>${m.name}</div>`);
-    chip.onclick = ()=>{ state.friendEditingId = m.id; render(); };
+    const chip = el(`<div class="chip ${state.friendEditingId===m.id?'active':''}">
+      <button class="chip-dot" style="background:${m.color}" title="Change ${m.name}'s color"></button>
+      <span class="chip-label">${m.name}</span>
+      <span class="x" title="Remove ${m.name}">×</span>
+    </div>`);
+    chip.querySelector('.chip-label').onclick = ()=>{ state.friendEditingId = m.id; render(); };
+    const dotBtn = chip.querySelector('.chip-dot');
+    dotBtn.onclick = (e)=>{
+      e.stopPropagation();
+      openColorPicker(dotBtn, MEMBER_COLORS, async (color)=>{
+        m.color = color;
+        await saveMembers();
+        render();
+      }, m.color);
+    };
+    chip.querySelector('.x').onclick = async (e)=>{
+      e.stopPropagation();
+      const ok = await customConfirm(`Remove ${m.name} entirely?\n\nTheir added classes will be deleted too, and they'll be taken out of any groups. This can't be undone.`);
+      if(!ok) return;
+      await removeMember(m.id);
+      render();
+    };
     chipRow.appendChild(chip);
   });
   manage.querySelector('#addFriend').onclick = async ()=>{
@@ -836,6 +1248,7 @@ function renderFriendsTab(){
     render();
   };
   wrap.appendChild(manage);
+  wrap.appendChild(renderGroupsPanel());
 
   if(!state.members.filter(m=>m.id!==state.meId).length){
     wrap.appendChild(el(`<div class="empty">No friends added yet. Add one above to start building their schedule.</div>`));
@@ -852,12 +1265,36 @@ function renderFriendsTab(){
 function renderCombinedTab(){
   const wrap = el(`<div></div>`);
   if(state.combinedOn.size===0){ state.members.forEach(m=>state.combinedOn.add(m.id)); }
+
+  if(state.groups.length){
+    const groupRow = el(`<div class="panel"><h3>View a group</h3><div class="row" id="groupFilterRow"></div></div>`);
+    const gRow = groupRow.querySelector('#groupFilterRow');
+    const everyoneChip = el(`<div class="chip ${state.activeGroupId===null?'active':''}">Everyone</div>`);
+    everyoneChip.onclick = ()=>{
+      state.activeGroupId = null;
+      state.combinedOn = new Set(state.members.map(m=>m.id));
+      render();
+    };
+    gRow.appendChild(everyoneChip);
+    state.groups.forEach(g=>{
+      const chip = el(`<div class="chip ${state.activeGroupId===g.id?'active':''}">${g.name}</div>`);
+      chip.onclick = ()=>{
+        state.activeGroupId = g.id;
+        state.combinedOn = new Set(g.memberIds);
+        render();
+      };
+      gRow.appendChild(chip);
+    });
+    wrap.appendChild(groupRow);
+  }
+
   const toggleRow = el(`<div class="panel"><h3>Show on combined view</h3><div class="row" id="toggles"></div></div>`);
   const toggles = toggleRow.querySelector('#toggles');
   state.members.forEach(m=>{
     const on = state.combinedOn.has(m.id);
     const chip = el(`<div class="chip ${on?'active':''}"><span class="dot" style="background:${m.color}"></span>${m.name}</div>`);
     chip.onclick = ()=>{
+      state.activeGroupId = null; // manual adjustment no longer matches a preset group exactly
       if(state.combinedOn.has(m.id)) state.combinedOn.delete(m.id); else state.combinedOn.add(m.id);
       render();
     };
@@ -865,19 +1302,19 @@ function renderCombinedTab(){
   });
   wrap.appendChild(toggleRow);
 
-  const groups = state.members.filter(m=>state.combinedOn.has(m.id)).map(m=>({
+  const boardGroups = state.members.filter(m=>state.combinedOn.has(m.id)).map(m=>({
     member:m, color:m.color, entries:(state.schedules[m.id]||[]).map(entryFor).filter(Boolean)
   }));
 
-  if(!groups.length || groups.every(g=>!g.entries.length)){
+  if(!boardGroups.length || boardGroups.every(g=>!g.entries.length)){
     wrap.appendChild(el(`<div class="empty">Nothing to show yet. Turn on a member above, and make sure they've added classes.</div>`));
     return wrap;
   }
 
   const legend = el(`<div class="legend"></div>`);
-  groups.forEach(g=>legend.appendChild(el(`<div class="item"><span class="dot" style="background:${g.color}"></span>${g.member.name}</div>`)));
+  boardGroups.forEach(g=>legend.appendChild(el(`<div class="item"><span class="dot" style="background:${g.color}"></span>${g.member.name}</div>`)));
   wrap.appendChild(legend);
-  wrap.appendChild(renderBoard(groups, false));
+  wrap.appendChild(renderBoard(boardGroups, false));
   return wrap;
 }
 
@@ -961,13 +1398,23 @@ function renderBoard(groups, allowDelete){
       const laneCount = b.__laneCount || 1;
       const widthPct = 100/laneCount;
       const leftPct = b.__lane*widthPct;
+      // Combined view (allowDelete=false) always uses each person's fixed
+      // color so blocks read as "whose schedule is this" at a glance.
+      // Editable views (My Schedule / editing a friend) keep the per-class
+      // pastel color, since there it's only ever one person's grid anyway.
+      const blockColor = allowDelete
+        ? getBlockColor(b.group.member.id, b.entry.id, b.group.color)
+        : b.group.color;
+      const textColor = getContrastTextColor(blockColor);
       const blk = el(`
         <div class="block ${b.conflict?'conflict':''} ${allowDelete?'removable':''}"
-             style="top:${top}px;height:${height}px;left:calc(${leftPct}% + 3px);width:calc(${widthPct}% - 6px);background:${b.group.color};"
+             style="top:${top}px;height:${height}px;left:calc(${leftPct}% + 3px);width:calc(${widthPct}% - 6px);background:${blockColor};color:${textColor};"
              ${allowDelete?'title="Click to remove"':''}>
           <span class="code">${b.entry.code||'—'} ${b.entry.section||''}</span>
           <span class="title">${b.entry.title||''}</span>
-          ${b.room?`<span class="room">${b.room}</span>`:''}
+          ${b.room?`<span class="room">${b.room}${b.entry.instructor?' · '+b.entry.instructor:''}</span>`:
+            b.entry.instructor?`<span class="room">${b.entry.instructor}</span>`:''}
+          ${allowDelete?'<button class="swatch-btn" title="Change color"></button>':''}
           ${allowDelete?'<span class="del">×</span>':''}
         </div>`);
       if(allowDelete){
@@ -976,6 +1423,15 @@ function renderBoard(groups, allowDelete){
           state.schedules[mid] = (state.schedules[mid]||[]).filter(id=>id!==b.entry.id);
           await saveSchedules();
           render();
+        };
+        const swatchBtn = blk.querySelector('.swatch-btn');
+        swatchBtn.onclick = (e)=>{
+          e.stopPropagation();
+          openColorPicker(swatchBtn, PASTEL_COLORS, async (color)=>{
+            setBlockColor(b.group.member.id, b.entry.id, color);
+            await saveBlockColors();
+            render();
+          }, blockColor);
         };
       }
       dayCols[colIdx].appendChild(blk);
