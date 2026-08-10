@@ -1006,9 +1006,10 @@ function renderAddClassBar(memberId, boardEl){
 
   function renderList(){
     const q = input.value.trim().toLowerCase();
+    const terms = q.split(/\s+/).filter(Boolean);
     const matches = state.catalog.filter(c=>{
-      const hay = (c.code+' '+c.title+' '+c.section+' '+(c.instructor||'')).toLowerCase();
-      return q.length===0 ? true : hay.includes(q);
+      const hay = (c.code+' '+c.section+' '+c.title+' '+(c.instructor||'')).toLowerCase();
+      return terms.every(t=>hay.includes(t));
     });
     list.innerHTML = '';
     if(!state.catalog.length){
