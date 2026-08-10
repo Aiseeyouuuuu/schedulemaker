@@ -1167,17 +1167,72 @@ function renderGroupsPanel(){
     </div>`);
 
   const chipRow = panel.querySelector('#groupChipRow');
+  const nameInput = panel.querySelector('#newGroupName');
+  const picker = panel.querySelector('#groupPicker');
+  let editingGroupId = null;
+  let selected = new Set();
+
+  function closePicker(){
+    picker.style.display = 'none';
+    picker.innerHTML = '';
+    editingGroupId = null;
+    selected = new Set();
+  }
+
+  function openPicker(existingGroup){
+    editingGroupId = existingGroup ? existingGroup.id : null;
+    selected = new Set(existingGroup ? existingGroup.memberIds : []);
+    if(existingGroup) nameInput.value = existingGroup.name;
+    picker.style.display = 'block';
+    picker.innerHTML = '';
+    picker.appendChild(el(`<p class="hint" style="margin:10px 0 6px;">${existingGroup?`Editing "${existingGroup.name}" — `:''}Who's in this group?</p>`));
+    const row = el(`<div class="friend-manage"></div>`);
+    state.members.forEach(m=>{
+      const chip = el(`<div class="chip ${selected.has(m.id)?'active':''}"><span class="dot" style="background:${m.color}"></span>${m.name}${m.id===state.meId?' (you)':''}</div>`);
+      chip.onclick = ()=>{
+        if(selected.has(m.id)){ selected.delete(m.id); chip.classList.remove('active'); }
+        else { selected.add(m.id); chip.classList.add('active'); }
+      };
+      row.appendChild(chip);
+    });
+    picker.appendChild(row);
+    const btnRow = el(`<div class="row" style="margin-top:10px;"></div>`);
+    const saveBtn = el(`<button class="gold">${existingGroup?'Save changes':'Save group'}</button>`);
+    saveBtn.onclick = async ()=>{
+      const name = nameInput.value.trim();
+      if(!name || !selected.size) return;
+      if(editingGroupId){
+        const g = state.groups.find(x=>x.id===editingGroupId);
+        if(g){ g.name = name; g.memberIds = [...selected]; }
+      } else {
+        state.groups.push({id:'g_'+Math.random().toString(36).slice(2,9), name, memberIds:[...selected]});
+      }
+      await saveGroups();
+      closePicker();
+      nameInput.value = '';
+      render();
+    };
+    btnRow.appendChild(saveBtn);
+    const cancelBtn = el(`<button class="ghost">Cancel</button>`);
+    cancelBtn.onclick = ()=>{ closePicker(); };
+    btnRow.appendChild(cancelBtn);
+    picker.appendChild(btnRow);
+  }
+
   state.groups.forEach(g=>{
     const chip = el(`<div class="chip">
-      <span class="chip-label" style="cursor:default;">${g.name} <span style="opacity:.65;">(${g.memberIds.length})</span></span>
+      <span class="chip-label" title="Edit ${g.name}'s members">${g.name} <span style="opacity:.65;">(${g.memberIds.length})</span></span>
       <span class="x" title="Delete group">×</span>
     </div>`);
-    chip.querySelector('.x').onclick = async ()=>{
+    chip.querySelector('.chip-label').onclick = ()=> openPicker(g);
+    chip.querySelector('.x').onclick = async (e)=>{
+      e.stopPropagation();
       const ok = await customConfirm(`Delete the group "${g.name}"?\n\nThis only removes the group itself — members and their classes are unaffected.`);
       if(!ok) return;
       state.groups = state.groups.filter(x=>x.id!==g.id);
       if(state.activeGroupId===g.id) state.activeGroupId = null;
       await saveGroups();
+      if(editingGroupId===g.id) closePicker();
       render();
     };
     chipRow.appendChild(chip);
@@ -1186,36 +1241,10 @@ function renderGroupsPanel(){
     chipRow.appendChild(el(`<span class="hint" style="margin:0;">No groups yet.</span>`));
   }
 
-  const picker = panel.querySelector('#groupPicker');
-  const selected = new Set();
-  function openPicker(){
-    picker.style.display = 'block';
-    picker.innerHTML = '';
-    picker.appendChild(el(`<p class="hint" style="margin:10px 0 6px;">Who's in this group?</p>`));
-    const row = el(`<div class="friend-manage"></div>`);
-    state.members.forEach(m=>{
-      const chip = el(`<div class="chip"><span class="dot" style="background:${m.color}"></span>${m.name}${m.id===state.meId?' (you)':''}</div>`);
-      chip.onclick = ()=>{
-        if(selected.has(m.id)){ selected.delete(m.id); chip.classList.remove('active'); }
-        else { selected.add(m.id); chip.classList.add('active'); }
-      };
-      row.appendChild(chip);
-    });
-    picker.appendChild(row);
-    const saveBtn = el(`<button class="gold" style="margin-top:10px;">Save group</button>`);
-    saveBtn.onclick = async ()=>{
-      const name = panel.querySelector('#newGroupName').value.trim();
-      if(!name || !selected.size) return;
-      state.groups.push({id:'g_'+Math.random().toString(36).slice(2,9), name, memberIds:[...selected]});
-      await saveGroups();
-      render();
-    };
-    picker.appendChild(saveBtn);
-  }
   panel.querySelector('#startGroupBtn').onclick = ()=>{
-    const name = panel.querySelector('#newGroupName').value.trim();
+    const name = nameInput.value.trim();
     if(!name) return;
-    openPicker();
+    openPicker(null);
   };
 
   return panel;
@@ -1235,13 +1264,17 @@ function renderFriendsTab(){
       <p class="hint">Friends you add here are saved to your own browser only — great for building a combined view of you and the people you're comparing schedules with, without it being visible to anyone else who opens this site.</p>
     </div>`);
   const chipRow = manage.querySelector('#chipRow');
-  state.members.filter(m=>m.id!==state.meId).forEach(m=>{
-    const chip = el(`<div class="chip ${state.friendEditingId===m.id?'active':''}">
-      <button class="chip-dot" style="background:${m.color}" title="Change ${m.name}'s color"></button>
-      <span class="chip-label">${m.name}</span>
-      <span class="x" title="Remove ${m.name}">×</span>
+  state.members.forEach(m=>{
+    const isMe = m.id===state.meId;
+    const colorLabel = isMe ? 'your' : `${m.name}'s`;
+    const chip = el(`<div class="chip ${!isMe && state.friendEditingId===m.id?'active':''}">
+      <button class="chip-dot" style="background:${m.color}" title="Change ${colorLabel} color"></button>
+      <span class="chip-label" style="${isMe?'cursor:default;':''}">${m.name}${isMe?' (you)':''}</span>
+      ${isMe?'':`<span class="x" title="Remove ${m.name}">×</span>`}
     </div>`);
-    chip.querySelector('.chip-label').onclick = ()=>{ state.friendEditingId = m.id; render(); };
+    if(!isMe){
+      chip.querySelector('.chip-label').onclick = ()=>{ state.friendEditingId = m.id; render(); };
+    }
     const dotBtn = chip.querySelector('.chip-dot');
     dotBtn.onclick = (e)=>{
       e.stopPropagation();
@@ -1251,13 +1284,15 @@ function renderFriendsTab(){
         render();
       }, m.color);
     };
-    chip.querySelector('.x').onclick = async (e)=>{
-      e.stopPropagation();
-      const ok = await customConfirm(`Remove ${m.name} entirely?\n\nTheir added classes will be deleted too, and they'll be taken out of any groups. This can't be undone.`);
-      if(!ok) return;
-      await removeMember(m.id);
-      render();
-    };
+    if(!isMe){
+      chip.querySelector('.x').onclick = async (e)=>{
+        e.stopPropagation();
+        const ok = await customConfirm(`Remove ${m.name} entirely?\n\nTheir added classes will be deleted too, and they'll be taken out of any groups. This can't be undone.`);
+        if(!ok) return;
+        await removeMember(m.id);
+        render();
+      };
+    }
     chipRow.appendChild(chip);
   });
   manage.querySelector('#addFriend').onclick = async ()=>{
@@ -1316,11 +1351,25 @@ function renderCombinedTab(){
   const toggles = toggleRow.querySelector('#toggles');
   state.members.forEach(m=>{
     const on = state.combinedOn.has(m.id);
-    const chip = el(`<div class="chip ${on?'active':''}"><span class="dot" style="background:${m.color}"></span>${m.name}</div>`);
-    chip.onclick = ()=>{
+    const isMe = m.id===state.meId;
+    const colorLabel = isMe ? 'your' : `${m.name}'s`;
+    const chip = el(`<div class="chip ${on?'active':''}">
+      <button class="chip-dot" style="background:${m.color}" title="Change ${colorLabel} color"></button>
+      <span class="chip-label">${m.name}${isMe?' (you)':''}</span>
+    </div>`);
+    chip.querySelector('.chip-label').onclick = ()=>{
       state.activeGroupId = null; // manual adjustment no longer matches a preset group exactly
       if(state.combinedOn.has(m.id)) state.combinedOn.delete(m.id); else state.combinedOn.add(m.id);
       render();
+    };
+    const dotBtn = chip.querySelector('.chip-dot');
+    dotBtn.onclick = (e)=>{
+      e.stopPropagation();
+      openColorPicker(dotBtn, MEMBER_COLORS, async (color)=>{
+        m.color = color;
+        await saveMembers();
+        render();
+      }, m.color);
     };
     toggles.appendChild(chip);
   });
