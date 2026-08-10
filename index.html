@@ -60,7 +60,7 @@
     width:100%;min-height:90px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
     border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical;background:#FAFBFA;
   }
-  input[type=text], input[type=time], select{
+  input[type=text], input[type=time], input[type=password], select{
     font-family:'Work Sans',sans-serif;font-size:13.5px;border:1px solid var(--line);
     border-radius:8px;padding:8px 10px;background:#fff;
   }
@@ -113,6 +113,8 @@
   .chip .dot{width:9px;height:9px;border-radius:50%;flex:none;}
   .chip .x{margin-left:2px;opacity:.6;font-weight:700;cursor:pointer;}
   .chip .x:hover{opacity:1;}
+  .chip .rename-group{margin-left:6px;opacity:.6;font-size:11px;cursor:pointer;}
+  .chip .rename-group:hover{opacity:1;}
   .chip-label{cursor:pointer;}
   .chip-dot{
     width:12px;height:12px;border-radius:50%;flex:none;padding:0;cursor:pointer;
@@ -480,7 +482,24 @@ let state = {
   activeGroupId: null, // which group's members are currently shown in Combined view, or null for everyone
   combinedOn: new Set(),
   staged: [],          // pending parsed rows awaiting confirmation
+  isAdmin: false,       // unlocks the catalog-import panel; see ADMIN_PASSCODE below
 };
+
+// ============================= ADMIN GATE =============================
+// Change this to your own secret before publishing. Whoever enters it
+// (via the lock icon in the header) gets isAdmin=true saved to THEIR
+// browser's localStorage, which is what actually hides/shows the import
+// panel — see the honest caveat about this in openAdminModal() below.
+const ADMIN_PASSCODE = 'change-me-ainey';
+function loadAdminFlag(){
+  try{ state.isAdmin = localStorage.getItem('sked:isAdmin') === '1'; }
+  catch(e){ state.isAdmin = false; }
+}
+function setAdminFlag(on){
+  state.isAdmin = on;
+  try{ on ? localStorage.setItem('sked:isAdmin','1') : localStorage.removeItem('sked:isAdmin'); }
+  catch(e){}
+}
 
 async function loadAll(){
   state.catalog = (await sGet('catalog', true)) || [];
@@ -490,6 +509,7 @@ async function loadAll(){
   state.blockColors = (await sGet('blockColors', false)) || {};
   state.groups = (await sGet('groups', false)) || [];
   state.meId = await sGet('me-id', false);
+  loadAdminFlag();
 }
 
 async function saveCatalog(){ return queueSave(()=> sSet('catalog', state.catalog, true)); }
@@ -795,6 +815,91 @@ function openEditNameModal(){
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') save(); });
 }
 
+// Quick rename-only path for a group — doesn't touch its member list, unlike
+// the full picker (which is still available by clicking the group chip).
+function openRenameGroupModal(g){
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Rename group</h2>
+        <input id="renameGroupInput" type="text" value="${g.name.replace(/"/g,'&quot;')}" />
+        <div class="row" style="justify-content:center;margin-top:6px;">
+          <button class="ghost" id="renameGroupCancel">Cancel</button>
+          <button id="renameGroupSave">Save</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#renameGroupInput');
+  input.focus(); input.select();
+  backdrop.querySelector('#renameGroupCancel').onclick = ()=> backdrop.remove();
+  const save = async ()=>{
+    const val = input.value.trim();
+    if(!val){ backdrop.remove(); return; }
+    const group = state.groups.find(x=>x.id===g.id);
+    if(group){ group.name = val; await saveGroups(); }
+    backdrop.remove();
+    render();
+  };
+  backdrop.querySelector('#renameGroupSave').onclick = save;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') save(); });
+}
+
+// Gate for the catalog-import panel. Honest caveat, worth knowing: this is
+// a client-side lock on a static site with no server — anyone who opens
+// dev tools can read ADMIN_PASSCODE directly from the page's source. It's
+// meant to keep the import/clear-catalog controls out of casual users'
+// way, not to withstand someone deliberately trying to bypass it.
+function openAdminModal(){
+  if(state.isAdmin){
+    const backdrop = el(`
+      <div class="modal-backdrop">
+        <div class="modal">
+          <h2>Admin mode</h2>
+          <p class="hint">You're currently in admin mode on this browser — the catalog-import panel is visible to you.</p>
+          <div class="row" style="justify-content:center;margin-top:6px;">
+            <button class="ghost" id="adminClose">Close</button>
+            <button style="background:var(--danger);" id="adminExit">Exit admin mode</button>
+          </div>
+        </div>
+      </div>`);
+    document.body.appendChild(backdrop);
+    backdrop.querySelector('#adminClose').onclick = ()=> backdrop.remove();
+    backdrop.querySelector('#adminExit').onclick = ()=>{ setAdminFlag(false); backdrop.remove(); render(); };
+    return;
+  }
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Admin passcode</h2>
+        <p class="hint">Unlocks the catalog-import panel on this browser only.</p>
+        <input id="adminInput" type="password" placeholder="Passcode" />
+        <p class="hint" id="adminError" style="color:var(--danger);display:none;">Incorrect passcode.</p>
+        <div class="row" style="justify-content:center;margin-top:6px;">
+          <button class="ghost" id="adminCancel">Cancel</button>
+          <button id="adminUnlock">Unlock</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#adminInput');
+  input.focus();
+  backdrop.querySelector('#adminCancel').onclick = ()=> backdrop.remove();
+  const tryUnlock = ()=>{
+    if(input.value === ADMIN_PASSCODE){
+      setAdminFlag(true);
+      backdrop.remove();
+      render();
+    } else {
+      backdrop.querySelector('#adminError').style.display = 'block';
+      input.value = '';
+      input.focus();
+    }
+  };
+  backdrop.querySelector('#adminUnlock').onclick = tryUnlock;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
+}
+
 function render(){
   const app = $('#app');
   app.innerHTML = '';
@@ -814,6 +919,7 @@ function renderHeader(){
         <div class="tagline">your sem, plotted</div>
       </div>
       <div class="row" style="align-items:center;gap:14px;">
+        <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:14px;">${state.isAdmin?'🔓':'🔒'}</button>
         <button class="swatch-btn" id="themeBtn" title="Change theme color"
           style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
         <div class="whoami">signed in as<br/><b>${me?me.name:''}</b> <button id="editNameBtn" class="edit-name-btn" title="Edit your name">✎</button></div>
@@ -822,6 +928,7 @@ function renderHeader(){
   const themeBtn = header.querySelector('#themeBtn');
   themeBtn.onclick = (e)=>{ e.stopPropagation(); openThemePicker(themeBtn); };
   header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
+  header.querySelector('#adminBtn').onclick = (e)=>{ e.stopPropagation(); openAdminModal(); };
   return header;
 }
 
@@ -1139,7 +1246,7 @@ function renderManualForm(container, memberId){
 function renderMemberEditor(memberId){
   const member = getMember(memberId);
   const wrap = el(`<div></div>`);
-  wrap.appendChild(renderImportPanel());
+  if(state.isAdmin) wrap.appendChild(renderImportPanel());
 
   const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
   const boardEl = renderBoard([{member, entries, color: member?member.color:'#6B5CA0'}], true);
@@ -1222,9 +1329,14 @@ function renderGroupsPanel(){
   state.groups.forEach(g=>{
     const chip = el(`<div class="chip">
       <span class="chip-label" title="Edit ${g.name}'s members">${g.name} <span style="opacity:.65;">(${g.memberIds.length})</span></span>
+      <span class="rename-group" title="Rename group">✎</span>
       <span class="x" title="Delete group">×</span>
     </div>`);
     chip.querySelector('.chip-label').onclick = ()=> openPicker(g);
+    chip.querySelector('.rename-group').onclick = (e)=>{
+      e.stopPropagation();
+      openRenameGroupModal(g);
+    };
     chip.querySelector('.x').onclick = async (e)=>{
       e.stopPropagation();
       const ok = await customConfirm(`Delete the group "${g.name}"?\n\nThis only removes the group itself — members and their classes are unaffected.`);
