@@ -993,7 +993,7 @@ function renderAddClassBar(memberId, boardEl){
       <h3>Add a class</h3>
       <div class="row">
         <div class="combo">
-          <input type="text" id="searchInput" placeholder="Search by code or title, e.g. CSCI 30..." autocomplete="off" />
+          <input type="text" id="searchInput" placeholder="Search by code, section, or professor, e.g. CSCI 30 or Dela Cruz..." autocomplete="off" />
           <div class="combo-list" id="comboList"></div>
         </div>
         <button class="ghost" id="manualToggle">+ Add manually</button>
@@ -1007,9 +1007,9 @@ function renderAddClassBar(memberId, boardEl){
   function renderList(){
     const q = input.value.trim().toLowerCase();
     const matches = state.catalog.filter(c=>{
-      const hay = (c.code+' '+c.title+' '+c.section).toLowerCase();
+      const hay = (c.code+' '+c.title+' '+c.section+' '+(c.instructor||'')).toLowerCase();
       return q.length===0 ? true : hay.includes(q);
-    }).slice(0,30);
+    });
     list.innerHTML = '';
     if(!state.catalog.length){
       list.innerHTML = `<div class="combo-empty">The shared catalog is empty. Import the public schedule above first.</div>`;
@@ -1070,8 +1070,18 @@ function renderAddClassBar(memberId, boardEl){
       });
     }
   }
-  input.addEventListener('focus', ()=>{ renderList(); list.classList.add('open'); });
-  input.addEventListener('input', renderList);
+  input.addEventListener('focus', ()=>{
+    if(input.value.trim().length){ renderList(); list.classList.add('open'); }
+  });
+  input.addEventListener('input', ()=>{
+    if(input.value.trim().length){
+      renderList();
+      list.classList.add('open');
+    } else {
+      list.classList.remove('open');
+      boardEl.__clearGhosts();
+    }
+  });
   document.addEventListener('click', (e)=>{
     if(!wrap.contains(e.target)){ list.classList.remove('open'); boardEl.__clearGhosts(); }
   });
