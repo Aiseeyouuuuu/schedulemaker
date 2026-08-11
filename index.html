@@ -1266,7 +1266,7 @@ function renderMemberEditor(memberId){
   wrap.appendChild(boardEl);
   if(memberId === state.meId){
     const wpRow = el(`<div class="row" style="margin-top:14px;">
-      <button class="ghost" id="makeWallpaperBtn">🖼️ Make a wallpaper</button>
+      <button class="ghost" id="makeWallpaperBtn">⬇️ Download</button>
     </div>`);
     wpRow.querySelector('#makeWallpaperBtn').onclick = ()=> openWallpaperBuilder(memberId);
     wrap.appendChild(wpRow);
@@ -1720,18 +1720,20 @@ function computeWallpaperTimeRange(entries){
 }
 
 // Pure geometry pass — figures out every pixel size the table needs given
-// a target width and font scale, WITHOUT drawing anything. Both export
-// modes call this first: wallpaper mode already knows its canvas size, but
-// image mode needs the table's own height before it can size the canvas.
-function computeTableLayout(entries, tableW, scale){
+// a target width, a font scale, and an independent height-stretch factor
+// (so the table can be pulled taller/shorter without distorting text).
+// Both export modes call this first: wallpaper mode already knows its
+// canvas size, but image mode needs the table's own height before it can
+// size the canvas.
+function computeTableLayout(entries, tableW, scale, heightScale=1){
   const {start:rangeStart, end:rangeEnd} = computeWallpaperTimeRange(entries);
   const totalRows = (rangeEnd-rangeStart)/30;
   const pad = 20*scale;
   const timeGutterW = 76*scale;
   const contentW = tableW - pad*2;
   const dayColW = (contentW - timeGutterW)/6;
-  const headerH = 68*scale;
-  const rowH = 30*scale;
+  const headerH = 68*scale*heightScale;
+  const rowH = 30*scale*heightScale;
   const bodyH = totalRows*rowH;
   const tableH = pad*2 + headerH + bodyH;
   return {rangeStart, rangeEnd, totalRows, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH};
@@ -1739,16 +1741,17 @@ function computeTableLayout(entries, tableW, scale){
 
 // Renders the schedule "card" onto the export canvas at (baseX,baseY).
 // `style` picks between four visual languages — all show the same
-// underlying data (code, section, room, instructor's surname), just
+// underlying data (code, section, time, location, professor), just
 // presented differently:
 //   'minimal' — mirrors the live board's visual language (rounded pastel
-//               blocks, clean hour rule lines, course title included).
+//               blocks, clean hour labels).
 //   'bold'    — bigger uppercase headers on solid pills, chunkier rounded
-//               blocks, title omitted to keep blocks compact.
-//   'pastel'  — soft rounded card, plain hour-only labels ("8a","12p"),
-//               each block shows its time range instead of the title.
-//   'grid'    — full printed-timetable look: muted day pills, a "TIME"
-//               gutter label, and every open hour marked "VACANT".
+//               blocks.
+//   'pastel'  — soft rounded card, plain hour-only labels ("8a","12p").
+//   'grid'    — full printed-timetable look: muted day pills and a "TIME"
+//               gutter label; empty hours are left blank.
+// The table itself has no background fill — it sits directly on the
+// wallpaper/background behind it, no white card.
 function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale){
   const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH} = layout;
   const gridX = baseX+pad+timeGutterW;
@@ -1757,15 +1760,6 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
 
   ctx.save();
   ctx.globalAlpha = opacity;
-
-  // Card background
-  ctx.shadowColor = 'rgba(0,0,0,0.18)';
-  ctx.shadowBlur = 26*scale;
-  ctx.shadowOffsetY = 8*scale;
-  ctx.fillStyle = '#FFFFFF';
-  roundRectPath(ctx, baseX, baseY, tableW, tableH, (isPillHeader?28:22)*scale);
-  ctx.fill();
-  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
   if(isPillHeader){
     // Day header row: solid pill per day, uppercase label. 'bold' uses the
@@ -1808,22 +1802,14 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     }
   }
 
-  // Hour labels + horizontal gridlines
+  // Hour labels only — no rule lines across the body, so empty time stays
+  // visually blank/clean instead of a grid of lines through nothing.
   ctx.font = `${isPillHeader?'600 ':''}${11*scale}px 'Poppins', sans-serif`;
   ctx.fillStyle = getCssVar('--muted') || '#6B7290';
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for(let t=rangeStart; t<=rangeEnd; t+=60){
     const y = bodyY + ((t-rangeStart)/30)*rowH;
     ctx.fillText(style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t), gridX-8*scale, y);
-    ctx.strokeStyle = style==='grid' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.07)';
-    ctx.lineWidth = 1*scale;
-    ctx.beginPath(); ctx.moveTo(gridX, y); ctx.lineTo(baseX+pad+contentW, y); ctx.stroke();
-  }
-  // Vertical day separators
-  for(let i=0;i<=6;i++){
-    const x = gridX + i*dayColW;
-    ctx.strokeStyle = style==='grid' ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.05)'; ctx.lineWidth = 1*scale;
-    ctx.beginPath(); ctx.moveTo(x, bodyY); ctx.lineTo(x, bodyY+bodyH); ctx.stroke();
   }
 
   // Class blocks — same flatten + lane-pack approach as the live board
@@ -1838,25 +1824,6 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       });
     });
   });
-
-  // 'grid' style additionally marks every open hour cell as VACANT, like a
-  // printed class-schedule grid — drawn before the occupied blocks so they
-  // layer cleanly on top.
-  if(style==='grid'){
-    ctx.font = `600 ${9.5*scale}px 'Poppins', sans-serif`;
-    ctx.fillStyle = 'rgba(120,120,140,0.55)';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for(let t=rangeStart; t<rangeEnd; t+=60){
-      const y = bodyY + ((t-rangeStart)/30)*rowH;
-      const h = (60/30)*rowH;
-      DAY_ORDER.forEach((day,colIdx)=>{
-        const occupied = perDay[colIdx].some(b=> b.start < t+60 && b.end > t);
-        if(occupied) return;
-        const x = gridX + colIdx*dayColW;
-        ctx.fillText('VACANT', x+dayColW/2, y+h/2);
-      });
-    }
-  }
 
   perDay.forEach((dayBlocks, colIdx)=>{
     packDayBlocks(dayBlocks);
@@ -1885,34 +1852,27 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const padX = (isPillHeader?9:7)*scale;
       const tx = x+padX, maxTextW = Math.max(w-padX*2, 4);
       let ty = yy+(isPillHeader?8:6)*scale;
+      const lineH = (isPillHeader?13.5:12.5)*scale;
 
+      // Four separate lines, space permitting: code+section, time, location,
+      // professor — same fields as the live board, one per line.
       ctx.fillStyle = textColor;
       ctx.font = `700 ${(isPillHeader?12.5:11.5)*scale}px 'Poppins', sans-serif`;
       ctx.fillText(truncateText(ctx, `${b.entry.code||'—'} ${b.entry.section||''}`.trim(), maxTextW), tx, ty);
       ty += (isPillHeader?16:14.5)*scale;
 
-      if(style==='minimal' && hh > 32*scale){
-        ctx.font = `${10.5*scale}px 'Poppins', sans-serif`;
-        ctx.globalAlpha = opacity*0.92;
-        ctx.fillText(truncateText(ctx, b.entry.title||'', maxTextW), tx, ty);
-        ctx.globalAlpha = opacity;
-        ty += 13*scale;
+      ctx.font = `${(isPillHeader?10.5:9.5)*scale}px 'Poppins', sans-serif`;
+      ctx.globalAlpha = opacity*(isPillHeader?0.9:0.85);
+      const timeLine = `${minutesToLabel(b.start)} – ${minutesToLabel(b.end)}`;
+      if(hh > lineH*1.6){ ctx.fillText(truncateText(ctx, timeLine, maxTextW), tx, ty); ty += lineH; }
+
+      if(b.room && hh > lineH*2.5){
+        ctx.fillText(truncateText(ctx, b.room, maxTextW), tx, ty); ty += lineH;
       }
-      if(style==='pastel' && hh > 30*scale){
-        ctx.font = `${9.5*scale}px 'Poppins', sans-serif`;
-        ctx.globalAlpha = opacity*0.85;
-        const timeLine = `${minutesToLabel(b.start)} – ${minutesToLabel(b.end)}`;
-        ctx.fillText(truncateText(ctx, timeLine, maxTextW), tx, ty);
-        ctx.globalAlpha = opacity;
-        ty += 13*scale;
+      if(surname && hh > lineH*3.4){
+        ctx.fillText(truncateText(ctx, surname, maxTextW), tx, ty);
       }
-      if(hh > (isPillHeader?30:48)*scale && (b.room || surname)){
-        ctx.font = `${(isPillHeader?10.5:9.5)*scale}px 'Poppins', sans-serif`;
-        ctx.globalAlpha = opacity*(isPillHeader?0.88:0.8);
-        const line = [b.room, surname].filter(Boolean).join(' · ');
-        ctx.fillText(truncateText(ctx, line, maxTextW), tx, ty);
-        ctx.globalAlpha = opacity;
-      }
+      ctx.globalAlpha = opacity;
     });
   });
 
@@ -1929,7 +1889,8 @@ function openWallpaperBuilder(memberId){
   let bgImage = null, bgObjectUrl = null;
   let opacity = 1;
   let offsetX = 0, offsetY = 0;
-  let sizePct = 100;        // table-size slider, 60–140%
+  let sizeWPct = 100;       // table width stretch slider, 60–160%
+  let sizeHPct = 100;       // table height stretch slider, 60–160%
 
   const backdrop = el(`
     <div class="modal-backdrop" style="align-items:flex-start;padding:24px 12px;overflow:auto;">
@@ -1972,9 +1933,15 @@ function openWallpaperBuilder(memberId){
         </div>
 
         <div class="row" style="margin-top:10px;align-items:center;">
-          <span class="hint" style="margin:0;width:110px;">Table size</span>
-          <input type="range" id="sizeSlider" min="60" max="140" value="100" style="flex:1;"/>
-          <span class="hint" id="sizeVal" style="margin:0;width:38px;text-align:right;">100%</span>
+          <span class="hint" style="margin:0;width:110px;">Table width</span>
+          <input type="range" id="sizeWSlider" min="60" max="160" value="100" style="flex:1;"/>
+          <span class="hint" id="sizeWVal" style="margin:0;width:38px;text-align:right;">100%</span>
+        </div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;width:110px;">Table height</span>
+          <input type="range" id="sizeHSlider" min="60" max="160" value="100" style="flex:1;"/>
+          <span class="hint" id="sizeHVal" style="margin:0;width:38px;text-align:right;">100%</span>
         </div>
 
         <div class="row" style="margin-top:10px;align-items:center;">
@@ -1995,7 +1962,7 @@ function openWallpaperBuilder(memberId){
 
         <div class="row" style="margin-top:16px;justify-content:flex-end;">
           <button class="ghost" id="wpReset">Reset position</button>
-          <button class="gold" id="wpDownload">Download wallpaper</button>
+          <button class="gold" id="wpDownload">Download</button>
         </div>
       </div>
     </div>`);
@@ -2012,7 +1979,7 @@ function openWallpaperBuilder(memberId){
   const resetBtn = backdrop.querySelector('#wpReset');
 
   function draw(){
-    const sizeScale = sizePct/100;
+    const wScale = sizeWPct/100, hScale = sizeHPct/100;
     if(mode==='wallpaper'){
       const d = WALLPAPER_DIMS[device];
       canvas.width = d.w; canvas.height = d.h;
@@ -2026,24 +1993,27 @@ function openWallpaperBuilder(memberId){
         ctx.fillStyle = grad;
         ctx.fillRect(0,0,d.w,d.h);
       }
-      const baseScale = Math.hypot(d.w, d.h) / Math.hypot(1080, 1920);
-      const scale = baseScale*sizeScale;
-      const tableW = d.w*0.88*sizeScale;
-      const layout = computeTableLayout(entries, tableW, scale);
+      // Font/padding scale tracks canvas resolution only, independent of the
+      // width/height stretch sliders — so stretching resizes the table's
+      // shape without warping its text.
+      const fontScale = Math.hypot(d.w, d.h) / Math.hypot(1080, 1920);
+      const tableW = d.w*0.88*wScale;
+      const layout = computeTableLayout(entries, tableW, fontScale, hScale);
       const baseX = (d.w-tableW)/2 + offsetX;
       const baseY = (d.h-layout.tableH)/2 + offsetY;
-      paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale);
+      paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, fontScale);
     } else {
-      // Image mode: canvas is sized to exactly fit the table (plus a small
-      // margin for its drop shadow) — no device frame, no background photo,
-      // no drag. Table size slider still controls resolution/scale.
-      const margin = 24*sizeScale;
-      const tableW = IMAGE_MODE_BASE_W*0.88*sizeScale;
-      const layout = computeTableLayout(entries, tableW, sizeScale);
+      // Image mode: canvas is sized to exactly fit the table — no device
+      // frame, no background photo, no drag. Width/height stretch sliders
+      // control the table's shape; text stays a fixed, crisp size.
+      const fontScale = 1;
+      const margin = 24;
+      const tableW = IMAGE_MODE_BASE_W*0.88*wScale;
+      const layout = computeTableLayout(entries, tableW, fontScale, hScale);
       canvas.width = tableW + margin*2;
       canvas.height = layout.tableH + margin*2;
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      paintTable(ctx, layout, margin, margin, tableW, entries, memberId, member, 1, style, sizeScale);
+      paintTable(ctx, layout, margin, margin, tableW, entries, memberId, member, 1, style, fontScale);
     }
   }
 
@@ -2063,7 +2033,7 @@ function openWallpaperBuilder(memberId){
     resetBtn.style.display = isWallpaper ? 'inline-flex' : 'none';
     canvas.style.cursor = isWallpaper ? 'grab' : 'default';
     wpTitle.textContent = isWallpaper ? 'Make a wallpaper' : 'Save schedule as image';
-    downloadBtn.textContent = isWallpaper ? 'Download wallpaper' : 'Save image';
+    downloadBtn.textContent = 'Download';
     offsetX = 0; offsetY = 0;
     draw();
   }
@@ -2153,12 +2123,19 @@ function openWallpaperBuilder(memberId){
     draw();
   };
 
-  // Table size
-  const sizeSlider = backdrop.querySelector('#sizeSlider');
-  const sizeVal = backdrop.querySelector('#sizeVal');
-  sizeSlider.oninput = ()=>{
-    sizePct = Number(sizeSlider.value);
-    sizeVal.textContent = sizePct+'%';
+  // Table width/height stretch — independent sliders
+  const sizeWSlider = backdrop.querySelector('#sizeWSlider');
+  const sizeWVal = backdrop.querySelector('#sizeWVal');
+  sizeWSlider.oninput = ()=>{
+    sizeWPct = Number(sizeWSlider.value);
+    sizeWVal.textContent = sizeWPct+'%';
+    draw();
+  };
+  const sizeHSlider = backdrop.querySelector('#sizeHSlider');
+  const sizeHVal = backdrop.querySelector('#sizeHVal');
+  sizeHSlider.oninput = ()=>{
+    sizeHPct = Number(sizeHSlider.value);
+    sizeHVal.textContent = sizeHPct+'%';
     draw();
   };
 
