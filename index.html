@@ -1565,7 +1565,9 @@ function renderCombinedTab(){
 }
 
 /* ============================= BOARD (weekly grid) ============================= */
-const BOARD_START = 8*60;   // 8:00 AM
+const BOARD_START = 7*60;   // 7:00 AM — one padding row above the earliest
+                             // typical class time so the top hour label
+                             // never collides with the day header row.
 const BOARD_END = 21*60;    // 9:00 PM
 const ROW_H = 48;           // px per 30 min
 
@@ -1751,10 +1753,10 @@ function surnameOf(instructor){
   return words[words.length-1];
 }
 
-// Auto-fits the visible hour range to this person's actual classes: starts
-// exactly at the first class's hour (no blank spacer row above it, just
-// like the live board), padded by a full hour after the last class so the
-// bottom doesn't feel cramped. Clamped to sane bounds.
+// Auto-fits the visible hour range to this person's actual classes: padded
+// by a full hour above the first class and a full hour after the last one,
+// so the top hour label has a blank row above it instead of colliding with
+// the day header row, matching the live board. Clamped to sane bounds.
 function computeWallpaperTimeRange(entries){
   let minStart=Infinity, maxEnd=-Infinity;
   entries.forEach(entry=>(entry.meetings||[]).forEach(m=>{
@@ -1762,7 +1764,7 @@ function computeWallpaperTimeRange(entries){
     if(m.end!=null) maxEnd = Math.max(maxEnd, m.end);
   }));
   if(!isFinite(minStart) || !isFinite(maxEnd)){ minStart=7*60; maxEnd=21*60; }
-  let start = Math.floor(minStart/60)*60;
+  let start = Math.floor(minStart/60)*60 - 60;
   let end = Math.ceil(maxEnd/60)*60 + 60;
   start = Math.max(start, 5*60);
   end = Math.min(end, 23*60);
