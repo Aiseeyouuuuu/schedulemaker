@@ -1735,6 +1735,21 @@ function truncateText(ctx, text, maxWidth){
   return lo>0 ? text.slice(0,lo)+'…' : '…';
 }
 
+// Draws text with a soft halo behind it (opposite-contrast stroke, then
+// fill) so day/hour labels stay readable no matter what's directly behind
+// them — a busy photo, a dark color, anything. Halo color is picked as
+// whichever of white/near-black contrasts against the fill color itself,
+// which reads well against both light and dark surroundings in practice.
+function haloText(ctx, text, x, y, fillColor, lineWidthPx){
+  const halo = getContrastTextColor(fillColor) === '#1C2430' ? 'rgba(255,255,255,0.9)' : 'rgba(28,36,48,0.55)';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = halo;
+  ctx.lineWidth = lineWidthPx;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = fillColor;
+  ctx.fillText(text, x, y);
+}
+
 // "Dela Cruz, Juan M." -> "Dela Cruz"; "Juan Dela Cruz" -> "Cruz" (last
 // word) as a fallback when there's no comma. Keeps class blocks compact.
 function surnameOf(instructor){
@@ -1835,18 +1850,18 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     });
     if(style==='grid'){
       ctx.font = `700 ${10.5*ts*scale}px 'Poppins', sans-serif`;
-      ctx.fillStyle = 'rgba(95,95,115,0.7)';
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText('TIME', baseX+pad, baseY+pad+headerH/2);
+      haloText(ctx, 'TIME', baseX+pad, baseY+pad+headerH/2, '#5F5F73', 3*scale);
     }
   } else {
-    // 'minimal' and 'pastel': plain centered label. Minimal adds a divider rule.
+    // 'minimal' and 'pastel': plain centered label, sitting directly on the
+    // background — haloed so it stays legible against any color or photo.
+    // Minimal also adds a divider rule.
     ctx.font = `700 ${(style==='pastel'?15:16)*ts*scale}px 'Poppins', sans-serif`;
-    ctx.fillStyle = inkColor;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx = gridX + i*dayColW + dayColW/2;
-      ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
+      haloText(ctx, DAY_LABEL[day], cx, baseY+pad+headerH/2, inkColor, 3.5*ts*scale);
     });
     if(style==='minimal'){
       ctx.strokeStyle = inkColor;
@@ -1865,14 +1880,14 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   // header divider sits exactly on the first gridline (7:00 AM), so that
   // label is skipped entirely rather than drawn on/near the line — every
   // other label (8:00 AM onward) keeps its original position untouched.
+  // Haloed like the day labels so they read against any background.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
-  ctx.fillStyle = mutedColor;
   ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
   for(let t=rangeStart; t<=rangeEnd; t+=60){
     if(style==='minimal' && t===rangeStart) continue;
     const y = bodyY + ((t-rangeStart)/30)*rowH;
     const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
-    ctx.fillText(label, gridX-8*scale, y-4*scale);
+    haloText(ctx, label, gridX-8*scale, y-4*scale, mutedColor, 3*ts*scale);
   }
 
   // Class blocks — same flatten + lane-pack approach as the live board
