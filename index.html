@@ -1862,14 +1862,15 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   // Hour labels. 'bold'/'grid' get the same solid pill treatment as the
   // day header, sized to fit each label, so they stay visible against any
   // background. 'minimal'/'pastel' stay plain text like the rest of that
-  // style. Anchored to 'bottom' with a small upward offset so each label
-  // sits just above its gridline instead of straddling it. The 'minimal'
-  // style's header divider sits exactly on the first gridline (7:00 AM),
-  // so that label is skipped entirely — every other label (8:00 AM onward)
-  // keeps its original position untouched.
+  // style. Vertically centered right on the gridline it represents (rather
+  // than floating above it), so it lines up with a class block that starts
+  // at that exact time. The very first label (7:00 AM / whatever the range
+  // starts at) is skipped for every style — 'minimal's header divider sits
+  // exactly on that line, so a label there would collide with it — every
+  // other label (8:00 AM onward) keeps its original position untouched.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
   for(let t=rangeStart; t<=rangeEnd; t+=60){
-    if(style==='minimal' && t===rangeStart) continue;
+    if(t===rangeStart) continue;
     const y = bodyY + ((t-rangeStart)/30)*rowH;
     const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
     const labelX = gridX-8*scale;
@@ -1878,17 +1879,17 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const textColor = style==='grid' ? '#FFFFFF' : inkOnInk;
       const padX = 6*scale, padY = 3*scale, m = ctx.measureText(label);
       const w = m.width, asc = m.actualBoundingBoxAscent||8, desc = m.actualBoundingBoxDescent||3;
-      const boxX = labelX-w-padX, boxY = (y-4*scale)-asc-padY, boxW = w+padX*2, boxH = asc+desc+padY*2;
+      const boxX = labelX-w-padX, boxY = y-(asc+desc)/2-padY, boxW = w+padX*2, boxH = asc+desc+padY*2;
       ctx.fillStyle = pillColor;
       roundRectPath(ctx, boxX, boxY, boxW, boxH, 5*scale);
       ctx.fill();
       ctx.fillStyle = textColor;
-      ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-      ctx.fillText(label, labelX, y-4*scale);
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, labelX, y);
     } else {
       ctx.fillStyle = mutedColor;
-      ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-      ctx.fillText(label, labelX, y-4*scale);
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, labelX, y);
     }
   }
 
