@@ -490,7 +490,7 @@ let state = {
 // (via the lock icon in the header) gets isAdmin=true saved to THEIR
 // browser's localStorage, which is what actually hides/shows the import
 // panel — see the honest caveat about this in openAdminModal() below.
-const ADMIN_PASSCODE = 'mamamoblue';
+const ADMIN_PASSCODE = 'change-me-ainey';
 function loadAdminFlag(){
   try{ state.isAdmin = localStorage.getItem('sked:isAdmin') === '1'; }
   catch(e){ state.isAdmin = false; }
@@ -1256,6 +1256,13 @@ function renderMemberEditor(memberId){
     wrap.appendChild(el(`<p class="hint" style="margin:0 0 12px;">No classes yet for <b>${member?member.name:''}</b>. Search above to add one — hover a result to preview it on the grid below first.</p>`));
   }
   wrap.appendChild(boardEl);
+  if(memberId === state.meId){
+    const wpRow = el(`<div class="row" style="margin-top:14px;">
+      <button class="ghost" id="makeWallpaperBtn">🖼️ Make a wallpaper</button>
+    </div>`);
+    wpRow.querySelector('#makeWallpaperBtn').onclick = ()=> openWallpaperBuilder(memberId);
+    wrap.appendChild(wpRow);
+  }
   return wrap;
 }
 
@@ -1624,6 +1631,402 @@ function renderBoard(groups, allowDelete){
   });
 
   return board;
+}
+
+/* ============================= WALLPAPER EXPORT ============================= */
+const WALLPAPER_DIMS = {
+  phone:  {w:1080, h:2400, label:'Phone · 1080×2400'},
+  laptop: {w:2560, h:1600, label:'Laptop · 2560×1600'},
+};
+
+function getCssVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || null;
+}
+
+// Draws `img` into the x,y,w,h rect using cover-fit (scale to fill, crop
+// overflow, centered) — same behavior as CSS background-size:cover.
+function drawImageCover(ctx, img, x, y, w, h){
+  const s = Math.max(w/img.width, h/img.height);
+  const sw = w/s, sh = h/s;
+  const sx = (img.width-sw)/2, sy = (img.height-sh)/2;
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
+function roundRectPath(ctx, x, y, w, h, r){
+  const rr = Math.max(0, Math.min(r, w/2, h/2));
+  ctx.beginPath();
+  ctx.moveTo(x+rr, y);
+  ctx.arcTo(x+w, y, x+w, y+h, rr);
+  ctx.arcTo(x+w, y+h, x, y+h, rr);
+  ctx.arcTo(x, y+h, x, y, rr);
+  ctx.arcTo(x, y, x+w, y, rr);
+  ctx.closePath();
+}
+
+// Binary-search ellipsis truncation against actual measured text width,
+// rather than guessing by character count.
+function truncateText(ctx, text, maxWidth){
+  if(!text) return '';
+  if(ctx.measureText(text).width <= maxWidth) return text;
+  let lo=0, hi=text.length;
+  while(lo<hi){
+    const mid = Math.ceil((lo+hi)/2);
+    const candidate = text.slice(0,mid)+'…';
+    if(ctx.measureText(candidate).width <= maxWidth) lo=mid; else hi=mid-1;
+  }
+  return lo>0 ? text.slice(0,lo)+'…' : '…';
+}
+
+// Auto-fits the visible hour range to this person's actual classes (padded
+// by 30min on each side, clamped to sane bounds) instead of always drawing
+// a fixed 7am–9pm grid full of empty rows.
+function computeWallpaperTimeRange(entries){
+  let minStart=Infinity, maxEnd=-Infinity;
+  entries.forEach(entry=>(entry.meetings||[]).forEach(m=>{
+    if(m.start!=null) minStart = Math.min(minStart, m.start);
+    if(m.end!=null) maxEnd = Math.max(maxEnd, m.end);
+  }));
+  if(!isFinite(minStart) || !isFinite(maxEnd)){ minStart=7*60; maxEnd=21*60; }
+  let start = Math.floor(minStart/60)*60 - 30;
+  let end = Math.ceil(maxEnd/60)*60 + 30;
+  start = Math.max(start, 5*60);
+  end = Math.min(end, 23*60);
+  if(end-start < 6*60) end = Math.min(start+6*60, 23*60);
+  return {start, end};
+}
+
+// Renders the schedule "card" onto the export canvas at (baseX,baseY),
+// mirroring the live board's visual language (rounded pastel blocks,
+// contrast-checked text, lane-packed overlaps) rather than any external
+// reference design.
+function drawWallpaperTable(ctx, dims, entries, memberId, member, opacity, offsetX, offsetY){
+  const scale = Math.hypot(dims.w, dims.h) / Math.hypot(1080, 1920);
+  const {start:rangeStart, end:rangeEnd} = computeWallpaperTimeRange(entries);
+  const totalRows = (rangeEnd-rangeStart)/30;
+
+  const tableW = dims.w*0.88;
+  const pad = 20*scale;
+  const timeGutterW = 76*scale;
+  const contentW = tableW - pad*2;
+  const dayColW = (contentW - timeGutterW)/6;
+  const headerH = 68*scale;
+  const rowH = 30*scale;
+  const bodyH = totalRows*rowH;
+  const tableH = pad*2 + headerH + bodyH;
+
+  const baseX = (dims.w-tableW)/2 + offsetX;
+  const baseY = (dims.h-tableH)/2 + offsetY;
+  const gridX = baseX+pad+timeGutterW;
+  const bodyY = baseY+pad+headerH;
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
+
+  // Card background
+  ctx.shadowColor = 'rgba(0,0,0,0.18)';
+  ctx.shadowBlur = 26*scale;
+  ctx.shadowOffsetY = 8*scale;
+  ctx.fillStyle = '#FFFFFF';
+  roundRectPath(ctx, baseX, baseY, tableW, tableH, 22*scale);
+  ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+  // Day header
+  ctx.font = `700 ${16*scale}px 'Space Grotesk', sans-serif`;
+  ctx.fillStyle = getCssVar('--navy-text') || '#2A4492';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  DAY_ORDER.forEach((day,i)=>{
+    const cx = gridX + i*dayColW + dayColW/2;
+    ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
+  });
+
+  // Header divider
+  ctx.strokeStyle = getCssVar('--navy') || '#4169E1';
+  ctx.lineWidth = 2*scale;
+  ctx.beginPath();
+  ctx.moveTo(baseX+pad, bodyY);
+  ctx.lineTo(baseX+pad+contentW, bodyY);
+  ctx.stroke();
+
+  // Hour labels + horizontal gridlines
+  ctx.font = `${11*scale}px 'IBM Plex Mono', monospace`;
+  ctx.fillStyle = getCssVar('--muted') || '#6B7290';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for(let t=rangeStart; t<=rangeEnd; t+=60){
+    const y = bodyY + ((t-rangeStart)/30)*rowH;
+    ctx.fillText(minutesToLabel(t), gridX-8*scale, y);
+    ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+    ctx.lineWidth = 1*scale;
+    ctx.beginPath(); ctx.moveTo(gridX, y); ctx.lineTo(baseX+pad+contentW, y); ctx.stroke();
+  }
+  // Vertical day separators
+  for(let i=0;i<=6;i++){
+    const x = gridX + i*dayColW;
+    ctx.strokeStyle = 'rgba(0,0,0,0.05)'; ctx.lineWidth = 1*scale;
+    ctx.beginPath(); ctx.moveTo(x, bodyY); ctx.lineTo(x, bodyY+bodyH); ctx.stroke();
+  }
+
+  // Class blocks — same flatten + lane-pack approach as the live board
+  const perDay = DAY_ORDER.map(()=>[]);
+  entries.forEach(entry=>{
+    (entry.meetings||[]).forEach(m=>{
+      if(m.start==null || m.end==null || !m.days.length) return;
+      m.days.forEach(day=>{
+        const colIdx = DAY_ORDER.indexOf(day);
+        if(colIdx<0) return;
+        perDay[colIdx].push({start:m.start, end:m.end, room:m.room, entry});
+      });
+    });
+  });
+
+  perDay.forEach((dayBlocks, colIdx)=>{
+    packDayBlocks(dayBlocks);
+    dayBlocks.forEach(b=>{
+      const s = Math.max(b.start, rangeStart), e = Math.min(b.end, rangeEnd);
+      if(e<=s) return;
+      const y = bodyY + ((s-rangeStart)/30)*rowH;
+      const h = Math.max(((e-s)/30)*rowH, 20*scale);
+      const laneCount = b.__laneCount || 1;
+      const colX = gridX + colIdx*dayColW;
+      const blockW = dayColW/laneCount;
+      const gap = 2.5*scale;
+      const x = colX + b.__lane*blockW + gap/2;
+      const w = blockW - gap;
+      const yy = y+gap/2, hh = h-gap;
+
+      const color = getBlockColor(memberId, b.entry.id, member?member.color:'#4169E1');
+      const textColor = getContrastTextColor(color);
+
+      ctx.fillStyle = color;
+      roundRectPath(ctx, x, yy, w, hh, 7*scale);
+      ctx.fill();
+
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      const tx = x+7*scale, maxTextW = Math.max(w-14*scale, 4);
+      let ty = yy+6*scale;
+
+      ctx.fillStyle = textColor;
+      ctx.font = `700 ${11.5*scale}px 'IBM Plex Mono', monospace`;
+      ctx.fillText(truncateText(ctx, `${b.entry.code||'—'} ${b.entry.section||''}`.trim(), maxTextW), tx, ty);
+      ty += 14.5*scale;
+
+      if(hh > 32*scale){
+        ctx.font = `${10.5*scale}px 'Work Sans', sans-serif`;
+        ctx.globalAlpha = opacity*0.92;
+        ctx.fillText(truncateText(ctx, b.entry.title||'', maxTextW), tx, ty);
+        ctx.globalAlpha = opacity;
+        ty += 13*scale;
+      }
+      if(hh > 48*scale && (b.room || b.entry.instructor)){
+        ctx.font = `${9.5*scale}px 'Work Sans', sans-serif`;
+        ctx.globalAlpha = opacity*0.8;
+        const line3 = [b.room, b.entry.instructor].filter(Boolean).join(' · ');
+        ctx.fillText(truncateText(ctx, line3, maxTextW), tx, ty);
+        ctx.globalAlpha = opacity;
+      }
+    });
+  });
+
+  ctx.restore();
+}
+
+function openWallpaperBuilder(memberId){
+  const member = getMember(memberId);
+  const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
+
+  let device = 'phone';
+  let bgImage = null, bgObjectUrl = null;
+  let opacity = 1;
+  let offsetX = 0, offsetY = 0;
+
+  const backdrop = el(`
+    <div class="modal-backdrop" style="align-items:flex-start;padding:24px 12px;overflow:auto;">
+      <div class="modal" style="width:min(94vw,760px);max-width:760px;text-align:left;">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <h2 style="margin:0;">Make a wallpaper</h2>
+          <button class="ghost small" id="wpClose">Close</button>
+        </div>
+
+        <div class="row" style="margin-top:14px;">
+          <button class="chip active" id="devPhone">${WALLPAPER_DIMS.phone.label}</button>
+          <button class="chip" id="devLaptop">${WALLPAPER_DIMS.laptop.label}</button>
+        </div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;">Background:</span>
+          <button class="chip active" id="bgDefault">Theme background</button>
+          <button class="chip" id="bgUploadBtn">Upload a photo…</button>
+          <input type="file" id="bgUploadInput" accept="image/*" style="display:none;"/>
+        </div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;width:110px;">Translucency</span>
+          <input type="range" id="opacitySlider" min="15" max="100" value="100" style="flex:1;"/>
+          <span class="hint" id="opacityVal" style="margin:0;width:38px;text-align:right;">100%</span>
+        </div>
+
+        <p class="hint" style="margin:12px 0 6px;">Drag the schedule below to reposition it on the wallpaper.</p>
+        <div style="display:flex;justify-content:center;background:rgba(0,0,0,0.06);border-radius:10px;padding:10px;">
+          <canvas id="wpCanvas" style="max-width:100%;max-height:58vh;border-radius:6px;cursor:grab;touch-action:none;"></canvas>
+        </div>
+
+        <p class="hint" style="margin:14px 0 6px;">Class colors</p>
+        <div id="wpColorList" class="row" style="flex-wrap:wrap;"></div>
+
+        <div class="row" style="margin-top:16px;justify-content:flex-end;">
+          <button class="ghost" id="wpReset">Reset position</button>
+          <button class="gold" id="wpDownload">Download wallpaper</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+
+  const canvas = backdrop.querySelector('#wpCanvas');
+  const ctx = canvas.getContext('2d');
+
+  function setDims(){
+    const d = WALLPAPER_DIMS[device];
+    canvas.width = d.w; canvas.height = d.h;
+  }
+
+  function draw(){
+    const d = WALLPAPER_DIMS[device];
+    ctx.clearRect(0,0,d.w,d.h);
+    if(bgImage){
+      drawImageCover(ctx, bgImage, 0, 0, d.w, d.h);
+    } else {
+      const grad = ctx.createLinearGradient(0,0,d.w,d.h);
+      grad.addColorStop(0, getCssVar('--bg') || '#FAF6FB');
+      grad.addColorStop(1, getCssVar('--navy-2') || '#ECE3F5');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,d.w,d.h);
+    }
+    drawWallpaperTable(ctx, d, entries, memberId, member, opacity, offsetX, offsetY);
+  }
+
+  // Device toggle
+  const devPhoneBtn = backdrop.querySelector('#devPhone');
+  const devLaptopBtn = backdrop.querySelector('#devLaptop');
+  function setDevice(d){
+    device = d;
+    devPhoneBtn.classList.toggle('active', d==='phone');
+    devLaptopBtn.classList.toggle('active', d==='laptop');
+    offsetX = 0; offsetY = 0; // dimensions differ a lot between devices — start centered again
+    setDims(); draw();
+  }
+  devPhoneBtn.onclick = ()=> setDevice('phone');
+  devLaptopBtn.onclick = ()=> setDevice('laptop');
+
+  // Background source
+  const bgDefaultBtn = backdrop.querySelector('#bgDefault');
+  const bgUploadBtn = backdrop.querySelector('#bgUploadBtn');
+  const bgInput = backdrop.querySelector('#bgUploadInput');
+  bgUploadBtn.onclick = ()=> bgInput.click();
+  bgInput.onchange = ()=>{
+    const file = bgInput.files[0];
+    if(!file) return;
+    if(bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
+    bgObjectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{
+      bgImage = img;
+      bgDefaultBtn.classList.remove('active');
+      bgUploadBtn.classList.add('active');
+      draw();
+    };
+    img.src = bgObjectUrl;
+  };
+  bgDefaultBtn.onclick = ()=>{
+    if(bgObjectUrl){ URL.revokeObjectURL(bgObjectUrl); bgObjectUrl=null; }
+    bgImage = null;
+    bgDefaultBtn.classList.add('active');
+    bgUploadBtn.classList.remove('active');
+    draw();
+  };
+
+  // Translucency
+  const opacitySlider = backdrop.querySelector('#opacitySlider');
+  const opacityVal = backdrop.querySelector('#opacityVal');
+  opacitySlider.oninput = ()=>{
+    opacity = Number(opacitySlider.value)/100;
+    opacityVal.textContent = opacitySlider.value+'%';
+    draw();
+  };
+
+  // Drag to reposition — convert on-screen pixel movement to canvas-internal
+  // pixels, since the canvas is displayed smaller than its true export size.
+  let dragging=false, lastX=0, lastY=0;
+  canvas.addEventListener('pointerdown', e=>{
+    dragging = true; lastX=e.clientX; lastY=e.clientY;
+    canvas.style.cursor='grabbing';
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const f = canvas.width/canvas.clientWidth;
+    offsetX += (e.clientX-lastX)*f;
+    offsetY += (e.clientY-lastY)*f;
+    lastX=e.clientX; lastY=e.clientY;
+    draw();
+  });
+  const stopDrag = ()=>{ dragging=false; canvas.style.cursor='grab'; };
+  canvas.addEventListener('pointerup', stopDrag);
+  canvas.addEventListener('pointercancel', stopDrag);
+
+  backdrop.querySelector('#wpReset').onclick = ()=>{ offsetX=0; offsetY=0; draw(); };
+
+  // Per-class color editing — writes through the same shared blockColors
+  // store the live grid uses, so it's a single source of truth.
+  function renderColorList(){
+    const listEl = backdrop.querySelector('#wpColorList');
+    listEl.innerHTML = '';
+    if(!entries.length){
+      listEl.appendChild(el(`<span class="hint" style="margin:0;">No classes yet — add some in My Schedule first.</span>`));
+      return;
+    }
+    entries.forEach(entry=>{
+      const color = getBlockColor(memberId, entry.id, member?member.color:'#4169E1');
+      const chip = el(`<div class="chip" style="cursor:default;">
+        <button class="chip-dot" style="background:${color};" title="Change color"></button>
+        <span>${entry.code||'—'} ${entry.section||''}</span>
+      </div>`);
+      const dotBtn = chip.querySelector('.chip-dot');
+      dotBtn.onclick = (e)=>{
+        e.stopPropagation();
+        openColorPicker(dotBtn, PASTEL_COLORS, async (newColor)=>{
+          setBlockColor(memberId, entry.id, newColor);
+          await saveBlockColors();
+          dotBtn.style.background = newColor;
+          draw();
+        }, color);
+      };
+      listEl.appendChild(chip);
+    });
+  }
+
+  function closeModal(){
+    if(bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
+    backdrop.remove();
+    render(); // refresh the main grid in case any class colors were changed here
+  }
+  backdrop.querySelector('#wpClose').onclick = closeModal;
+
+  backdrop.querySelector('#wpDownload').onclick = async ()=>{
+    try{ await document.fonts.ready; }catch(e){}
+    draw();
+    canvas.toBlob(blob=>{
+      if(!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `schedule-wallpaper-${device}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    }, 'image/png');
+  };
+
+  setDims();
+  renderColorList();
+  draw();
 }
 
 boot();
