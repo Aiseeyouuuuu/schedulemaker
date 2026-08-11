@@ -1922,7 +1922,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const yy = y+gap/2, hh = h-gap;
 
       const color = getBlockColor(memberId, b.entry.id, member?member.color:'#4169E1');
-      const textColor = style==='grid' ? inkColor : getContrastTextColor(color);
+      const textColor = style==='grid' ? gridPillColor : getContrastTextColor(color);
       const surname = surnameOf(b.entry.instructor);
 
       ctx.fillStyle = color;
