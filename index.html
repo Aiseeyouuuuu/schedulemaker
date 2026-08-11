@@ -1565,7 +1565,7 @@ function renderCombinedTab(){
 }
 
 /* ============================= BOARD (weekly grid) ============================= */
-const BOARD_START = 7*60;   // 7:00 AM
+const BOARD_START = 7*60+30; // 7:30 AM — one row of headroom above the first labeled hour (8:00)
 const BOARD_END = 21*60;    // 9:00 PM
 const ROW_H = 48;           // px per 30 min
 
@@ -1610,9 +1610,10 @@ function renderBoard(groups, allowDelete){
   // Positioned with the exact same top formula the gridlines below use
   // (r*ROW_H, same r), so a label lines up pixel-for-pixel with its actual
   // gridline instead of drifting from an independent flex-stacked layout.
-  // 7:00 AM (BOARD_START) is intentionally left unlabeled.
-  for(let t=BOARD_START; t<BOARD_END; t+=60){
-    if(t===BOARD_START) continue;
+  // BOARD_START itself (7:30) is a half-hour and stays unlabeled — labels
+  // always land on the whole hour (8:00, 9:00…), so the loop starts at the
+  // next whole hour rather than at BOARD_START.
+  for(let t=Math.ceil(BOARD_START/60)*60; t<BOARD_END; t+=60){
     const topPx = ((t-BOARD_START)/30)*ROW_H;
     timeCol.appendChild(el(`<div class="time-cell" style="top:${topPx}px;">${minutesToLabel(t)}</div>`));
   }
