@@ -1797,48 +1797,59 @@ function computeTableLayout(entries, tableW, scale, heightScale=1){
 //               gutter label; empty hours are left blank.
 // The table itself has no background fill — it sits directly on the
 // wallpaper/background behind it, no white card.
-function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale){
+function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale, tableColor, textScale){
   const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH} = layout;
   const gridX = baseX+pad+timeGutterW;
   const bodyY = baseY+pad+headerH;
   const isPillHeader = style==='bold' || style==='grid';
+  // tableColor drives every non-class-block ink color (headers, divider
+  // line, hour labels, bold-style pill fill) — a single user-picked color
+  // instead of the fixed theme navy, so "table color" is fully custom.
+  const inkColor = tableColor || getCssVar('--navy-text') || '#2A4492';
+  const inkOnInk = getContrastTextColor(inkColor);
+  const mutedColor = lightenHex(inkColor, 0.42);
+  // textScale is an independent multiplier on font *sizes* only — layout
+  // metrics (padding, row height, column width) stay driven by `scale`
+  // alone, so cranking text size up/down doesn't resize the table shape.
+  const ts = textScale || 1;
 
   ctx.save();
   ctx.globalAlpha = opacity;
 
   if(isPillHeader){
     // Day header row: solid pill per day, uppercase label. 'bold' uses the
-    // theme navy; 'grid' uses a muted gray to match a printed-timetable look.
+    // user's table color; 'grid' uses a muted gray to match a printed-
+    // timetable look.
     const pillH = headerH*0.62;
     const pillY = baseY+pad+(headerH-pillH)/2;
-    ctx.font = `700 ${13*scale}px 'Poppins', sans-serif`;
+    ctx.font = `700 ${13*ts*scale}px 'Poppins', sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx0 = gridX + i*dayColW + 3*scale;
       const pw = dayColW - 6*scale;
-      ctx.fillStyle = style==='grid' ? 'rgba(95,95,115,0.6)' : (getCssVar('--navy-text') || '#2A4492');
+      ctx.fillStyle = style==='grid' ? 'rgba(95,95,115,0.6)' : inkColor;
       roundRectPath(ctx, cx0, pillY, pw, pillH, 10*scale);
       ctx.fill();
-      ctx.fillStyle = style==='grid' ? '#FFFFFF' : (getCssVar('--navy-ink') || '#FFFFFF');
+      ctx.fillStyle = style==='grid' ? '#FFFFFF' : inkOnInk;
       ctx.fillText(DAY_LABEL[day].toUpperCase(), cx0+pw/2, pillY+pillH/2);
     });
     if(style==='grid'){
-      ctx.font = `700 ${10.5*scale}px 'Poppins', sans-serif`;
+      ctx.font = `700 ${10.5*ts*scale}px 'Poppins', sans-serif`;
       ctx.fillStyle = 'rgba(95,95,115,0.7)';
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillText('TIME', baseX+pad, baseY+pad+headerH/2);
     }
   } else {
     // 'minimal' and 'pastel': plain centered label. Minimal adds a divider rule.
-    ctx.font = `700 ${(style==='pastel'?15:16)*scale}px 'Poppins', sans-serif`;
-    ctx.fillStyle = getCssVar('--navy-text') || '#2A4492';
+    ctx.font = `700 ${(style==='pastel'?15:16)*ts*scale}px 'Poppins', sans-serif`;
+    ctx.fillStyle = inkColor;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx = gridX + i*dayColW + dayColW/2;
       ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
     });
     if(style==='minimal'){
-      ctx.strokeStyle = getCssVar('--navy') || '#4169E1';
+      ctx.strokeStyle = inkColor;
       ctx.lineWidth = 2*scale;
       ctx.beginPath();
       ctx.moveTo(baseX+pad, bodyY);
@@ -1850,15 +1861,23 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   // Hour labels only — no rule lines across the body, so empty time stays
   // visually blank/clean instead of a grid of lines through nothing.
   // Anchored to 'bottom' with a small upward offset so each label sits just
-  // above its gridline instead of straddling it — otherwise the very first
-  // label (7:00 AM) lands centered right on top of the minimal style's
-  // header divider line.
-  ctx.font = `${isPillHeader?'600 ':''}${11*scale}px 'Poppins', sans-serif`;
-  ctx.fillStyle = getCssVar('--muted') || '#6B7290';
-  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+  // above its gridline instead of straddling it. The 'minimal' style's
+  // header divider sits exactly on the first gridline (7:00 AM) though, so
+  // that first label alone flips to sit BELOW the line with a clear gap
+  // instead of overlapping it.
+  ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
+  ctx.fillStyle = mutedColor;
+  ctx.textAlign = 'right';
   for(let t=rangeStart; t<=rangeEnd; t+=60){
     const y = bodyY + ((t-rangeStart)/30)*rowH;
-    ctx.fillText(style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t), gridX-8*scale, y-4*scale);
+    const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
+    if(style==='minimal' && t===rangeStart){
+      ctx.textBaseline = 'top';
+      ctx.fillText(label, gridX-8*scale, y+6*scale);
+    } else {
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label, gridX-8*scale, y-4*scale);
+    }
   }
 
   // Class blocks — same flatten + lane-pack approach as the live board
@@ -1901,16 +1920,16 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const padX = (isPillHeader?9:7)*scale;
       const tx = x+padX, maxTextW = Math.max(w-padX*2, 4);
       let ty = yy+(isPillHeader?8:6)*scale;
-      const lineH = (isPillHeader?13.5:12.5)*scale;
+      const lineH = (isPillHeader?13.5:12.5)*ts*scale;
 
       // Four separate lines, space permitting: code+section, time, location,
       // professor — same fields as the live board, one per line.
       ctx.fillStyle = textColor;
-      ctx.font = `700 ${(isPillHeader?12.5:11.5)*scale}px 'Poppins', sans-serif`;
+      ctx.font = `700 ${(isPillHeader?12.5:11.5)*ts*scale}px 'Poppins', sans-serif`;
       ctx.fillText(truncateText(ctx, `${b.entry.code||'—'} ${b.entry.section||''}`.trim(), maxTextW), tx, ty);
-      ty += (isPillHeader?16:14.5)*scale;
+      ty += (isPillHeader?16:14.5)*ts*scale;
 
-      ctx.font = `${(isPillHeader?10.5:9.5)*scale}px 'Poppins', sans-serif`;
+      ctx.font = `${(isPillHeader?10.5:9.5)*ts*scale}px 'Poppins', sans-serif`;
       ctx.globalAlpha = opacity*(isPillHeader?0.9:0.85);
       const timeLine = `${minutesToLabel(b.start)} – ${minutesToLabel(b.end)}`;
       if(hh > lineH*1.6){ ctx.fillText(truncateText(ctx, timeLine, maxTextW), tx, ty); ty += lineH; }
@@ -1940,6 +1959,8 @@ function openWallpaperBuilder(memberId){
   let offsetX = 0, offsetY = 0;
   let sizeWPct = 100;       // table width stretch slider, 60–160%
   let sizeHPct = 100;       // table height stretch slider, 60–160%
+  let textScale = 1;        // font-size slider, 70–160%, independent of table shape
+  let tableColor = '#2A4492'; // header/divider/hour-label ink color, user-customizable
 
   const backdrop = el(`
     <div class="modal-backdrop" style="align-items:flex-start;padding:24px 12px;overflow:auto;">
@@ -2000,11 +2021,25 @@ function openWallpaperBuilder(memberId){
         </div>
 
         <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;width:110px;">Text size</span>
+          <input type="range" id="textSizeSlider" min="70" max="160" value="100" style="flex:1;"/>
+          <span class="hint" id="textSizeVal" style="margin:0;width:38px;text-align:right;">100%</span>
+        </div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
           <span class="hint" style="margin:0;">Style:</span>
           <button class="chip active" id="styleMinimal">Minimal</button>
           <button class="chip" id="styleBold">Bold</button>
           <button class="chip" id="stylePastel">Pastel</button>
           <button class="chip" id="styleGrid">Grid</button>
+        </div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;">Table color:</span>
+          <label class="swatch-dot" title="Custom color" style="width:20px;height:20px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+            <input type="color" id="tableColorInput" value="#2A4492" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />
+          </label>
+          <span class="hint" style="margin:0;">headers, hour labels, and lines — any color/shade</span>
         </div>
 
         <p class="hint" id="dragHint" style="margin:12px 0 6px;">Drag the schedule below to reposition it on the wallpaper.</p>
@@ -2042,13 +2077,19 @@ function openWallpaperBuilder(memberId){
       if(bgImage){
         drawImageCover(ctx, bgImage, 0, 0, d.w, d.h);
       } else if(bgGradient){
+        // Gradient runs from the exact chosen color to a mild variant of
+        // the SAME color (darker if it's light, lighter if it's dark) —
+        // enough to read as a gradient without washing the color out.
+        const isLight = getContrastTextColor(bgHex) === '#1C2430';
         const grad = ctx.createLinearGradient(0,0,d.w,d.h);
-        grad.addColorStop(0, lightenHex(bgHex, 0.97));
-        grad.addColorStop(1, lightenHex(bgHex, 0.78));
+        grad.addColorStop(0, bgHex);
+        grad.addColorStop(1, isLight ? darkenHex(bgHex,0.22) : lightenHex(bgHex,0.22));
         ctx.fillStyle = grad;
         ctx.fillRect(0,0,d.w,d.h);
       } else {
-        ctx.fillStyle = lightenHex(bgHex, 0.92);
+        // Exact chosen color/shade, no forced lightening — a user who
+        // picks a deep navy or a bright red gets that color as-is.
+        ctx.fillStyle = bgHex;
         ctx.fillRect(0,0,d.w,d.h);
       }
       // Font/padding scale tracks canvas resolution only, independent of the
@@ -2059,7 +2100,7 @@ function openWallpaperBuilder(memberId){
       const layout = computeTableLayout(entries, tableW, fontScale, hScale);
       const baseX = (d.w-tableW)/2 + offsetX;
       const baseY = (d.h-layout.tableH)/2 + offsetY;
-      paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, fontScale);
+      paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, fontScale, tableColor, textScale);
     } else {
       // Image mode: canvas is sized to exactly fit the table — no device
       // frame, no background photo, no drag. Width/height stretch sliders
@@ -2071,7 +2112,7 @@ function openWallpaperBuilder(memberId){
       canvas.width = tableW + margin*2;
       canvas.height = layout.tableH + margin*2;
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      paintTable(ctx, layout, margin, margin, tableW, entries, memberId, member, 1, style, fontScale);
+      paintTable(ctx, layout, margin, margin, tableW, entries, memberId, member, 1, style, fontScale, tableColor, textScale);
     }
   }
 
@@ -2154,14 +2195,15 @@ function openWallpaperBuilder(memberId){
   const bgCustomInput = backdrop.querySelector('#bgCustomInput');
   const bgUploadBtn = backdrop.querySelector('#bgUploadBtn');
   const bgInput = backdrop.querySelector('#bgUploadInput');
+  const tableColorInput = backdrop.querySelector('#tableColorInput');
   const WALLPAPER_BG_PRESETS = [{name:'White', hex:'#FFFFFF'}, ...THEME_PRESETS];
 
-  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient}, false)); }
+  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, tableColor}, false)); }
   function renderBgSwatches(){
     bgSwatches.innerHTML = '';
     WALLPAPER_BG_PRESETS.forEach(p=>{
       const active = !bgImage && bgHex===p.hex;
-      const dot = el(`<button class="swatch-dot" title="${p.name}" style="width:20px;height:20px;background:${lightenHex(p.hex,0.92)};${active?'outline:2px solid var(--navy-text);outline-offset:1px;':''}"></button>`);
+      const dot = el(`<button class="swatch-dot" title="${p.name}" style="width:20px;height:20px;background:${p.hex};${active?'outline:2px solid var(--navy-text);outline-offset:1px;':''}"></button>`);
       dot.onclick = ()=>{
         bgHex = p.hex;
         if(bgObjectUrl){ URL.revokeObjectURL(bgObjectUrl); bgObjectUrl=null; }
@@ -2181,6 +2223,10 @@ function openWallpaperBuilder(memberId){
       bgGradient = !!saved.gradient;
       bgGradToggle.checked = bgGradient;
       bgCustomInput.value = bgHex;
+      if(saved.tableColor && /^#[0-9A-Fa-f]{6}$/.test(saved.tableColor)){
+        tableColor = saved.tableColor;
+        tableColorInput.value = tableColor;
+      }
       renderBgSwatches();
       draw();
     }
@@ -2216,6 +2262,12 @@ function openWallpaperBuilder(memberId){
   };
   renderBgSwatches();
 
+  tableColorInput.onchange = ()=>{
+    tableColor = tableColorInput.value;
+    persistBgPref();
+    draw();
+  };
+
   // Translucency
   const opacitySlider = backdrop.querySelector('#opacitySlider');
   const opacityVal = backdrop.querySelector('#opacityVal');
@@ -2238,6 +2290,16 @@ function openWallpaperBuilder(memberId){
   sizeHSlider.oninput = ()=>{
     sizeHPct = Number(sizeHSlider.value);
     sizeHVal.textContent = sizeHPct+'%';
+    draw();
+  };
+
+  // Font size — independent of the width/height stretch sliders above, so
+  // text can be made bigger/smaller without changing the table's shape.
+  const textSizeSlider = backdrop.querySelector('#textSizeSlider');
+  const textSizeVal = backdrop.querySelector('#textSizeVal');
+  textSizeSlider.oninput = ()=>{
+    textScale = Number(textSizeSlider.value)/100;
+    textSizeVal.textContent = textSizeSlider.value+'%';
     draw();
   };
 
