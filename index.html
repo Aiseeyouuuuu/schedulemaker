@@ -1862,22 +1862,17 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   // visually blank/clean instead of a grid of lines through nothing.
   // Anchored to 'bottom' with a small upward offset so each label sits just
   // above its gridline instead of straddling it. The 'minimal' style's
-  // header divider sits exactly on the first gridline (7:00 AM) though, so
-  // that first label alone flips to sit BELOW the line with a clear gap
-  // instead of overlapping it.
+  // header divider sits exactly on the first gridline (7:00 AM), so that
+  // label is skipped entirely rather than drawn on/near the line — every
+  // other label (8:00 AM onward) keeps its original position untouched.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
   ctx.fillStyle = mutedColor;
-  ctx.textAlign = 'right';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
   for(let t=rangeStart; t<=rangeEnd; t+=60){
+    if(style==='minimal' && t===rangeStart) continue;
     const y = bodyY + ((t-rangeStart)/30)*rowH;
     const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
-    if(style==='minimal' && t===rangeStart){
-      ctx.textBaseline = 'top';
-      ctx.fillText(label, gridX-8*scale, y+6*scale);
-    } else {
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(label, gridX-8*scale, y-4*scale);
-    }
+    ctx.fillText(label, gridX-8*scale, y-4*scale);
   }
 
   // Class blocks — same flatten + lane-pack approach as the live board
@@ -2202,10 +2197,11 @@ function openWallpaperBuilder(memberId){
   function renderBgSwatches(){
     bgSwatches.innerHTML = '';
     WALLPAPER_BG_PRESETS.forEach(p=>{
-      const active = !bgImage && bgHex===p.hex;
-      const dot = el(`<button class="swatch-dot" title="${p.name}" style="width:20px;height:20px;background:${p.hex};${active?'outline:2px solid var(--navy-text);outline-offset:1px;':''}"></button>`);
+      const pastel = lightenHex(p.hex, 0.92);
+      const active = !bgImage && bgHex===pastel;
+      const dot = el(`<button class="swatch-dot" title="${p.name}" style="width:20px;height:20px;background:${pastel};${active?'outline:2px solid var(--navy-text);outline-offset:1px;':''}"></button>`);
       dot.onclick = ()=>{
-        bgHex = p.hex;
+        bgHex = pastel;
         if(bgObjectUrl){ URL.revokeObjectURL(bgObjectUrl); bgObjectUrl=null; }
         bgImage = null;
         bgUploadBtn.classList.remove('active');
