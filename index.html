@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#FFFFFF;
+    --bg:#F0F3FD;
     --surface:#FFFFFF;
     --ink:#2A2E3D;
     --navy:#4169E1;
@@ -613,6 +613,7 @@ async function applyTheme(hex, persist){
   root.setProperty('--navy-text', darkenHex(hex, 0.35));
   root.setProperty('--navy-ink', getContrastTextColor(hex));
   root.setProperty('--navy-rgb', `${rgb.r},${rgb.g},${rgb.b}`);
+  root.setProperty('--bg', lightenHex(hex, 0.92));
   root.setProperty('--line', lightenHex(hex, 0.8));
   state.themeHex = hex;
   if(persist) await queueSave(()=> sSet('theme', hex, false));
@@ -620,69 +621,6 @@ async function applyTheme(hex, persist){
 async function loadTheme(){
   const saved = await sGet('theme', false);
   await applyTheme((saved && /^#[0-9A-Fa-f]{6}$/.test(saved)) ? saved : DEFAULT_THEME, false);
-}
-
-/* ============================= PAGE BACKGROUND ============================= */
-// Independent from the accent theme above — this only controls the page's
-// backdrop. Stored as a seed hex (+ whether it's rendered flat or as a
-// gradient); every actual color is derived from the seed the same way the
-// accent theme derives its background tint, so any pick — preset or from
-// the color wheel — stays a soft, readable pastel rather than a jarring
-// full-saturation fill. White is the default.
-const DEFAULT_BG_HEX = '#FFFFFF';
-function bgCss(hex, gradient){
-  return gradient
-    ? `linear-gradient(135deg, ${lightenHex(hex,0.97)}, ${lightenHex(hex,0.78)})`
-    : lightenHex(hex, 0.92);
-}
-async function applyBackground(hex, gradient, persist){
-  if(!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
-  const root = document.documentElement.style;
-  // Keep --bg a single flat color (things like the wallpaper-export canvas
-  // read it as a plain CSS color), and paint the possibly-gradient version
-  // straight onto the body.
-  root.setProperty('--bg', lightenHex(hex, 0.92));
-  document.body.style.background = bgCss(hex, gradient);
-  state.bgHex = hex;
-  state.bgGradient = gradient;
-  if(persist) await queueSave(()=> sSet('background', {hex, gradient}, false));
-}
-async function loadBackground(){
-  const saved = await sGet('background', false);
-  const hex = (saved && /^#[0-9A-Fa-f]{6}$/.test(saved.hex)) ? saved.hex : DEFAULT_BG_HEX;
-  const gradient = !!(saved && saved.gradient);
-  await applyBackground(hex, gradient, false);
-}
-
-function openBackgroundPicker(anchorEl){
-  document.querySelectorAll('.swatch-popover').forEach(p=>p.remove());
-  const rect = anchorEl.getBoundingClientRect();
-  const popover = el(`<div class="swatch-popover" style="top:${rect.bottom+4}px;right:${window.innerWidth-rect.right}px;left:auto;grid-template-columns:repeat(4,1fr);width:210px;"></div>`);
-  const presets = [{name:'White', hex:DEFAULT_BG_HEX}, ...THEME_PRESETS];
-  presets.forEach(p=>{
-    const isActive = !state.bgGradient && state.bgHex===p.hex;
-    const dot = el(`<button class="swatch-dot" title="${p.name}" style="background:${lightenHex(p.hex,0.92)};${isActive?'outline:2px solid var(--navy-text);outline-offset:1px;':''}"></button>`);
-    dot.onclick = (e)=>{ e.stopPropagation(); popover.remove(); applyBackground(p.hex, state.bgGradient, true); };
-    popover.appendChild(dot);
-  });
-  const gradWrap = el(`<label style="grid-column:1/-1;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:6px;cursor:pointer;"><input type="checkbox" id="bgGradToggle" ${state.bgGradient?'checked':''}/> Gradient</label>`);
-  gradWrap.querySelector('input').onchange = (e)=>{ e.stopPropagation(); applyBackground(state.bgHex||DEFAULT_BG_HEX, e.target.checked, true); };
-  popover.appendChild(gradWrap);
-  const customWrap = el(`<label class="swatch-dot" title="Custom color" style="grid-column:1/-1;width:100%;height:26px;border-radius:8px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;margin-top:4px;"></label>`);
-  const customInput = el(`<input type="color" value="${state.bgHex||DEFAULT_BG_HEX}" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />`);
-  customWrap.appendChild(customInput);
-  customInput.onchange = (e)=>{ popover.remove(); applyBackground(e.target.value, state.bgGradient, true); };
-  popover.appendChild(customWrap);
-  document.body.appendChild(popover);
-  setTimeout(()=>{
-    const closeHandler = (ev)=>{
-      if(!popover.contains(ev.target) && ev.target!==anchorEl){
-        popover.remove();
-        document.removeEventListener('click', closeHandler);
-      }
-    };
-    document.addEventListener('click', closeHandler);
-  }, 0);
 }
 
 /* ============================= FONT SIZE ============================= */
@@ -783,7 +721,6 @@ async function boot(){
   if(window.__skedBooted) return;
   window.__skedBooted = true;
   await loadTheme();
-  await loadBackground();
   await loadFontScale();
   await loadAll();
   if(!state.meId){ renderNamePrompt(); return; }
@@ -1034,8 +971,6 @@ function renderHeader(){
       <div class="row" style="align-items:center;gap:14px;">
         <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:calc(14px * var(--font-scale));">${state.isAdmin?'🔓':'🔒'}</button>
         <button class="edit-name-btn" id="fontBtn" title="Adjust font size" style="font-size:calc(13px * var(--font-scale));font-weight:700;">Aa</button>
-        <button class="swatch-btn" id="bgBtn" title="Change background"
-          style="position:static;width:22px;height:22px;background:${bgCss(state.bgHex||DEFAULT_BG_HEX, state.bgGradient)};border:1.5px solid rgba(0,0,0,0.15);"></button>
         <button class="swatch-btn" id="themeBtn" title="Change theme color"
           style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
         <div class="whoami">signed in as<br/><b>${me?me.name:''}</b> <button id="editNameBtn" class="edit-name-btn" title="Edit your name">✎</button></div>
@@ -1043,8 +978,6 @@ function renderHeader(){
     </div>`);
   const themeBtn = header.querySelector('#themeBtn');
   themeBtn.onclick = (e)=>{ e.stopPropagation(); openThemePicker(themeBtn); };
-  const bgBtn = header.querySelector('#bgBtn');
-  bgBtn.onclick = (e)=>{ e.stopPropagation(); openBackgroundPicker(bgBtn); };
   const fontBtn = header.querySelector('#fontBtn');
   fontBtn.onclick = (e)=>{ e.stopPropagation(); openFontSizePicker(fontBtn); };
   header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
@@ -1916,12 +1849,16 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
 
   // Hour labels only — no rule lines across the body, so empty time stays
   // visually blank/clean instead of a grid of lines through nothing.
+  // Anchored to 'bottom' with a small upward offset so each label sits just
+  // above its gridline instead of straddling it — otherwise the very first
+  // label (7:00 AM) lands centered right on top of the minimal style's
+  // header divider line.
   ctx.font = `${isPillHeader?'600 ':''}${11*scale}px 'Poppins', sans-serif`;
   ctx.fillStyle = getCssVar('--muted') || '#6B7290';
-  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
   for(let t=rangeStart; t<=rangeEnd; t+=60){
     const y = bodyY + ((t-rangeStart)/30)*rowH;
-    ctx.fillText(style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t), gridX-8*scale, y);
+    ctx.fillText(style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t), gridX-8*scale, y-4*scale);
   }
 
   // Class blocks — same flatten + lane-pack approach as the live board
@@ -2031,9 +1968,15 @@ function openWallpaperBuilder(memberId){
           <span class="hint" style="margin:0;">px</span>
         </div>
 
-        <div id="bgRow" class="row" style="margin-top:10px;align-items:center;">
+        <div id="bgRow" class="row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
           <span class="hint" style="margin:0;">Background:</span>
-          <button class="chip active" id="bgDefault">Theme background</button>
+          <div id="bgSwatches" class="row" style="gap:6px;"></div>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;">
+            <input type="checkbox" id="bgGradToggle"/> Gradient
+          </label>
+          <label class="swatch-dot" title="Custom color" style="width:20px;height:20px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+            <input type="color" id="bgCustomInput" value="#FFFFFF" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />
+          </label>
           <button class="chip" id="bgUploadBtn">Upload a photo…</button>
           <input type="file" id="bgUploadInput" accept="image/*" style="display:none;"/>
         </div>
@@ -2098,11 +2041,14 @@ function openWallpaperBuilder(memberId){
       ctx.clearRect(0,0,d.w,d.h);
       if(bgImage){
         drawImageCover(ctx, bgImage, 0, 0, d.w, d.h);
-      } else {
+      } else if(bgGradient){
         const grad = ctx.createLinearGradient(0,0,d.w,d.h);
-        grad.addColorStop(0, getCssVar('--bg') || '#FAF6FB');
-        grad.addColorStop(1, getCssVar('--navy-2') || '#ECE3F5');
+        grad.addColorStop(0, lightenHex(bgHex, 0.97));
+        grad.addColorStop(1, lightenHex(bgHex, 0.78));
         ctx.fillStyle = grad;
+        ctx.fillRect(0,0,d.w,d.h);
+      } else {
+        ctx.fillStyle = lightenHex(bgHex, 0.92);
         ctx.fillRect(0,0,d.w,d.h);
       }
       // Font/padding scale tracks canvas resolution only, independent of the
@@ -2199,10 +2145,60 @@ function openWallpaperBuilder(memberId){
   stylePastelBtn.onclick = ()=> setStyle('pastel');
   styleGridBtn.onclick = ()=> setStyle('grid');
 
-  // Background source
-  const bgDefaultBtn = backdrop.querySelector('#bgDefault');
+  // Background source — a color/gradient (from a preset swatch or the
+  // custom color wheel) or an uploaded photo. White is the default; the
+  // old theme-tinted look lives on as the "Pastel Yellow" preset.
+  let bgHex = '#FFFFFF', bgGradient = false;
+  const bgSwatches = backdrop.querySelector('#bgSwatches');
+  const bgGradToggle = backdrop.querySelector('#bgGradToggle');
+  const bgCustomInput = backdrop.querySelector('#bgCustomInput');
   const bgUploadBtn = backdrop.querySelector('#bgUploadBtn');
   const bgInput = backdrop.querySelector('#bgUploadInput');
+  const WALLPAPER_BG_PRESETS = [{name:'White', hex:'#FFFFFF'}, ...THEME_PRESETS];
+
+  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient}, false)); }
+  function renderBgSwatches(){
+    bgSwatches.innerHTML = '';
+    WALLPAPER_BG_PRESETS.forEach(p=>{
+      const active = !bgImage && bgHex===p.hex;
+      const dot = el(`<button class="swatch-dot" title="${p.name}" style="width:20px;height:20px;background:${lightenHex(p.hex,0.92)};${active?'outline:2px solid var(--navy-text);outline-offset:1px;':''}"></button>`);
+      dot.onclick = ()=>{
+        bgHex = p.hex;
+        if(bgObjectUrl){ URL.revokeObjectURL(bgObjectUrl); bgObjectUrl=null; }
+        bgImage = null;
+        bgUploadBtn.classList.remove('active');
+        persistBgPref();
+        renderBgSwatches();
+        draw();
+      };
+      bgSwatches.appendChild(dot);
+    });
+  }
+  (async ()=>{
+    const saved = await sGet('wallpaperBg', false);
+    if(saved && /^#[0-9A-Fa-f]{6}$/.test(saved.hex)){
+      bgHex = saved.hex;
+      bgGradient = !!saved.gradient;
+      bgGradToggle.checked = bgGradient;
+      bgCustomInput.value = bgHex;
+      renderBgSwatches();
+      draw();
+    }
+  })();
+  bgGradToggle.onchange = ()=>{
+    bgGradient = bgGradToggle.checked;
+    persistBgPref();
+    draw();
+  };
+  bgCustomInput.onchange = ()=>{
+    bgHex = bgCustomInput.value;
+    if(bgObjectUrl){ URL.revokeObjectURL(bgObjectUrl); bgObjectUrl=null; }
+    bgImage = null;
+    bgUploadBtn.classList.remove('active');
+    persistBgPref();
+    renderBgSwatches();
+    draw();
+  };
   bgUploadBtn.onclick = ()=> bgInput.click();
   bgInput.onchange = ()=>{
     const file = bgInput.files[0];
@@ -2212,19 +2208,13 @@ function openWallpaperBuilder(memberId){
     const img = new Image();
     img.onload = ()=>{
       bgImage = img;
-      bgDefaultBtn.classList.remove('active');
       bgUploadBtn.classList.add('active');
+      renderBgSwatches();
       draw();
     };
     img.src = bgObjectUrl;
   };
-  bgDefaultBtn.onclick = ()=>{
-    if(bgObjectUrl){ URL.revokeObjectURL(bgObjectUrl); bgObjectUrl=null; }
-    bgImage = null;
-    bgDefaultBtn.classList.add('active');
-    bgUploadBtn.classList.remove('active');
-    draw();
-  };
+  renderBgSwatches();
 
   // Translucency
   const opacitySlider = backdrop.querySelector('#opacitySlider');
