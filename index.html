@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#F0F3FD;
+    --bg:#FFFFFF;
     --surface:#FFFFFF;
     --ink:#2A2E3D;
     --navy:#4169E1;
@@ -22,6 +22,7 @@
     --muted:#6B7290;
     --danger:#C24F6A;
     --radius:10px;
+    --font-scale:1;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Poppins',sans-serif;-webkit-font-smoothing:antialiased;}
@@ -29,20 +30,20 @@
 
   /* ---- header ---- */
   .app-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px;flex-wrap:wrap;}
-  .wordmark{font-family:'Poppins',sans-serif;font-weight:700;font-size:34px;color:var(--navy-text);letter-spacing:-0.5px;}
-  .tagline{font-size:13px;color:var(--muted);margin-top:2px;font-family:'Poppins',sans-serif;letter-spacing:0.2px;}
-  .whoami{font-size:13px;color:var(--muted);text-align:right;}
+  .wordmark{font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(34px * var(--font-scale));color:var(--navy-text);letter-spacing:-0.5px;}
+  .tagline{font-size:calc(13px * var(--font-scale));color:var(--muted);margin-top:2px;font-family:'Poppins',sans-serif;letter-spacing:0.2px;}
+  .whoami{font-size:calc(13px * var(--font-scale));color:var(--muted);text-align:right;}
   .whoami b{color:var(--navy-text);font-family:'Poppins',sans-serif;}
   .edit-name-btn{
     background:transparent;border:none;color:var(--muted);cursor:pointer;
-    font-size:12px;padding:0 2px;border-radius:4px;vertical-align:middle;
+    font-size:calc(12px * var(--font-scale));padding:0 2px;border-radius:4px;vertical-align:middle;
   }
   .edit-name-btn:hover{color:var(--navy-text);opacity:1;}
 
   /* ---- tabs ---- */
   .tabs{display:flex;gap:6px;border-bottom:2px solid var(--navy-text);margin-bottom:20px;}
   .tab-btn{
-    font-family:'Poppins',sans-serif;font-weight:600;font-size:14px;
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(14px * var(--font-scale));
     background:var(--line);color:var(--muted);border:none;
     padding:10px 18px;border-radius:10px 10px 0 0;cursor:pointer;
     transform:translateY(2px);transition:transform .15s, background .15s, color .15s;
@@ -52,28 +53,28 @@
 
   /* ---- panels / cards ---- */
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:18px;}
-  .panel h3{font-family:'Poppins',sans-serif;font-size:15px;margin:0 0 12px;color:var(--navy-text);}
-  .hint{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5;}
+  .panel h3{font-family:'Poppins',sans-serif;font-size:calc(15px * var(--font-scale));margin:0 0 12px;color:var(--navy-text);}
+  .hint{font-size:calc(12.5px * var(--font-scale));color:var(--muted);margin-top:6px;line-height:1.5;}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 
   textarea{
-    width:100%;min-height:90px;font-family:'Poppins',sans-serif;font-size:12.5px;
+    width:100%;min-height:90px;font-family:'Poppins',sans-serif;font-size:calc(12.5px * var(--font-scale));
     border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical;background:#FAFBFA;
   }
   input[type=text], input[type=time], input[type=password], select{
-    font-family:'Poppins',sans-serif;font-size:13.5px;border:1px solid var(--line);
+    font-family:'Poppins',sans-serif;font-size:calc(13.5px * var(--font-scale));border:1px solid var(--line);
     border-radius:8px;padding:8px 10px;background:#fff;
   }
   button{
-    font-family:'Poppins',sans-serif;font-weight:600;font-size:13px;
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(13px * var(--font-scale));
     border:none;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--navy);color:var(--navy-ink);
     transition:opacity .15s;
   }
   button:hover{opacity:.88;}
   button.ghost{background:transparent;color:var(--navy-text);border:1px solid var(--navy-text);}
   button.gold{background:var(--gold);color:var(--gold-ink);}
-  button.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);padding:4px 8px;font-size:12px;}
-  button.small{padding:6px 10px;font-size:12px;}
+  button.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);padding:4px 8px;font-size:calc(12px * var(--font-scale));}
+  button.small{padding:6px 10px;font-size:calc(12px * var(--font-scale));}
 
   /* ---- search + dropdown hybrid ---- */
   .combo{position:relative;flex:1;min-width:240px;}
@@ -84,37 +85,37 @@
     box-shadow:0 8px 20px rgba(0,0,0,0.1);z-index:20;display:none;
   }
   .combo-list.open{display:block;}
-  .combo-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #F0F1EF;font-size:13px;}
+  .combo-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #F0F1EF;font-size:calc(13px * var(--font-scale));}
   .combo-item:last-child{border-bottom:none;}
   .combo-item:hover{background:#F4F6F4;}
   .combo-item .code{font-family:'Poppins',sans-serif;font-weight:600;color:var(--navy-text);margin-right:8px;}
-  .combo-item .meta{color:var(--muted);font-size:11.5px;}
-  .combo-empty{padding:12px;color:var(--muted);font-size:12.5px;}
+  .combo-item .meta{color:var(--muted);font-size:calc(11.5px * var(--font-scale));}
+  .combo-empty{padding:12px;color:var(--muted);font-size:calc(12.5px * var(--font-scale));}
   .clash-tag{
-    flex:none;font-family:'Poppins',sans-serif;font-weight:600;font-size:10.5px;
+    flex:none;font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(10.5px * var(--font-scale));
     color:var(--danger);border:1px solid var(--danger);border-radius:20px;padding:2px 8px;
     white-space:nowrap;
   }
 
   /* ---- staging table ---- */
-  table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:12.5px;}
-  table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
+  table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:calc(12.5px * var(--font-scale));}
+  table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:calc(11px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
   table.stage td{padding:4px 6px;border-bottom:1px solid #F0F1EF;}
-  table.stage input{width:100%;border:1px solid transparent;background:transparent;padding:4px 5px;font-size:12.5px;font-family:'Poppins',sans-serif;}
+  table.stage input{width:100%;border:1px solid transparent;background:transparent;padding:4px 5px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;}
   table.stage input:focus{border-color:var(--line);background:#fff;}
   table.stage tr:hover td{background:#FAFBF9;}
 
   /* ---- chips ---- */
   .chip{
     display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;
-    border:1px solid var(--line);background:#fff;font-size:12.5px;user-select:none;cursor:pointer;
+    border:1px solid var(--line);background:#fff;font-size:calc(12.5px * var(--font-scale));user-select:none;cursor:pointer;
     color:var(--ink);
   }
   .chip.active{border-color:var(--navy-text);background:var(--navy);color:var(--navy-ink);}
   .chip .dot{width:9px;height:9px;border-radius:50%;flex:none;}
   .chip .x{margin-left:2px;opacity:.6;font-weight:700;cursor:pointer;}
   .chip .x:hover{opacity:1;}
-  .chip .rename-group{margin-left:6px;opacity:.6;font-size:11px;cursor:pointer;}
+  .chip .rename-group{margin-left:6px;opacity:.6;font-size:calc(11px * var(--font-scale));cursor:pointer;}
   .chip .rename-group:hover{opacity:1;}
   .chip-label{cursor:pointer;}
   .chip-dot{
@@ -126,28 +127,28 @@
   .board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
   .board-head{display:grid;grid-template-columns:64px repeat(6,1fr);border-bottom:2px solid var(--navy-text);}
   .board-head div{
-    font-family:'Poppins',sans-serif;font-weight:600;font-size:12px;color:var(--navy-text);
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(12px * var(--font-scale));color:var(--navy-text);
     padding:10px 6px;text-align:center;border-left:1px solid var(--line);
   }
   .board-head div:first-child{border-left:none;}
   .board-body{position:relative;display:grid;grid-template-columns:64px repeat(6,1fr);}
-  .time-col{display:flex;flex-direction:column;}
+  .time-col{display:flex;flex-direction:column;overflow:hidden;}
   .time-cell{
-    height:48px;font-family:'Poppins',sans-serif;font-size:10.5px;color:var(--muted);
+    height:48px;font-family:'Poppins',sans-serif;font-size:calc(10.5px * var(--font-scale));color:var(--muted);
     text-align:right;padding-right:6px;border-top:1px solid #EEF0EE;position:relative;top:-6px;
   }
   .day-col{position:relative;border-left:1px solid var(--line);}
   .day-col .gridline{position:absolute;left:0;right:0;height:1px;background:#EEF0EE;}
   .block{
     position:absolute;left:3px;right:3px;border-radius:6px;overflow:hidden;
-    padding:5px 7px;font-size:11px;line-height:1.3;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.12);
+    padding:5px 7px;font-size:calc(11px * var(--font-scale));line-height:1.3;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.12);
   }
-  .block .code{font-family:'Poppins',sans-serif;font-weight:600;font-size:11.5px;display:block;}
+  .block .code{font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11.5px * var(--font-scale));display:block;}
   .block .title{opacity:.92;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .block .room{opacity:.8;font-size:10px;display:block;}
+  .block .room{opacity:.8;font-size:calc(10px * var(--font-scale));display:block;}
   .block .del{
     position:absolute;top:2px;right:4px;background:rgba(0,0,0,0.25);color:#fff;
-    width:16px;height:16px;border-radius:50%;font-size:10px;line-height:16px;text-align:center;
+    width:16px;height:16px;border-radius:50%;font-size:calc(10px * var(--font-scale));line-height:16px;text-align:center;
   }
   .block.conflict{outline:2px solid var(--danger);}
   .block.removable{cursor:pointer;}
@@ -169,10 +170,10 @@
   }
   .ghost-block.ghost-clash{border-color:var(--danger);background:rgba(200,85,61,0.18);}
   .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
-  .legend .item{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);}
+  .legend .item{display:flex;align-items:center;gap:6px;font-size:calc(12.5px * var(--font-scale));color:var(--muted);}
   .legend .dot{width:10px;height:10px;border-radius:50%;}
 
-  .empty{padding:26px;text-align:center;color:var(--muted);font-size:13px;}
+  .empty{padding:26px;text-align:center;color:var(--muted);font-size:calc(13px * var(--font-scale));}
   .empty b{color:var(--navy-text);}
 
   .friend-manage{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
@@ -180,7 +181,7 @@
   .modal-backdrop{position:fixed;inset:0;background:rgba(107,92,160,0.45);display:flex;align-items:center;justify-content:center;z-index:100;}
   .modal{background:#fff;border-radius:12px;padding:26px;width:340px;text-align:center;}
   .modal h2{font-family:'Poppins',sans-serif;color:var(--navy-text);margin-top:0;}
-  .modal input{width:100%;margin:14px 0;text-align:center;font-size:15px;padding:10px;}
+  .modal input{width:100%;margin:14px 0;text-align:center;font-size:calc(15px * var(--font-scale));padding:10px;}
 
   @media (max-width: 720px){
     .board-head, .board-body{grid-template-columns:44px repeat(6,minmax(60px,1fr));overflow-x:auto;}
@@ -612,7 +613,6 @@ async function applyTheme(hex, persist){
   root.setProperty('--navy-text', darkenHex(hex, 0.35));
   root.setProperty('--navy-ink', getContrastTextColor(hex));
   root.setProperty('--navy-rgb', `${rgb.r},${rgb.g},${rgb.b}`);
-  root.setProperty('--bg', lightenHex(hex, 0.92));
   root.setProperty('--line', lightenHex(hex, 0.8));
   state.themeHex = hex;
   if(persist) await queueSave(()=> sSet('theme', hex, false));
@@ -620,6 +620,109 @@ async function applyTheme(hex, persist){
 async function loadTheme(){
   const saved = await sGet('theme', false);
   await applyTheme((saved && /^#[0-9A-Fa-f]{6}$/.test(saved)) ? saved : DEFAULT_THEME, false);
+}
+
+/* ============================= PAGE BACKGROUND ============================= */
+// Independent from the accent theme above — this only controls the page's
+// backdrop. Stored as a seed hex (+ whether it's rendered flat or as a
+// gradient); every actual color is derived from the seed the same way the
+// accent theme derives its background tint, so any pick — preset or from
+// the color wheel — stays a soft, readable pastel rather than a jarring
+// full-saturation fill. White is the default.
+const DEFAULT_BG_HEX = '#FFFFFF';
+function bgCss(hex, gradient){
+  return gradient
+    ? `linear-gradient(135deg, ${lightenHex(hex,0.97)}, ${lightenHex(hex,0.78)})`
+    : lightenHex(hex, 0.92);
+}
+async function applyBackground(hex, gradient, persist){
+  if(!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+  const root = document.documentElement.style;
+  // Keep --bg a single flat color (things like the wallpaper-export canvas
+  // read it as a plain CSS color), and paint the possibly-gradient version
+  // straight onto the body.
+  root.setProperty('--bg', lightenHex(hex, 0.92));
+  document.body.style.background = bgCss(hex, gradient);
+  state.bgHex = hex;
+  state.bgGradient = gradient;
+  if(persist) await queueSave(()=> sSet('background', {hex, gradient}, false));
+}
+async function loadBackground(){
+  const saved = await sGet('background', false);
+  const hex = (saved && /^#[0-9A-Fa-f]{6}$/.test(saved.hex)) ? saved.hex : DEFAULT_BG_HEX;
+  const gradient = !!(saved && saved.gradient);
+  await applyBackground(hex, gradient, false);
+}
+
+function openBackgroundPicker(anchorEl){
+  document.querySelectorAll('.swatch-popover').forEach(p=>p.remove());
+  const rect = anchorEl.getBoundingClientRect();
+  const popover = el(`<div class="swatch-popover" style="top:${rect.bottom+4}px;right:${window.innerWidth-rect.right}px;left:auto;grid-template-columns:repeat(4,1fr);width:210px;"></div>`);
+  const presets = [{name:'White', hex:DEFAULT_BG_HEX}, ...THEME_PRESETS];
+  presets.forEach(p=>{
+    const isActive = !state.bgGradient && state.bgHex===p.hex;
+    const dot = el(`<button class="swatch-dot" title="${p.name}" style="background:${lightenHex(p.hex,0.92)};${isActive?'outline:2px solid var(--navy-text);outline-offset:1px;':''}"></button>`);
+    dot.onclick = (e)=>{ e.stopPropagation(); popover.remove(); applyBackground(p.hex, state.bgGradient, true); };
+    popover.appendChild(dot);
+  });
+  const gradWrap = el(`<label style="grid-column:1/-1;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:6px;cursor:pointer;"><input type="checkbox" id="bgGradToggle" ${state.bgGradient?'checked':''}/> Gradient</label>`);
+  gradWrap.querySelector('input').onchange = (e)=>{ e.stopPropagation(); applyBackground(state.bgHex||DEFAULT_BG_HEX, e.target.checked, true); };
+  popover.appendChild(gradWrap);
+  const customWrap = el(`<label class="swatch-dot" title="Custom color" style="grid-column:1/-1;width:100%;height:26px;border-radius:8px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;margin-top:4px;"></label>`);
+  const customInput = el(`<input type="color" value="${state.bgHex||DEFAULT_BG_HEX}" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />`);
+  customWrap.appendChild(customInput);
+  customInput.onchange = (e)=>{ popover.remove(); applyBackground(e.target.value, state.bgGradient, true); };
+  popover.appendChild(customWrap);
+  document.body.appendChild(popover);
+  setTimeout(()=>{
+    const closeHandler = (ev)=>{
+      if(!popover.contains(ev.target) && ev.target!==anchorEl){
+        popover.remove();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    document.addEventListener('click', closeHandler);
+  }, 0);
+}
+
+/* ============================= FONT SIZE ============================= */
+const FONT_SCALE_STEPS = [
+  {name:'Small', value:0.88},
+  {name:'Default', value:1},
+  {name:'Large', value:1.15},
+  {name:'Extra large', value:1.32},
+];
+async function applyFontScale(value, persist){
+  document.documentElement.style.setProperty('--font-scale', value);
+  state.fontScale = value;
+  if(persist) await queueSave(()=> sSet('fontScale', value, false));
+}
+async function loadFontScale(){
+  const saved = await sGet('fontScale', false);
+  const value = (typeof saved === 'number' && saved>0) ? saved : 1;
+  await applyFontScale(value, false);
+}
+
+function openFontSizePicker(anchorEl){
+  document.querySelectorAll('.swatch-popover').forEach(p=>p.remove());
+  const rect = anchorEl.getBoundingClientRect();
+  const popover = el(`<div class="swatch-popover" style="top:${rect.bottom+4}px;right:${window.innerWidth-rect.right}px;left:auto;grid-template-columns:1fr;width:150px;padding:8px;"></div>`);
+  FONT_SCALE_STEPS.forEach(step=>{
+    const active = Math.abs((state.fontScale||1)-step.value) < 0.001;
+    const btn = el(`<button class="chip ${active?'active':''}" style="width:100%;justify-content:center;margin-bottom:4px;">${step.name}</button>`);
+    btn.onclick = (e)=>{ e.stopPropagation(); popover.remove(); applyFontScale(step.value, true); };
+    popover.appendChild(btn);
+  });
+  document.body.appendChild(popover);
+  setTimeout(()=>{
+    const closeHandler = (ev)=>{
+      if(!popover.contains(ev.target) && ev.target!==anchorEl){
+        popover.remove();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    document.addEventListener('click', closeHandler);
+  }, 0);
 }
 
 function openThemePicker(anchorEl){
@@ -680,6 +783,8 @@ async function boot(){
   if(window.__skedBooted) return;
   window.__skedBooted = true;
   await loadTheme();
+  await loadBackground();
+  await loadFontScale();
   await loadAll();
   if(!state.meId){ renderNamePrompt(); return; }
   render();
@@ -927,7 +1032,10 @@ function renderHeader(){
         <div class="wordmark">Schedule Maker</div>
       </div>
       <div class="row" style="align-items:center;gap:14px;">
-        <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:14px;">${state.isAdmin?'🔓':'🔒'}</button>
+        <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:calc(14px * var(--font-scale));">${state.isAdmin?'🔓':'🔒'}</button>
+        <button class="edit-name-btn" id="fontBtn" title="Adjust font size" style="font-size:calc(13px * var(--font-scale));font-weight:700;">Aa</button>
+        <button class="swatch-btn" id="bgBtn" title="Change background"
+          style="position:static;width:22px;height:22px;background:${bgCss(state.bgHex||DEFAULT_BG_HEX, state.bgGradient)};border:1.5px solid rgba(0,0,0,0.15);"></button>
         <button class="swatch-btn" id="themeBtn" title="Change theme color"
           style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
         <div class="whoami">signed in as<br/><b>${me?me.name:''}</b> <button id="editNameBtn" class="edit-name-btn" title="Edit your name">✎</button></div>
@@ -935,6 +1043,10 @@ function renderHeader(){
     </div>`);
   const themeBtn = header.querySelector('#themeBtn');
   themeBtn.onclick = (e)=>{ e.stopPropagation(); openThemePicker(themeBtn); };
+  const bgBtn = header.querySelector('#bgBtn');
+  bgBtn.onclick = (e)=>{ e.stopPropagation(); openBackgroundPicker(bgBtn); };
+  const fontBtn = header.querySelector('#fontBtn');
+  fontBtn.onclick = (e)=>{ e.stopPropagation(); openFontSizePicker(fontBtn); };
   header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
   header.querySelector('#adminBtn').onclick = (e)=>{ e.stopPropagation(); openAdminModal(); };
   return header;
