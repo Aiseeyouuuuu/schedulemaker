@@ -1750,6 +1750,30 @@ function haloText(ctx, text, x, y, fillColor, lineWidthPx){
   ctx.fillText(text, x, y);
 }
 
+// Draws `text` inside a small rounded outline box with a light backing
+// fill — used for Bold/Grid's day names and hour labels so they stay
+// legible against any background. The box is sized from the text's own
+// measured dimensions, so it always hugs it snugly regardless of font size.
+function boxedText(ctx, text, x, y, opts){
+  const {align='center', baseline='middle', textColor, borderColor, boxFill='rgba(255,255,255,0.88)', padX=6, padY=4, radius=6, lineWidth=1.4} = opts||{};
+  const m = ctx.measureText(text);
+  const w = m.width;
+  const asc = m.actualBoundingBoxAscent || 8;
+  const desc = m.actualBoundingBoxDescent || 3;
+  const h = asc+desc;
+  const boxX = align==='center' ? x-w/2-padX : align==='right' ? x-w-padX : x-padX;
+  const boxY = baseline==='middle' ? y-h/2-padY : baseline==='bottom' ? y-h-padY : y-padY;
+  roundRectPath(ctx, boxX, boxY, w+padX*2, h+padY*2, radius);
+  ctx.fillStyle = boxFill;
+  ctx.fill();
+  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = borderColor;
+  ctx.stroke();
+  ctx.textAlign = align; ctx.textBaseline = baseline;
+  ctx.fillStyle = textColor;
+  ctx.fillText(text, x, y);
+}
+
 // "Dela Cruz, Juan M." -> "Dela Cruz"; "Juan Dela Cruz" -> "Cruz" (last
 // word) as a fallback when there's no comma. Keeps class blocks compact.
 function surnameOf(instructor){
@@ -1821,7 +1845,6 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   // line, hour labels, bold-style pill fill) — a single user-picked color
   // instead of the fixed theme navy, so "table color" is fully custom.
   const inkColor = tableColor || getCssVar('--navy-text') || '#2A4492';
-  const inkOnInk = getContrastTextColor(inkColor);
   const mutedColor = lightenHex(inkColor, 0.42);
   // textScale is an independent multiplier on font *sizes* only — layout
   // metrics (padding, row height, column width) stay driven by `scale`
@@ -1832,21 +1855,18 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   ctx.globalAlpha = opacity;
 
   if(isPillHeader){
-    // Day header row: solid pill per day, uppercase label. 'bold' uses the
-    // user's table color; 'grid' uses a muted gray to match a printed-
-    // timetable look.
+    // Day header row: outlined box per day (light backing fill + colored
+    // border), uppercase label. 'bold' uses the user's table color;
+    // 'grid' uses a muted gray to match a printed-timetable look.
     const pillH = headerH*0.62;
     const pillY = baseY+pad+(headerH-pillH)/2;
     ctx.font = `700 ${13*ts*scale}px 'Poppins', sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
-      const cx0 = gridX + i*dayColW + 3*scale;
-      const pw = dayColW - 6*scale;
-      ctx.fillStyle = style==='grid' ? 'rgba(95,95,115,0.6)' : inkColor;
-      roundRectPath(ctx, cx0, pillY, pw, pillH, 10*scale);
-      ctx.fill();
-      ctx.fillStyle = style==='grid' ? '#FFFFFF' : inkOnInk;
-      ctx.fillText(DAY_LABEL[day].toUpperCase(), cx0+pw/2, pillY+pillH/2);
+      const cx = gridX + i*dayColW + dayColW/2;
+      const cy = pillY+pillH/2;
+      const borderColor = style==='grid' ? 'rgba(95,95,115,0.75)' : inkColor;
+      const textColor = style==='grid' ? '#4A4A5C' : inkColor;
+      boxedText(ctx, DAY_LABEL[day].toUpperCase(), cx, cy, {align:'center', baseline:'middle', textColor, borderColor, padX:10*scale, padY:6*scale, radius:10*scale, lineWidth:1.6*scale});
     });
     if(style==='grid'){
       ctx.font = `700 ${10.5*ts*scale}px 'Poppins', sans-serif`;
@@ -1882,12 +1902,18 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   // other label (8:00 AM onward) keeps its original position untouched.
   // Haloed like the day labels so they read against any background.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
-  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
   for(let t=rangeStart; t<=rangeEnd; t+=60){
     if(style==='minimal' && t===rangeStart) continue;
     const y = bodyY + ((t-rangeStart)/30)*rowH;
     const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
-    haloText(ctx, label, gridX-8*scale, y-4*scale, mutedColor, 3*ts*scale);
+    const labelX = gridX-8*scale;
+    if(isPillHeader){
+      const borderColor = style==='grid' ? 'rgba(95,95,115,0.75)' : inkColor;
+      const textColor = style==='grid' ? '#4A4A5C' : inkColor;
+      boxedText(ctx, label, labelX, y-4*scale, {align:'right', baseline:'bottom', textColor, borderColor, padX:5*scale, padY:3*scale, radius:5*scale, lineWidth:1.2*scale});
+    } else {
+      haloText(ctx, label, labelX, y-4*scale, mutedColor, 3*ts*scale);
+    }
   }
 
   // Class blocks — same flatten + lane-pack approach as the live board
