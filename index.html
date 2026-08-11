@@ -350,7 +350,7 @@ function minutesToLabel(mins){
   let h12 = h%12; if(h12===0) h12=12;
   return `${h12}:${String(m).padStart(2,'0')} ${ap}`;
 }
-// Compact hour-only label ("8a", "12p") used by the 'pastel' wallpaper style.
+// Compact hour-only label ("8a", "12p") used by the 'editorial' wallpaper style.
 function abbrevHourLabel(mins){
   if(mins==null) return '';
   let h = Math.floor(mins/60);
@@ -1790,20 +1790,18 @@ function computeTableLayout(entries, tableW, scale, heightScale=1){
 // `style` picks between four visual languages — all show the same
 // underlying data (code, section, time, location, professor), just
 // presented differently:
-//   'minimal' — mirrors the live board's visual language (rounded pastel
-//               blocks, clean hour labels).
-//   'bold'    — bigger uppercase headers on solid pills, chunkier rounded
-//               blocks.
-//   'pastel'  — soft rounded card, plain hour-only labels ("8a","12p").
-//   'grid'    — full printed-timetable look: muted day pills and a "TIME"
-//               gutter label; empty hours are left blank.
+//   'minimal'   — mirrors the live board's visual language (rounded
+//                 pastel blocks, clean hour labels).
+//   'bold'      — bigger uppercase headers on solid pills, chunkier
+//                 rounded blocks.
+//   'editorial' — soft rounded card, plain hour-only labels ("8a","12p").
 // The table itself has no background fill — it sits directly on the
 // wallpaper/background behind it, no white card.
 function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale, tableColor, textScale, daysColor, timesColor, classesColor){
   const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH} = layout;
   const gridX = baseX+pad+timeGutterW;
   const bodyY = baseY+pad+headerH;
-  const isPillHeader = style==='bold' || style==='grid';
+  const isPillHeader = style==='bold';
   // tableColor drives every non-class-block ink color (headers, divider
   // line, hour labels, bold-style pill fill) — a single user-picked color
   // instead of the fixed theme navy, so "table color" is fully custom.
@@ -1821,19 +1819,14 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   ctx.save();
   ctx.globalAlpha = opacity;
 
-  // 'grid' keeps its muted, printed-timetable feel but the mute tone is
-  // now derived from the user's own table color (blended toward gray)
-  // instead of a fixed gray — so the color picker actually changes it.
-  const gridPillColor = mixHex(inkColor, '#8B8B99', 0.45);
-  const gridPillText = getContrastTextColor(gridPillColor);
-  const defaultDaysColor = isPillHeader ? (style==='grid'?gridPillText:inkOnInk) : inkColor;
-  const defaultTimesColor = isPillHeader ? (style==='grid'?gridPillText:inkOnInk) : mutedColor;
+  const defaultDaysColor = isPillHeader ? inkOnInk : inkColor;
+  const defaultTimesColor = isPillHeader ? inkOnInk : mutedColor;
   const daysTextColor = daysColor || defaultDaysColor;
   const timesTextColor = timesColor || defaultTimesColor;
 
   if(isPillHeader){
-    // Day header row: solid pill per day, uppercase label. 'bold' uses the
-    // user's table color; 'grid' uses a muted blend of it.
+    // Day header row: solid pill per day, uppercase label, in the user's
+    // table color.
     const pillH = headerH*0.62;
     const pillY = baseY+pad+(headerH-pillH)/2;
     ctx.font = `700 ${13*ts*scale}px 'Poppins', sans-serif`;
@@ -1841,15 +1834,15 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     DAY_ORDER.forEach((day,i)=>{
       const cx0 = gridX + i*dayColW + 3*scale;
       const pw = dayColW - 6*scale;
-      ctx.fillStyle = style==='grid' ? gridPillColor : inkColor;
+      ctx.fillStyle = inkColor;
       roundRectPath(ctx, cx0, pillY, pw, pillH, 10*scale);
       ctx.fill();
       ctx.fillStyle = daysTextColor;
       ctx.fillText(DAY_LABEL[day].toUpperCase(), cx0+pw/2, pillY+pillH/2);
     });
   } else {
-    // 'minimal' and 'pastel': plain centered label. Minimal adds a divider rule.
-    ctx.font = `700 ${(style==='pastel'?15:16)*ts*scale}px 'Poppins', sans-serif`;
+    // 'minimal' and 'editorial': plain centered label. Minimal adds a divider rule.
+    ctx.font = `700 ${(style==='editorial'?15:16)*ts*scale}px 'Poppins', sans-serif`;
     ctx.fillStyle = daysTextColor;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
@@ -1866,27 +1859,27 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     }
   }
 
-  // Hour labels. 'bold'/'grid' get the same solid pill treatment as the
-  // day header, sized to fit each label, so they stay visible against any
-  // background. 'minimal'/'pastel' stay plain text like the rest of that
-  // style. Vertically centered right on the gridline it represents (rather
-  // than floating above it), so it lines up with a class block that starts
-  // at that exact time. The very first label (7:00 AM / whatever the range
-  // starts at) is skipped for every style — 'minimal's header divider sits
-  // exactly on that line, so a label there would collide with it — every
-  // other label (8:00 AM onward) keeps its original position untouched.
+  // Hour labels. 'bold' gets the same solid pill treatment as the day
+  // header, sized to fit each label, so they stay visible against any
+  // background. 'minimal'/'editorial' stay plain text like the rest of
+  // that style. Vertically centered right on the gridline it represents
+  // (rather than floating above it), so it lines up with a class block
+  // that starts at that exact time. The very first label (7:00 AM /
+  // whatever the range starts at) is skipped for every style — 'minimal's
+  // header divider sits exactly on that line, so a label there would
+  // collide with it — every other label (8:00 AM onward) keeps its
+  // original position untouched.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
   for(let t=rangeStart; t<=rangeEnd; t+=60){
     if(t===rangeStart) continue;
     const y = bodyY + ((t-rangeStart)/30)*rowH;
-    const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
+    const label = style==='editorial' ? abbrevHourLabel(t) : minutesToLabel(t);
     const labelX = gridX-8*scale;
     if(isPillHeader){
-      const pillColor = style==='grid' ? gridPillColor : inkColor;
       const padX = 6*scale, padY = 3*scale, m = ctx.measureText(label);
       const w = m.width, asc = m.actualBoundingBoxAscent||8, desc = m.actualBoundingBoxDescent||3;
       const boxX = labelX-w-padX, boxY = y-(asc+desc)/2-padY, boxW = w+padX*2, boxH = asc+desc+padY*2;
-      ctx.fillStyle = pillColor;
+      ctx.fillStyle = inkColor;
       roundRectPath(ctx, boxX, boxY, boxW, boxH, 5*scale);
       ctx.fill();
       ctx.fillStyle = timesTextColor;
@@ -1928,7 +1921,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const yy = y+gap/2, hh = h-gap;
 
       const color = getBlockColor(memberId, b.entry.id, member?member.color:'#4169E1');
-      const textColor = classesColor || (style==='grid' ? gridPillColor : getContrastTextColor(color));
+      const textColor = classesColor || getContrastTextColor(color);
       const surname = surnameOf(b.entry.instructor);
 
       ctx.fillStyle = color;
@@ -1972,7 +1965,7 @@ function openWallpaperBuilder(memberId){
 
   let mode = 'wallpaper';   // 'wallpaper' | 'image'
   let device = 'phone';
-  let style = 'minimal';    // 'minimal' | 'bold' | 'pastel' | 'grid'
+  let style = 'minimal';    // 'minimal' | 'bold' | 'editorial'
   let bgImage = null, bgObjectUrl = null;
   let opacity = 1;
   let offsetX = 0, offsetY = 0;
@@ -2052,8 +2045,7 @@ function openWallpaperBuilder(memberId){
           <span class="hint" style="margin:0;">Style:</span>
           <button class="chip active" id="styleMinimal">Minimal</button>
           <button class="chip" id="styleBold">Bold</button>
-          <button class="chip" id="stylePastel">Pastel</button>
-          <button class="chip" id="styleGrid">Grid</button>
+          <button class="chip" id="styleEditorial">Editorial</button>
         </div>
 
         <div class="row" style="margin-top:10px;align-items:center;">
@@ -2221,9 +2213,8 @@ function openWallpaperBuilder(memberId){
   // Style toggle
   const styleMinimalBtn = backdrop.querySelector('#styleMinimal');
   const styleBoldBtn = backdrop.querySelector('#styleBold');
-  const stylePastelBtn = backdrop.querySelector('#stylePastel');
-  const styleGridBtn = backdrop.querySelector('#styleGrid');
-  const styleBtns = {minimal:styleMinimalBtn, bold:styleBoldBtn, pastel:stylePastelBtn, grid:styleGridBtn};
+  const styleEditorialBtn = backdrop.querySelector('#styleEditorial');
+  const styleBtns = {minimal:styleMinimalBtn, bold:styleBoldBtn, editorial:styleEditorialBtn};
   function setStyle(s){
     style = s;
     Object.entries(styleBtns).forEach(([key,btn])=> btn.classList.toggle('active', key===s));
@@ -2231,8 +2222,7 @@ function openWallpaperBuilder(memberId){
   }
   styleMinimalBtn.onclick = ()=> setStyle('minimal');
   styleBoldBtn.onclick = ()=> setStyle('bold');
-  stylePastelBtn.onclick = ()=> setStyle('pastel');
-  styleGridBtn.onclick = ()=> setStyle('grid');
+  styleEditorialBtn.onclick = ()=> setStyle('editorial');
 
   // Background source — a color/gradient (from a preset swatch or the
   // custom color wheel) or an uploaded photo. White is the default; the
