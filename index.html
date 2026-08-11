@@ -108,6 +108,7 @@
   .chip{
     display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;
     border:1px solid var(--line);background:#fff;font-size:12.5px;user-select:none;cursor:pointer;
+    color:var(--ink);
   }
   .chip.active{border-color:var(--navy-text);background:var(--navy);color:var(--navy-ink);}
   .chip .dot{width:9px;height:9px;border-radius:50%;flex:none;}
@@ -1633,11 +1634,14 @@ function renderBoard(groups, allowDelete){
   return board;
 }
 
-/* ============================= WALLPAPER EXPORT ============================= */
+/* ============================= WALLPAPER / IMAGE EXPORT ============================= */
 const WALLPAPER_DIMS = {
   phone:  {w:1080, h:2400, label:'Phone · 1080×2400'},
   laptop: {w:2560, h:1600, label:'Laptop · 2560×1600'},
 };
+// Reference width used for "Schedule image" mode, where there's no phone/
+// laptop canvas — the table just defines its own tight canvas.
+const IMAGE_MODE_BASE_W = 1080;
 
 function getCssVar(name){
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || null;
@@ -1677,6 +1681,16 @@ function truncateText(ctx, text, maxWidth){
   return lo>0 ? text.slice(0,lo)+'…' : '…';
 }
 
+// "Dela Cruz, Juan M." -> "Dela Cruz"; "Juan Dela Cruz" -> "Cruz" (last
+// word) as a fallback when there's no comma. Keeps class blocks compact.
+function surnameOf(instructor){
+  if(!instructor) return '';
+  const trimmed = instructor.trim();
+  if(trimmed.includes(',')) return trimmed.split(',')[0].trim();
+  const words = trimmed.split(/\s+/);
+  return words[words.length-1];
+}
+
 // Auto-fits the visible hour range to this person's actual classes (padded
 // by 30min on each side, clamped to sane bounds) instead of always drawing
 // a fixed 7am–9pm grid full of empty rows.
@@ -1695,16 +1709,13 @@ function computeWallpaperTimeRange(entries){
   return {start, end};
 }
 
-// Renders the schedule "card" onto the export canvas at (baseX,baseY),
-// mirroring the live board's visual language (rounded pastel blocks,
-// contrast-checked text, lane-packed overlaps) rather than any external
-// reference design.
-function drawWallpaperTable(ctx, dims, entries, memberId, member, opacity, offsetX, offsetY){
-  const scale = Math.hypot(dims.w, dims.h) / Math.hypot(1080, 1920);
+// Pure geometry pass — figures out every pixel size the table needs given
+// a target width and font scale, WITHOUT drawing anything. Both export
+// modes call this first: wallpaper mode already knows its canvas size, but
+// image mode needs the table's own height before it can size the canvas.
+function computeTableLayout(entries, tableW, scale){
   const {start:rangeStart, end:rangeEnd} = computeWallpaperTimeRange(entries);
   const totalRows = (rangeEnd-rangeStart)/30;
-
-  const tableW = dims.w*0.88;
   const pad = 20*scale;
   const timeGutterW = 76*scale;
   const contentW = tableW - pad*2;
@@ -1713,9 +1724,19 @@ function drawWallpaperTable(ctx, dims, entries, memberId, member, opacity, offse
   const rowH = 30*scale;
   const bodyH = totalRows*rowH;
   const tableH = pad*2 + headerH + bodyH;
+  return {rangeStart, rangeEnd, totalRows, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH};
+}
 
-  const baseX = (dims.w-tableW)/2 + offsetX;
-  const baseY = (dims.h-tableH)/2 + offsetY;
+// Renders the schedule "card" onto the export canvas at (baseX,baseY).
+// `style` picks between two visual languages — both show the same
+// underlying data (code, section, room, instructor's surname), just
+// presented differently:
+//   'minimal' — mirrors the live board's visual language (rounded pastel
+//               blocks, clean hour rule lines, course title included).
+//   'bold'    — bigger uppercase headers on solid pills, chunkier rounded
+//               blocks, title omitted to keep blocks compact.
+function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale){
+  const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH} = layout;
   const gridX = baseX+pad+timeGutterW;
   const bodyY = baseY+pad+headerH;
 
@@ -1727,29 +1748,44 @@ function drawWallpaperTable(ctx, dims, entries, memberId, member, opacity, offse
   ctx.shadowBlur = 26*scale;
   ctx.shadowOffsetY = 8*scale;
   ctx.fillStyle = '#FFFFFF';
-  roundRectPath(ctx, baseX, baseY, tableW, tableH, 22*scale);
+  roundRectPath(ctx, baseX, baseY, tableW, tableH, (style==='bold'?28:22)*scale);
   ctx.fill();
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
-  // Day header
-  ctx.font = `700 ${16*scale}px 'Space Grotesk', sans-serif`;
-  ctx.fillStyle = getCssVar('--navy-text') || '#2A4492';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  DAY_ORDER.forEach((day,i)=>{
-    const cx = gridX + i*dayColW + dayColW/2;
-    ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
-  });
-
-  // Header divider
-  ctx.strokeStyle = getCssVar('--navy') || '#4169E1';
-  ctx.lineWidth = 2*scale;
-  ctx.beginPath();
-  ctx.moveTo(baseX+pad, bodyY);
-  ctx.lineTo(baseX+pad+contentW, bodyY);
-  ctx.stroke();
+  if(style==='bold'){
+    // Day header row: solid dark pill per day, uppercase label
+    const pillH = headerH*0.62;
+    const pillY = baseY+pad+(headerH-pillH)/2;
+    ctx.font = `700 ${13*scale}px 'Space Grotesk', sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    DAY_ORDER.forEach((day,i)=>{
+      const cx0 = gridX + i*dayColW + 3*scale;
+      const pw = dayColW - 6*scale;
+      ctx.fillStyle = getCssVar('--navy-text') || '#2A4492';
+      roundRectPath(ctx, cx0, pillY, pw, pillH, 10*scale);
+      ctx.fill();
+      ctx.fillStyle = getCssVar('--navy-ink') || '#FFFFFF';
+      ctx.fillText(DAY_LABEL[day].toUpperCase(), cx0+pw/2, pillY+pillH/2);
+    });
+  } else {
+    // Minimal day header: plain centered label + divider rule
+    ctx.font = `700 ${16*scale}px 'Space Grotesk', sans-serif`;
+    ctx.fillStyle = getCssVar('--navy-text') || '#2A4492';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    DAY_ORDER.forEach((day,i)=>{
+      const cx = gridX + i*dayColW + dayColW/2;
+      ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
+    });
+    ctx.strokeStyle = getCssVar('--navy') || '#4169E1';
+    ctx.lineWidth = 2*scale;
+    ctx.beginPath();
+    ctx.moveTo(baseX+pad, bodyY);
+    ctx.lineTo(baseX+pad+contentW, bodyY);
+    ctx.stroke();
+  }
 
   // Hour labels + horizontal gridlines
-  ctx.font = `${11*scale}px 'IBM Plex Mono', monospace`;
+  ctx.font = `${style==='bold'?'600 ':''}${11*scale}px 'IBM Plex Mono', monospace`;
   ctx.fillStyle = getCssVar('--muted') || '#6B7290';
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for(let t=rangeStart; t<=rangeEnd; t+=60){
@@ -1789,39 +1825,41 @@ function drawWallpaperTable(ctx, dims, entries, memberId, member, opacity, offse
       const laneCount = b.__laneCount || 1;
       const colX = gridX + colIdx*dayColW;
       const blockW = dayColW/laneCount;
-      const gap = 2.5*scale;
+      const gap = (style==='bold'?4:2.5)*scale;
       const x = colX + b.__lane*blockW + gap/2;
       const w = blockW - gap;
       const yy = y+gap/2, hh = h-gap;
 
       const color = getBlockColor(memberId, b.entry.id, member?member.color:'#4169E1');
       const textColor = getContrastTextColor(color);
+      const surname = surnameOf(b.entry.instructor);
 
       ctx.fillStyle = color;
-      roundRectPath(ctx, x, yy, w, hh, 7*scale);
+      roundRectPath(ctx, x, yy, w, hh, (style==='bold'?12:7)*scale);
       ctx.fill();
 
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      const tx = x+7*scale, maxTextW = Math.max(w-14*scale, 4);
-      let ty = yy+6*scale;
+      const padX = (style==='bold'?9:7)*scale;
+      const tx = x+padX, maxTextW = Math.max(w-padX*2, 4);
+      let ty = yy+(style==='bold'?8:6)*scale;
 
       ctx.fillStyle = textColor;
-      ctx.font = `700 ${11.5*scale}px 'IBM Plex Mono', monospace`;
+      ctx.font = `700 ${(style==='bold'?12.5:11.5)*scale}px 'IBM Plex Mono', monospace`;
       ctx.fillText(truncateText(ctx, `${b.entry.code||'—'} ${b.entry.section||''}`.trim(), maxTextW), tx, ty);
-      ty += 14.5*scale;
+      ty += (style==='bold'?16:14.5)*scale;
 
-      if(hh > 32*scale){
+      if(style==='minimal' && hh > 32*scale){
         ctx.font = `${10.5*scale}px 'Work Sans', sans-serif`;
         ctx.globalAlpha = opacity*0.92;
         ctx.fillText(truncateText(ctx, b.entry.title||'', maxTextW), tx, ty);
         ctx.globalAlpha = opacity;
         ty += 13*scale;
       }
-      if(hh > 48*scale && (b.room || b.entry.instructor)){
-        ctx.font = `${9.5*scale}px 'Work Sans', sans-serif`;
-        ctx.globalAlpha = opacity*0.8;
-        const line3 = [b.room, b.entry.instructor].filter(Boolean).join(' · ');
-        ctx.fillText(truncateText(ctx, line3, maxTextW), tx, ty);
+      if(hh > (style==='bold'?30:48)*scale && (b.room || surname)){
+        ctx.font = `${(style==='bold'?10.5:9.5)*scale}px 'Work Sans', sans-serif`;
+        ctx.globalAlpha = opacity*(style==='bold'?0.88:0.8);
+        const line = [b.room, surname].filter(Boolean).join(' · ');
+        ctx.fillText(truncateText(ctx, line, maxTextW), tx, ty);
         ctx.globalAlpha = opacity;
       }
     });
@@ -1834,38 +1872,58 @@ function openWallpaperBuilder(memberId){
   const member = getMember(memberId);
   const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
 
+  let mode = 'wallpaper';   // 'wallpaper' | 'image'
   let device = 'phone';
+  let style = 'minimal';    // 'minimal' | 'bold'
   let bgImage = null, bgObjectUrl = null;
   let opacity = 1;
   let offsetX = 0, offsetY = 0;
+  let sizePct = 100;        // table-size slider, 60–140%
 
   const backdrop = el(`
     <div class="modal-backdrop" style="align-items:flex-start;padding:24px 12px;overflow:auto;">
       <div class="modal" style="width:min(94vw,760px);max-width:760px;text-align:left;">
         <div class="row" style="justify-content:space-between;align-items:center;">
-          <h2 style="margin:0;">Make a wallpaper</h2>
+          <h2 style="margin:0;" id="wpTitle">Make a wallpaper</h2>
           <button class="ghost small" id="wpClose">Close</button>
         </div>
 
         <div class="row" style="margin-top:14px;">
+          <button class="chip active" id="modeWallpaper">Wallpaper</button>
+          <button class="chip" id="modeImage">Schedule image (as on site)</button>
+        </div>
+
+        <div id="deviceRow" class="row" style="margin-top:10px;">
           <button class="chip active" id="devPhone">${WALLPAPER_DIMS.phone.label}</button>
           <button class="chip" id="devLaptop">${WALLPAPER_DIMS.laptop.label}</button>
         </div>
 
-        <div class="row" style="margin-top:10px;align-items:center;">
+        <div id="bgRow" class="row" style="margin-top:10px;align-items:center;">
           <span class="hint" style="margin:0;">Background:</span>
           <button class="chip active" id="bgDefault">Theme background</button>
           <button class="chip" id="bgUploadBtn">Upload a photo…</button>
           <input type="file" id="bgUploadInput" accept="image/*" style="display:none;"/>
         </div>
 
-        <div class="row" style="margin-top:10px;align-items:center;">
+        <div id="opacityRow" class="row" style="margin-top:10px;align-items:center;">
           <span class="hint" style="margin:0;width:110px;">Translucency</span>
           <input type="range" id="opacitySlider" min="15" max="100" value="100" style="flex:1;"/>
           <span class="hint" id="opacityVal" style="margin:0;width:38px;text-align:right;">100%</span>
         </div>
 
-        <p class="hint" style="margin:12px 0 6px;">Drag the schedule below to reposition it on the wallpaper.</p>
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;width:110px;">Table size</span>
+          <input type="range" id="sizeSlider" min="60" max="140" value="100" style="flex:1;"/>
+          <span class="hint" id="sizeVal" style="margin:0;width:38px;text-align:right;">100%</span>
+        </div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;">Style:</span>
+          <button class="chip active" id="styleMinimal">Minimal</button>
+          <button class="chip" id="styleBold">Bold</button>
+        </div>
+
+        <p class="hint" id="dragHint" style="margin:12px 0 6px;">Drag the schedule below to reposition it on the wallpaper.</p>
         <div style="display:flex;justify-content:center;background:rgba(0,0,0,0.06);border-radius:10px;padding:10px;">
           <canvas id="wpCanvas" style="max-width:100%;max-height:58vh;border-radius:6px;cursor:grab;touch-action:none;"></canvas>
         </div>
@@ -1883,26 +1941,72 @@ function openWallpaperBuilder(memberId){
 
   const canvas = backdrop.querySelector('#wpCanvas');
   const ctx = canvas.getContext('2d');
-
-  function setDims(){
-    const d = WALLPAPER_DIMS[device];
-    canvas.width = d.w; canvas.height = d.h;
-  }
+  const deviceRow = backdrop.querySelector('#deviceRow');
+  const bgRow = backdrop.querySelector('#bgRow');
+  const opacityRow = backdrop.querySelector('#opacityRow');
+  const dragHint = backdrop.querySelector('#dragHint');
+  const wpTitle = backdrop.querySelector('#wpTitle');
+  const downloadBtn = backdrop.querySelector('#wpDownload');
+  const resetBtn = backdrop.querySelector('#wpReset');
 
   function draw(){
-    const d = WALLPAPER_DIMS[device];
-    ctx.clearRect(0,0,d.w,d.h);
-    if(bgImage){
-      drawImageCover(ctx, bgImage, 0, 0, d.w, d.h);
+    const sizeScale = sizePct/100;
+    if(mode==='wallpaper'){
+      const d = WALLPAPER_DIMS[device];
+      canvas.width = d.w; canvas.height = d.h;
+      ctx.clearRect(0,0,d.w,d.h);
+      if(bgImage){
+        drawImageCover(ctx, bgImage, 0, 0, d.w, d.h);
+      } else {
+        const grad = ctx.createLinearGradient(0,0,d.w,d.h);
+        grad.addColorStop(0, getCssVar('--bg') || '#FAF6FB');
+        grad.addColorStop(1, getCssVar('--navy-2') || '#ECE3F5');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0,0,d.w,d.h);
+      }
+      const baseScale = Math.hypot(d.w, d.h) / Math.hypot(1080, 1920);
+      const scale = baseScale*sizeScale;
+      const tableW = d.w*0.88*sizeScale;
+      const layout = computeTableLayout(entries, tableW, scale);
+      const baseX = (d.w-tableW)/2 + offsetX;
+      const baseY = (d.h-layout.tableH)/2 + offsetY;
+      paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale);
     } else {
-      const grad = ctx.createLinearGradient(0,0,d.w,d.h);
-      grad.addColorStop(0, getCssVar('--bg') || '#FAF6FB');
-      grad.addColorStop(1, getCssVar('--navy-2') || '#ECE3F5');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0,0,d.w,d.h);
+      // Image mode: canvas is sized to exactly fit the table (plus a small
+      // margin for its drop shadow) — no device frame, no background photo,
+      // no drag. Table size slider still controls resolution/scale.
+      const margin = 24*sizeScale;
+      const tableW = IMAGE_MODE_BASE_W*0.88*sizeScale;
+      const layout = computeTableLayout(entries, tableW, sizeScale);
+      canvas.width = tableW + margin*2;
+      canvas.height = layout.tableH + margin*2;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      paintTable(ctx, layout, margin, margin, tableW, entries, memberId, member, 1, style, sizeScale);
     }
-    drawWallpaperTable(ctx, d, entries, memberId, member, opacity, offsetX, offsetY);
   }
+
+  // Mode toggle — wallpaper (device frame + background + position) vs a
+  // plain schedule image sized to fit the table itself.
+  const modeWallpaperBtn = backdrop.querySelector('#modeWallpaper');
+  const modeImageBtn = backdrop.querySelector('#modeImage');
+  function setMode(m){
+    mode = m;
+    modeWallpaperBtn.classList.toggle('active', m==='wallpaper');
+    modeImageBtn.classList.toggle('active', m==='image');
+    const isWallpaper = m==='wallpaper';
+    deviceRow.style.display = isWallpaper ? 'flex' : 'none';
+    bgRow.style.display = isWallpaper ? 'flex' : 'none';
+    opacityRow.style.display = isWallpaper ? 'flex' : 'none';
+    dragHint.style.display = isWallpaper ? 'block' : 'none';
+    resetBtn.style.display = isWallpaper ? 'inline-flex' : 'none';
+    canvas.style.cursor = isWallpaper ? 'grab' : 'default';
+    wpTitle.textContent = isWallpaper ? 'Make a wallpaper' : 'Save schedule as image';
+    downloadBtn.textContent = isWallpaper ? 'Download wallpaper' : 'Save image';
+    offsetX = 0; offsetY = 0;
+    draw();
+  }
+  modeWallpaperBtn.onclick = ()=> setMode('wallpaper');
+  modeImageBtn.onclick = ()=> setMode('image');
 
   // Device toggle
   const devPhoneBtn = backdrop.querySelector('#devPhone');
@@ -1912,10 +2016,16 @@ function openWallpaperBuilder(memberId){
     devPhoneBtn.classList.toggle('active', d==='phone');
     devLaptopBtn.classList.toggle('active', d==='laptop');
     offsetX = 0; offsetY = 0; // dimensions differ a lot between devices — start centered again
-    setDims(); draw();
+    draw();
   }
   devPhoneBtn.onclick = ()=> setDevice('phone');
   devLaptopBtn.onclick = ()=> setDevice('laptop');
+
+  // Style toggle
+  const styleMinimalBtn = backdrop.querySelector('#styleMinimal');
+  const styleBoldBtn = backdrop.querySelector('#styleBold');
+  styleMinimalBtn.onclick = ()=>{ style='minimal'; styleMinimalBtn.classList.add('active'); styleBoldBtn.classList.remove('active'); draw(); };
+  styleBoldBtn.onclick = ()=>{ style='bold'; styleBoldBtn.classList.add('active'); styleMinimalBtn.classList.remove('active'); draw(); };
 
   // Background source
   const bgDefaultBtn = backdrop.querySelector('#bgDefault');
@@ -1953,10 +2063,21 @@ function openWallpaperBuilder(memberId){
     draw();
   };
 
-  // Drag to reposition — convert on-screen pixel movement to canvas-internal
-  // pixels, since the canvas is displayed smaller than its true export size.
+  // Table size
+  const sizeSlider = backdrop.querySelector('#sizeSlider');
+  const sizeVal = backdrop.querySelector('#sizeVal');
+  sizeSlider.oninput = ()=>{
+    sizePct = Number(sizeSlider.value);
+    sizeVal.textContent = sizePct+'%';
+    draw();
+  };
+
+  // Drag to reposition (wallpaper mode only) — convert on-screen pixel
+  // movement to canvas-internal pixels, since the canvas is displayed
+  // smaller than its true export size.
   let dragging=false, lastX=0, lastY=0;
   canvas.addEventListener('pointerdown', e=>{
+    if(mode!=='wallpaper') return;
     dragging = true; lastX=e.clientX; lastY=e.clientY;
     canvas.style.cursor='grabbing';
     canvas.setPointerCapture(e.pointerId);
@@ -1969,11 +2090,11 @@ function openWallpaperBuilder(memberId){
     lastX=e.clientX; lastY=e.clientY;
     draw();
   });
-  const stopDrag = ()=>{ dragging=false; canvas.style.cursor='grab'; };
+  const stopDrag = ()=>{ dragging=false; if(mode==='wallpaper') canvas.style.cursor='grab'; };
   canvas.addEventListener('pointerup', stopDrag);
   canvas.addEventListener('pointercancel', stopDrag);
 
-  backdrop.querySelector('#wpReset').onclick = ()=>{ offsetX=0; offsetY=0; draw(); };
+  resetBtn.onclick = ()=>{ offsetX=0; offsetY=0; draw(); };
 
   // Per-class color editing — writes through the same shared blockColors
   // store the live grid uses, so it's a single source of truth.
@@ -2011,20 +2132,19 @@ function openWallpaperBuilder(memberId){
   }
   backdrop.querySelector('#wpClose').onclick = closeModal;
 
-  backdrop.querySelector('#wpDownload').onclick = async ()=>{
+  downloadBtn.onclick = async ()=>{
     try{ await document.fonts.ready; }catch(e){}
     draw();
     canvas.toBlob(blob=>{
       if(!blob) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `schedule-wallpaper-${device}.png`;
+      a.href = url; a.download = mode==='wallpaper' ? `schedule-wallpaper-${device}.png` : `schedule-image.png`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(url), 4000);
     }, 'image/png');
   };
 
-  setDims();
   renderColorList();
   draw();
 }
