@@ -1565,7 +1565,7 @@ function renderCombinedTab(){
 }
 
 /* ============================= BOARD (weekly grid) ============================= */
-const BOARD_START = 7*60+30; // 7:30 AM — one row of headroom above the first labeled hour (8:00)
+const BOARD_START = 8*60;   // 8:00 AM
 const BOARD_END = 21*60;    // 9:00 PM
 const ROW_H = 48;           // px per 30 min
 
@@ -1610,10 +1610,7 @@ function renderBoard(groups, allowDelete){
   // Positioned with the exact same top formula the gridlines below use
   // (r*ROW_H, same r), so a label lines up pixel-for-pixel with its actual
   // gridline instead of drifting from an independent flex-stacked layout.
-  // BOARD_START itself (7:30) is a half-hour and stays unlabeled — labels
-  // always land on the whole hour (8:00, 9:00…), so the loop starts at the
-  // next whole hour rather than at BOARD_START.
-  for(let t=Math.ceil(BOARD_START/60)*60; t<BOARD_END; t+=60){
+  for(let t=BOARD_START; t<BOARD_END; t+=60){
     const topPx = ((t-BOARD_START)/30)*ROW_H;
     timeCol.appendChild(el(`<div class="time-cell" style="top:${topPx}px;">${minutesToLabel(t)}</div>`));
   }
@@ -1754,10 +1751,10 @@ function surnameOf(instructor){
   return words[words.length-1];
 }
 
-// Auto-fits the visible hour range to this person's actual classes (padded
-// by a full hour on each side so every row/label stays aligned to :00,
-// clamped to sane bounds) instead of always drawing a fixed 7am–9pm grid
-// full of empty rows.
+// Auto-fits the visible hour range to this person's actual classes: starts
+// exactly at the first class's hour (no blank spacer row above it, just
+// like the live board), padded by a full hour after the last class so the
+// bottom doesn't feel cramped. Clamped to sane bounds.
 function computeWallpaperTimeRange(entries){
   let minStart=Infinity, maxEnd=-Infinity;
   entries.forEach(entry=>(entry.meetings||[]).forEach(m=>{
@@ -1765,7 +1762,7 @@ function computeWallpaperTimeRange(entries){
     if(m.end!=null) maxEnd = Math.max(maxEnd, m.end);
   }));
   if(!isFinite(minStart) || !isFinite(maxEnd)){ minStart=7*60; maxEnd=21*60; }
-  let start = Math.floor(minStart/60)*60 - 60;
+  let start = Math.floor(minStart/60)*60;
   let end = Math.ceil(maxEnd/60)*60 + 60;
   start = Math.max(start, 5*60);
   end = Math.min(end, 23*60);
@@ -1857,11 +1854,14 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
     });
     if(style==='minimal'){
+      // Sits a little above the body, not exactly on the first hour tick —
+      // otherwise the rule line runs straight through that label's text.
+      const dividerY = bodyY - 7*scale;
       ctx.strokeStyle = inkColor;
       ctx.lineWidth = 2*scale;
       ctx.beginPath();
-      ctx.moveTo(baseX+pad, bodyY);
-      ctx.lineTo(baseX+pad+contentW, bodyY);
+      ctx.moveTo(baseX+pad, dividerY);
+      ctx.lineTo(baseX+pad+contentW, dividerY);
       ctx.stroke();
     }
   }
@@ -1871,14 +1871,11 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   // background. 'minimal'/'editorial' stay plain text like the rest of
   // that style. Vertically centered right on the gridline it represents
   // (rather than floating above it), so it lines up with a class block
-  // that starts at that exact time. The very first label (7:00 AM /
-  // whatever the range starts at) is skipped for every style — 'minimal's
-  // header divider sits exactly on that line, so a label there would
-  // collide with it — every other label (8:00 AM onward) keeps its
-  // original position untouched.
+  // that starts at that exact time. The range now starts exactly at the
+  // first class's hour (no blank spacer row above it), so every label,
+  // including the very first, is shown.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
   for(let t=rangeStart; t<=rangeEnd; t+=60){
-    if(t===rangeStart) continue;
     const y = bodyY + ((t-rangeStart)/30)*rowH;
     const label = style==='editorial' ? abbrevHourLabel(t) : minutesToLabel(t);
     const labelX = gridX-8*scale;
