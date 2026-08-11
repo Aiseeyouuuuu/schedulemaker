@@ -1607,7 +1607,8 @@ function renderBoard(groups, allowDelete){
   const body = board.querySelector('.board-body');
   const timeCol = board.querySelector('.time-col');
   for(let t=BOARD_START;t<BOARD_END;t+=60){
-    timeCol.appendChild(el(`<div class="time-cell" style="height:${ROW_H*2}px;">${minutesToLabel(t)}</div>`));
+    const label = t===BOARD_START ? '' : minutesToLabel(t);
+    timeCol.appendChild(el(`<div class="time-cell" style="height:${ROW_H*2}px;">${label}</div>`));
   }
   const dayCols = [...body.querySelectorAll('.day-col')];
   dayCols.forEach(col=>{
@@ -1817,10 +1818,15 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   ctx.save();
   ctx.globalAlpha = opacity;
 
+  // 'grid' keeps its muted, printed-timetable feel but the mute tone is
+  // now derived from the user's own table color (blended toward gray)
+  // instead of a fixed gray — so the color picker actually changes it.
+  const gridPillColor = mixHex(inkColor, '#8B8B99', 0.45);
+  const gridPillText = getContrastTextColor(gridPillColor);
+
   if(isPillHeader){
     // Day header row: solid pill per day, uppercase label. 'bold' uses the
-    // user's table color; 'grid' uses a muted gray to match a printed-
-    // timetable look.
+    // user's table color; 'grid' uses a muted blend of it.
     const pillH = headerH*0.62;
     const pillY = baseY+pad+(headerH-pillH)/2;
     ctx.font = `700 ${13*ts*scale}px 'Poppins', sans-serif`;
@@ -1828,18 +1834,12 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     DAY_ORDER.forEach((day,i)=>{
       const cx0 = gridX + i*dayColW + 3*scale;
       const pw = dayColW - 6*scale;
-      ctx.fillStyle = style==='grid' ? 'rgba(95,95,115,0.6)' : inkColor;
+      ctx.fillStyle = style==='grid' ? gridPillColor : inkColor;
       roundRectPath(ctx, cx0, pillY, pw, pillH, 10*scale);
       ctx.fill();
-      ctx.fillStyle = style==='grid' ? '#FFFFFF' : inkOnInk;
+      ctx.fillStyle = style==='grid' ? gridPillText : inkOnInk;
       ctx.fillText(DAY_LABEL[day].toUpperCase(), cx0+pw/2, pillY+pillH/2);
     });
-    if(style==='grid'){
-      ctx.font = `700 ${10.5*ts*scale}px 'Poppins', sans-serif`;
-      ctx.fillStyle = 'rgba(95,95,115,0.7)';
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText('TIME', baseX+pad, baseY+pad+headerH/2);
-    }
   } else {
     // 'minimal' and 'pastel': plain centered label. Minimal adds a divider rule.
     ctx.font = `700 ${(style==='pastel'?15:16)*ts*scale}px 'Poppins', sans-serif`;
@@ -1875,8 +1875,8 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
     const labelX = gridX-8*scale;
     if(isPillHeader){
-      const pillColor = style==='grid' ? 'rgba(95,95,115,0.6)' : inkColor;
-      const textColor = style==='grid' ? '#FFFFFF' : inkOnInk;
+      const pillColor = style==='grid' ? gridPillColor : inkColor;
+      const textColor = style==='grid' ? gridPillText : inkOnInk;
       const padX = 6*scale, padY = 3*scale, m = ctx.measureText(label);
       const w = m.width, asc = m.actualBoundingBoxAscent||8, desc = m.actualBoundingBoxDescent||3;
       const boxX = labelX-w-padX, boxY = y-(asc+desc)/2-padY, boxW = w+padX*2, boxH = asc+desc+padY*2;
@@ -1922,7 +1922,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const yy = y+gap/2, hh = h-gap;
 
       const color = getBlockColor(memberId, b.entry.id, member?member.color:'#4169E1');
-      const textColor = style==='grid' ? (getCssVar('--navy-text') || '#2A4492') : getContrastTextColor(color);
+      const textColor = style==='grid' ? inkColor : getContrastTextColor(color);
       const surname = surnameOf(b.entry.instructor);
 
       ctx.fillStyle = color;
