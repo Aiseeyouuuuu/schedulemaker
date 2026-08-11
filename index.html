@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Schedule Maker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#F0F3FD;
@@ -24,15 +24,15 @@
     --radius:10px;
   }
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Work Sans',sans-serif;-webkit-font-smoothing:antialiased;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Poppins',sans-serif;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 80px;}
 
   /* ---- header ---- */
   .app-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px;flex-wrap:wrap;}
-  .wordmark{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:var(--navy-text);letter-spacing:-0.5px;}
-  .tagline{font-size:13px;color:var(--muted);margin-top:2px;font-family:'IBM Plex Mono',monospace;letter-spacing:0.2px;}
+  .wordmark{font-family:'Poppins',sans-serif;font-weight:700;font-size:34px;color:var(--navy-text);letter-spacing:-0.5px;}
+  .tagline{font-size:13px;color:var(--muted);margin-top:2px;font-family:'Poppins',sans-serif;letter-spacing:0.2px;}
   .whoami{font-size:13px;color:var(--muted);text-align:right;}
-  .whoami b{color:var(--navy-text);font-family:'Space Grotesk',sans-serif;}
+  .whoami b{color:var(--navy-text);font-family:'Poppins',sans-serif;}
   .edit-name-btn{
     background:transparent;border:none;color:var(--muted);cursor:pointer;
     font-size:12px;padding:0 2px;border-radius:4px;vertical-align:middle;
@@ -42,7 +42,7 @@
   /* ---- tabs ---- */
   .tabs{display:flex;gap:6px;border-bottom:2px solid var(--navy-text);margin-bottom:20px;}
   .tab-btn{
-    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:14px;
     background:var(--line);color:var(--muted);border:none;
     padding:10px 18px;border-radius:10px 10px 0 0;cursor:pointer;
     transform:translateY(2px);transition:transform .15s, background .15s, color .15s;
@@ -52,20 +52,20 @@
 
   /* ---- panels / cards ---- */
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:18px;}
-  .panel h3{font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 12px;color:var(--navy-text);}
+  .panel h3{font-family:'Poppins',sans-serif;font-size:15px;margin:0 0 12px;color:var(--navy-text);}
   .hint{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5;}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 
   textarea{
-    width:100%;min-height:90px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+    width:100%;min-height:90px;font-family:'Poppins',sans-serif;font-size:12.5px;
     border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical;background:#FAFBFA;
   }
   input[type=text], input[type=time], input[type=password], select{
-    font-family:'Work Sans',sans-serif;font-size:13.5px;border:1px solid var(--line);
+    font-family:'Poppins',sans-serif;font-size:13.5px;border:1px solid var(--line);
     border-radius:8px;padding:8px 10px;background:#fff;
   }
   button{
-    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:13px;
     border:none;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--navy);color:var(--navy-ink);
     transition:opacity .15s;
   }
@@ -87,11 +87,11 @@
   .combo-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #F0F1EF;font-size:13px;}
   .combo-item:last-child{border-bottom:none;}
   .combo-item:hover{background:#F4F6F4;}
-  .combo-item .code{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--navy-text);margin-right:8px;}
+  .combo-item .code{font-family:'Poppins',sans-serif;font-weight:600;color:var(--navy-text);margin-right:8px;}
   .combo-item .meta{color:var(--muted);font-size:11.5px;}
   .combo-empty{padding:12px;color:var(--muted);font-size:12.5px;}
   .clash-tag{
-    flex:none;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:10.5px;
+    flex:none;font-family:'Poppins',sans-serif;font-weight:600;font-size:10.5px;
     color:var(--danger);border:1px solid var(--danger);border-radius:20px;padding:2px 8px;
     white-space:nowrap;
   }
@@ -100,7 +100,7 @@
   table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:12.5px;}
   table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
   table.stage td{padding:4px 6px;border-bottom:1px solid #F0F1EF;}
-  table.stage input{width:100%;border:1px solid transparent;background:transparent;padding:4px 5px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;}
+  table.stage input{width:100%;border:1px solid transparent;background:transparent;padding:4px 5px;font-size:12.5px;font-family:'Poppins',sans-serif;}
   table.stage input:focus{border-color:var(--line);background:#fff;}
   table.stage tr:hover td{background:#FAFBF9;}
 
@@ -126,14 +126,14 @@
   .board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
   .board-head{display:grid;grid-template-columns:64px repeat(6,1fr);border-bottom:2px solid var(--navy-text);}
   .board-head div{
-    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:var(--navy-text);
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:12px;color:var(--navy-text);
     padding:10px 6px;text-align:center;border-left:1px solid var(--line);
   }
   .board-head div:first-child{border-left:none;}
   .board-body{position:relative;display:grid;grid-template-columns:64px repeat(6,1fr);}
   .time-col{display:flex;flex-direction:column;}
   .time-cell{
-    height:48px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);
+    height:48px;font-family:'Poppins',sans-serif;font-size:10.5px;color:var(--muted);
     text-align:right;padding-right:6px;border-top:1px solid #EEF0EE;position:relative;top:-6px;
   }
   .day-col{position:relative;border-left:1px solid var(--line);}
@@ -142,7 +142,7 @@
     position:absolute;left:3px;right:3px;border-radius:6px;overflow:hidden;
     padding:5px 7px;font-size:11px;line-height:1.3;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.12);
   }
-  .block .code{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:11.5px;display:block;}
+  .block .code{font-family:'Poppins',sans-serif;font-weight:600;font-size:11.5px;display:block;}
   .block .title{opacity:.92;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .block .room{opacity:.8;font-size:10px;display:block;}
   .block .del{
@@ -179,7 +179,7 @@
 
   .modal-backdrop{position:fixed;inset:0;background:rgba(107,92,160,0.45);display:flex;align-items:center;justify-content:center;z-index:100;}
   .modal{background:#fff;border-radius:12px;padding:26px;width:340px;text-align:center;}
-  .modal h2{font-family:'Space Grotesk',sans-serif;color:var(--navy-text);margin-top:0;}
+  .modal h2{font-family:'Poppins',sans-serif;color:var(--navy-text);margin-top:0;}
   .modal input{width:100%;margin:14px 0;text-align:center;font-size:15px;padding:10px;}
 
   @media (max-width: 720px){
@@ -348,6 +348,14 @@ function minutesToLabel(mins){
   const ap = h>=12 ? 'PM':'AM';
   let h12 = h%12; if(h12===0) h12=12;
   return `${h12}:${String(m).padStart(2,'0')} ${ap}`;
+}
+// Compact hour-only label ("8a", "12p") used by the 'pastel' wallpaper style.
+function abbrevHourLabel(mins){
+  if(mins==null) return '';
+  let h = Math.floor(mins/60);
+  const ap = h>=12 ? 'p':'a';
+  let h12 = h%12; if(h12===0) h12=12;
+  return `${h12}${ap}`;
 }
 
 /* ============================= AISIS HTML TABLE PARSER (exact) ============================= */
@@ -694,7 +702,7 @@ function elRow(trHtml){
 function showToast(message){
   const toast = el(`<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
     background:var(--navy);color:var(--navy-ink);padding:10px 18px;border-radius:20px;font-size:13px;
-    font-family:'Space Grotesk',sans-serif;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,0.2);
+    font-family:'Poppins',sans-serif;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,0.2);
     z-index:200;">${message}</div>`);
   document.body.appendChild(toast);
   setTimeout(()=> toast.remove(), 3000);
@@ -917,7 +925,6 @@ function renderHeader(){
     <div class="app-header">
       <div>
         <div class="wordmark">Schedule Maker</div>
-        <div class="tagline">your sem, plotted</div>
       </div>
       <div class="row" style="align-items:center;gap:14px;">
         <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:14px;">${state.isAdmin?'🔓':'🔒'}</button>
@@ -1638,7 +1645,9 @@ function renderBoard(groups, allowDelete){
 const WALLPAPER_DIMS = {
   phone:  {w:1080, h:2400, label:'Phone · 1080×2400'},
   laptop: {w:2560, h:1600, label:'Laptop · 2560×1600'},
+  custom: {w:1080, h:1920, label:'Custom'}, // w/h overwritten live by the width/height inputs
 };
+const WALLPAPER_CUSTOM_MIN = 320, WALLPAPER_CUSTOM_MAX = 4000;
 // Reference width used for "Schedule image" mode, where there's no phone/
 // laptop canvas — the table just defines its own tight canvas.
 const IMAGE_MODE_BASE_W = 1080;
@@ -1692,8 +1701,9 @@ function surnameOf(instructor){
 }
 
 // Auto-fits the visible hour range to this person's actual classes (padded
-// by 30min on each side, clamped to sane bounds) instead of always drawing
-// a fixed 7am–9pm grid full of empty rows.
+// by a full hour on each side so every row/label stays aligned to :00,
+// clamped to sane bounds) instead of always drawing a fixed 7am–9pm grid
+// full of empty rows.
 function computeWallpaperTimeRange(entries){
   let minStart=Infinity, maxEnd=-Infinity;
   entries.forEach(entry=>(entry.meetings||[]).forEach(m=>{
@@ -1701,8 +1711,8 @@ function computeWallpaperTimeRange(entries){
     if(m.end!=null) maxEnd = Math.max(maxEnd, m.end);
   }));
   if(!isFinite(minStart) || !isFinite(maxEnd)){ minStart=7*60; maxEnd=21*60; }
-  let start = Math.floor(minStart/60)*60 - 30;
-  let end = Math.ceil(maxEnd/60)*60 + 30;
+  let start = Math.floor(minStart/60)*60 - 60;
+  let end = Math.ceil(maxEnd/60)*60 + 60;
   start = Math.max(start, 5*60);
   end = Math.min(end, 23*60);
   if(end-start < 6*60) end = Math.min(start+6*60, 23*60);
@@ -1728,17 +1738,22 @@ function computeTableLayout(entries, tableW, scale){
 }
 
 // Renders the schedule "card" onto the export canvas at (baseX,baseY).
-// `style` picks between two visual languages — both show the same
+// `style` picks between four visual languages — all show the same
 // underlying data (code, section, room, instructor's surname), just
 // presented differently:
 //   'minimal' — mirrors the live board's visual language (rounded pastel
 //               blocks, clean hour rule lines, course title included).
 //   'bold'    — bigger uppercase headers on solid pills, chunkier rounded
 //               blocks, title omitted to keep blocks compact.
+//   'pastel'  — soft rounded card, plain hour-only labels ("8a","12p"),
+//               each block shows its time range instead of the title.
+//   'grid'    — full printed-timetable look: muted day pills, a "TIME"
+//               gutter label, and every open hour marked "VACANT".
 function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale){
   const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH} = layout;
   const gridX = baseX+pad+timeGutterW;
   const bodyY = baseY+pad+headerH;
+  const isPillHeader = style==='bold' || style==='grid';
 
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -1748,57 +1763,66 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   ctx.shadowBlur = 26*scale;
   ctx.shadowOffsetY = 8*scale;
   ctx.fillStyle = '#FFFFFF';
-  roundRectPath(ctx, baseX, baseY, tableW, tableH, (style==='bold'?28:22)*scale);
+  roundRectPath(ctx, baseX, baseY, tableW, tableH, (isPillHeader?28:22)*scale);
   ctx.fill();
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
-  if(style==='bold'){
-    // Day header row: solid dark pill per day, uppercase label
+  if(isPillHeader){
+    // Day header row: solid pill per day, uppercase label. 'bold' uses the
+    // theme navy; 'grid' uses a muted gray to match a printed-timetable look.
     const pillH = headerH*0.62;
     const pillY = baseY+pad+(headerH-pillH)/2;
-    ctx.font = `700 ${13*scale}px 'Space Grotesk', sans-serif`;
+    ctx.font = `700 ${13*scale}px 'Poppins', sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx0 = gridX + i*dayColW + 3*scale;
       const pw = dayColW - 6*scale;
-      ctx.fillStyle = getCssVar('--navy-text') || '#2A4492';
+      ctx.fillStyle = style==='grid' ? 'rgba(95,95,115,0.6)' : (getCssVar('--navy-text') || '#2A4492');
       roundRectPath(ctx, cx0, pillY, pw, pillH, 10*scale);
       ctx.fill();
-      ctx.fillStyle = getCssVar('--navy-ink') || '#FFFFFF';
+      ctx.fillStyle = style==='grid' ? '#FFFFFF' : (getCssVar('--navy-ink') || '#FFFFFF');
       ctx.fillText(DAY_LABEL[day].toUpperCase(), cx0+pw/2, pillY+pillH/2);
     });
+    if(style==='grid'){
+      ctx.font = `700 ${10.5*scale}px 'Poppins', sans-serif`;
+      ctx.fillStyle = 'rgba(95,95,115,0.7)';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText('TIME', baseX+pad, baseY+pad+headerH/2);
+    }
   } else {
-    // Minimal day header: plain centered label + divider rule
-    ctx.font = `700 ${16*scale}px 'Space Grotesk', sans-serif`;
+    // 'minimal' and 'pastel': plain centered label. Minimal adds a divider rule.
+    ctx.font = `700 ${(style==='pastel'?15:16)*scale}px 'Poppins', sans-serif`;
     ctx.fillStyle = getCssVar('--navy-text') || '#2A4492';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx = gridX + i*dayColW + dayColW/2;
       ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
     });
-    ctx.strokeStyle = getCssVar('--navy') || '#4169E1';
-    ctx.lineWidth = 2*scale;
-    ctx.beginPath();
-    ctx.moveTo(baseX+pad, bodyY);
-    ctx.lineTo(baseX+pad+contentW, bodyY);
-    ctx.stroke();
+    if(style==='minimal'){
+      ctx.strokeStyle = getCssVar('--navy') || '#4169E1';
+      ctx.lineWidth = 2*scale;
+      ctx.beginPath();
+      ctx.moveTo(baseX+pad, bodyY);
+      ctx.lineTo(baseX+pad+contentW, bodyY);
+      ctx.stroke();
+    }
   }
 
   // Hour labels + horizontal gridlines
-  ctx.font = `${style==='bold'?'600 ':''}${11*scale}px 'IBM Plex Mono', monospace`;
+  ctx.font = `${isPillHeader?'600 ':''}${11*scale}px 'Poppins', sans-serif`;
   ctx.fillStyle = getCssVar('--muted') || '#6B7290';
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for(let t=rangeStart; t<=rangeEnd; t+=60){
     const y = bodyY + ((t-rangeStart)/30)*rowH;
-    ctx.fillText(minutesToLabel(t), gridX-8*scale, y);
-    ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+    ctx.fillText(style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t), gridX-8*scale, y);
+    ctx.strokeStyle = style==='grid' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.07)';
     ctx.lineWidth = 1*scale;
     ctx.beginPath(); ctx.moveTo(gridX, y); ctx.lineTo(baseX+pad+contentW, y); ctx.stroke();
   }
   // Vertical day separators
   for(let i=0;i<=6;i++){
     const x = gridX + i*dayColW;
-    ctx.strokeStyle = 'rgba(0,0,0,0.05)'; ctx.lineWidth = 1*scale;
+    ctx.strokeStyle = style==='grid' ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.05)'; ctx.lineWidth = 1*scale;
     ctx.beginPath(); ctx.moveTo(x, bodyY); ctx.lineTo(x, bodyY+bodyH); ctx.stroke();
   }
 
@@ -1815,6 +1839,25 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     });
   });
 
+  // 'grid' style additionally marks every open hour cell as VACANT, like a
+  // printed class-schedule grid — drawn before the occupied blocks so they
+  // layer cleanly on top.
+  if(style==='grid'){
+    ctx.font = `600 ${9.5*scale}px 'Poppins', sans-serif`;
+    ctx.fillStyle = 'rgba(120,120,140,0.55)';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for(let t=rangeStart; t<rangeEnd; t+=60){
+      const y = bodyY + ((t-rangeStart)/30)*rowH;
+      const h = (60/30)*rowH;
+      DAY_ORDER.forEach((day,colIdx)=>{
+        const occupied = perDay[colIdx].some(b=> b.start < t+60 && b.end > t);
+        if(occupied) return;
+        const x = gridX + colIdx*dayColW;
+        ctx.fillText('VACANT', x+dayColW/2, y+h/2);
+      });
+    }
+  }
+
   perDay.forEach((dayBlocks, colIdx)=>{
     packDayBlocks(dayBlocks);
     dayBlocks.forEach(b=>{
@@ -1825,39 +1868,47 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const laneCount = b.__laneCount || 1;
       const colX = gridX + colIdx*dayColW;
       const blockW = dayColW/laneCount;
-      const gap = (style==='bold'?4:2.5)*scale;
+      const gap = (isPillHeader?4:2.5)*scale;
       const x = colX + b.__lane*blockW + gap/2;
       const w = blockW - gap;
       const yy = y+gap/2, hh = h-gap;
 
       const color = getBlockColor(memberId, b.entry.id, member?member.color:'#4169E1');
-      const textColor = getContrastTextColor(color);
+      const textColor = style==='grid' ? (getCssVar('--navy-text') || '#2A4492') : getContrastTextColor(color);
       const surname = surnameOf(b.entry.instructor);
 
       ctx.fillStyle = color;
-      roundRectPath(ctx, x, yy, w, hh, (style==='bold'?12:7)*scale);
+      roundRectPath(ctx, x, yy, w, hh, (isPillHeader?12:7)*scale);
       ctx.fill();
 
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      const padX = (style==='bold'?9:7)*scale;
+      const padX = (isPillHeader?9:7)*scale;
       const tx = x+padX, maxTextW = Math.max(w-padX*2, 4);
-      let ty = yy+(style==='bold'?8:6)*scale;
+      let ty = yy+(isPillHeader?8:6)*scale;
 
       ctx.fillStyle = textColor;
-      ctx.font = `700 ${(style==='bold'?12.5:11.5)*scale}px 'IBM Plex Mono', monospace`;
+      ctx.font = `700 ${(isPillHeader?12.5:11.5)*scale}px 'Poppins', sans-serif`;
       ctx.fillText(truncateText(ctx, `${b.entry.code||'—'} ${b.entry.section||''}`.trim(), maxTextW), tx, ty);
-      ty += (style==='bold'?16:14.5)*scale;
+      ty += (isPillHeader?16:14.5)*scale;
 
       if(style==='minimal' && hh > 32*scale){
-        ctx.font = `${10.5*scale}px 'Work Sans', sans-serif`;
+        ctx.font = `${10.5*scale}px 'Poppins', sans-serif`;
         ctx.globalAlpha = opacity*0.92;
         ctx.fillText(truncateText(ctx, b.entry.title||'', maxTextW), tx, ty);
         ctx.globalAlpha = opacity;
         ty += 13*scale;
       }
-      if(hh > (style==='bold'?30:48)*scale && (b.room || surname)){
-        ctx.font = `${(style==='bold'?10.5:9.5)*scale}px 'Work Sans', sans-serif`;
-        ctx.globalAlpha = opacity*(style==='bold'?0.88:0.8);
+      if(style==='pastel' && hh > 30*scale){
+        ctx.font = `${9.5*scale}px 'Poppins', sans-serif`;
+        ctx.globalAlpha = opacity*0.85;
+        const timeLine = `${minutesToLabel(b.start)} – ${minutesToLabel(b.end)}`;
+        ctx.fillText(truncateText(ctx, timeLine, maxTextW), tx, ty);
+        ctx.globalAlpha = opacity;
+        ty += 13*scale;
+      }
+      if(hh > (isPillHeader?30:48)*scale && (b.room || surname)){
+        ctx.font = `${(isPillHeader?10.5:9.5)*scale}px 'Poppins', sans-serif`;
+        ctx.globalAlpha = opacity*(isPillHeader?0.88:0.8);
         const line = [b.room, surname].filter(Boolean).join(' · ');
         ctx.fillText(truncateText(ctx, line, maxTextW), tx, ty);
         ctx.globalAlpha = opacity;
@@ -1874,7 +1925,7 @@ function openWallpaperBuilder(memberId){
 
   let mode = 'wallpaper';   // 'wallpaper' | 'image'
   let device = 'phone';
-  let style = 'minimal';    // 'minimal' | 'bold'
+  let style = 'minimal';    // 'minimal' | 'bold' | 'pastel' | 'grid'
   let bgImage = null, bgObjectUrl = null;
   let opacity = 1;
   let offsetX = 0, offsetY = 0;
@@ -1896,6 +1947,15 @@ function openWallpaperBuilder(memberId){
         <div id="deviceRow" class="row" style="margin-top:10px;">
           <button class="chip active" id="devPhone">${WALLPAPER_DIMS.phone.label}</button>
           <button class="chip" id="devLaptop">${WALLPAPER_DIMS.laptop.label}</button>
+          <button class="chip" id="devCustom">Custom size</button>
+        </div>
+
+        <div id="customSizeRow" class="row" style="margin-top:10px;align-items:center;display:none;">
+          <span class="hint" style="margin:0;">Stretch to:</span>
+          <input type="number" id="customW" min="${WALLPAPER_CUSTOM_MIN}" max="${WALLPAPER_CUSTOM_MAX}" value="${WALLPAPER_DIMS.custom.w}" style="width:84px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-family:'Poppins',sans-serif;"/>
+          <span class="hint" style="margin:0;">×</span>
+          <input type="number" id="customH" min="${WALLPAPER_CUSTOM_MIN}" max="${WALLPAPER_CUSTOM_MAX}" value="${WALLPAPER_DIMS.custom.h}" style="width:84px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-family:'Poppins',sans-serif;"/>
+          <span class="hint" style="margin:0;">px</span>
         </div>
 
         <div id="bgRow" class="row" style="margin-top:10px;align-items:center;">
@@ -1921,6 +1981,8 @@ function openWallpaperBuilder(memberId){
           <span class="hint" style="margin:0;">Style:</span>
           <button class="chip active" id="styleMinimal">Minimal</button>
           <button class="chip" id="styleBold">Bold</button>
+          <button class="chip" id="stylePastel">Pastel</button>
+          <button class="chip" id="styleGrid">Grid</button>
         </div>
 
         <p class="hint" id="dragHint" style="margin:12px 0 6px;">Drag the schedule below to reposition it on the wallpaper.</p>
@@ -2008,24 +2070,52 @@ function openWallpaperBuilder(memberId){
   modeWallpaperBtn.onclick = ()=> setMode('wallpaper');
   modeImageBtn.onclick = ()=> setMode('image');
 
-  // Device toggle
+  // Device toggle — phone / laptop presets, or a free-form custom size the
+  // user can stretch to whatever dimensions they want.
   const devPhoneBtn = backdrop.querySelector('#devPhone');
   const devLaptopBtn = backdrop.querySelector('#devLaptop');
+  const devCustomBtn = backdrop.querySelector('#devCustom');
+  const customSizeRow = backdrop.querySelector('#customSizeRow');
+  const customWInput = backdrop.querySelector('#customW');
+  const customHInput = backdrop.querySelector('#customH');
   function setDevice(d){
     device = d;
     devPhoneBtn.classList.toggle('active', d==='phone');
     devLaptopBtn.classList.toggle('active', d==='laptop');
+    devCustomBtn.classList.toggle('active', d==='custom');
+    customSizeRow.style.display = d==='custom' ? 'flex' : 'none';
     offsetX = 0; offsetY = 0; // dimensions differ a lot between devices — start centered again
     draw();
   }
   devPhoneBtn.onclick = ()=> setDevice('phone');
   devLaptopBtn.onclick = ()=> setDevice('laptop');
+  devCustomBtn.onclick = ()=> setDevice('custom');
+
+  function applyCustomSize(){
+    const w = Math.min(WALLPAPER_CUSTOM_MAX, Math.max(WALLPAPER_CUSTOM_MIN, parseInt(customWInput.value,10) || WALLPAPER_DIMS.custom.w));
+    const h = Math.min(WALLPAPER_CUSTOM_MAX, Math.max(WALLPAPER_CUSTOM_MIN, parseInt(customHInput.value,10) || WALLPAPER_DIMS.custom.h));
+    WALLPAPER_DIMS.custom.w = w; WALLPAPER_DIMS.custom.h = h;
+    customWInput.value = w; customHInput.value = h;
+    if(device==='custom') draw();
+  }
+  customWInput.addEventListener('change', applyCustomSize);
+  customHInput.addEventListener('change', applyCustomSize);
 
   // Style toggle
   const styleMinimalBtn = backdrop.querySelector('#styleMinimal');
   const styleBoldBtn = backdrop.querySelector('#styleBold');
-  styleMinimalBtn.onclick = ()=>{ style='minimal'; styleMinimalBtn.classList.add('active'); styleBoldBtn.classList.remove('active'); draw(); };
-  styleBoldBtn.onclick = ()=>{ style='bold'; styleBoldBtn.classList.add('active'); styleMinimalBtn.classList.remove('active'); draw(); };
+  const stylePastelBtn = backdrop.querySelector('#stylePastel');
+  const styleGridBtn = backdrop.querySelector('#styleGrid');
+  const styleBtns = {minimal:styleMinimalBtn, bold:styleBoldBtn, pastel:stylePastelBtn, grid:styleGridBtn};
+  function setStyle(s){
+    style = s;
+    Object.entries(styleBtns).forEach(([key,btn])=> btn.classList.toggle('active', key===s));
+    draw();
+  }
+  styleMinimalBtn.onclick = ()=> setStyle('minimal');
+  styleBoldBtn.onclick = ()=> setStyle('bold');
+  stylePastelBtn.onclick = ()=> setStyle('pastel');
+  styleGridBtn.onclick = ()=> setStyle('grid');
 
   // Background source
   const bgDefaultBtn = backdrop.querySelector('#bgDefault');
