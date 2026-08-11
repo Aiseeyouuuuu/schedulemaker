@@ -1799,24 +1799,20 @@ function computeTableLayout(entries, tableW, scale, heightScale=1){
 //               gutter label; empty hours are left blank.
 // The table itself has no background fill — it sits directly on the
 // wallpaper/background behind it, no white card.
-function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale, tableColor, textScale, colorOverrides={}){
+function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale, tableColor, textScale, daysColor, timesColor, classesColor){
   const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH} = layout;
   const gridX = baseX+pad+timeGutterW;
   const bodyY = baseY+pad+headerH;
   const isPillHeader = style==='bold' || style==='grid';
-  // tableColor is the base ink color; dayColor/timeColor/classTextColor are
-  // independent per-section overrides — each defaults to tableColor's old
-  // unified behavior when not explicitly set, so existing wallpapers don't
-  // change unless the user actually picks a section color.
+  // tableColor drives every non-class-block ink color (headers, divider
+  // line, hour labels, bold-style pill fill) — a single user-picked color
+  // instead of the fixed theme navy, so "table color" is fully custom.
+  // daysColor/timesColor/classesColor are optional per-part overrides —
+  // null means "derive it the usual way from tableColor/style" (below);
+  // a non-null value is the user's explicit pick and wins outright.
   const inkColor = tableColor || getCssVar('--navy-text') || '#2A4492';
   const inkOnInk = getContrastTextColor(inkColor);
   const mutedColor = lightenHex(inkColor, 0.42);
-  const {dayColor, timeColor, classTextColor} = colorOverrides;
-  const dayInk = dayColor || inkColor;
-  const dayInkText = getContrastTextColor(dayInk);
-  const timeInk = timeColor || inkColor;         // pill fill (bold/grid)
-  const timeInkText = getContrastTextColor(timeInk);
-  const timeLabelColor = timeColor || mutedColor; // plain text (minimal/pastel) — direct if set, else the usual muted derivation
   // textScale is an independent multiplier on font *sizes* only — layout
   // metrics (padding, row height, column width) stay driven by `scale`
   // alone, so cranking text size up/down doesn't resize the table shape.
@@ -1825,19 +1821,19 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   ctx.save();
   ctx.globalAlpha = opacity;
 
-  // 'grid' keeps its muted, printed-timetable feel. Each section's blend
-  // is derived from that section's own ink (so a day/time override also
-  // recolors its pill in grid style), while class blocks default to the
-  // base table color's blend unless classTextColor is explicitly set.
+  // 'grid' keeps its muted, printed-timetable feel but the mute tone is
+  // now derived from the user's own table color (blended toward gray)
+  // instead of a fixed gray — so the color picker actually changes it.
   const gridPillColor = mixHex(inkColor, '#8B8B99', 0.45);
-  const gridDayPillColor = mixHex(dayInk, '#8B8B99', 0.45);
-  const gridDayPillText = getContrastTextColor(gridDayPillColor);
-  const gridTimePillColor = mixHex(timeInk, '#8B8B99', 0.45);
-  const gridTimePillText = getContrastTextColor(gridTimePillColor);
+  const gridPillText = getContrastTextColor(gridPillColor);
+  const defaultDaysColor = isPillHeader ? (style==='grid'?gridPillText:inkOnInk) : inkColor;
+  const defaultTimesColor = isPillHeader ? (style==='grid'?gridPillText:inkOnInk) : mutedColor;
+  const daysTextColor = daysColor || defaultDaysColor;
+  const timesTextColor = timesColor || defaultTimesColor;
 
   if(isPillHeader){
     // Day header row: solid pill per day, uppercase label. 'bold' uses the
-    // day color (or table color); 'grid' uses a muted blend of it.
+    // user's table color; 'grid' uses a muted blend of it.
     const pillH = headerH*0.62;
     const pillY = baseY+pad+(headerH-pillH)/2;
     ctx.font = `700 ${13*ts*scale}px 'Poppins', sans-serif`;
@@ -1845,16 +1841,16 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     DAY_ORDER.forEach((day,i)=>{
       const cx0 = gridX + i*dayColW + 3*scale;
       const pw = dayColW - 6*scale;
-      ctx.fillStyle = style==='grid' ? gridDayPillColor : dayInk;
+      ctx.fillStyle = style==='grid' ? gridPillColor : inkColor;
       roundRectPath(ctx, cx0, pillY, pw, pillH, 10*scale);
       ctx.fill();
-      ctx.fillStyle = style==='grid' ? gridDayPillText : dayInkText;
+      ctx.fillStyle = daysTextColor;
       ctx.fillText(DAY_LABEL[day].toUpperCase(), cx0+pw/2, pillY+pillH/2);
     });
   } else {
     // 'minimal' and 'pastel': plain centered label. Minimal adds a divider rule.
     ctx.font = `700 ${(style==='pastel'?15:16)*ts*scale}px 'Poppins', sans-serif`;
-    ctx.fillStyle = dayInk;
+    ctx.fillStyle = daysTextColor;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx = gridX + i*dayColW + dayColW/2;
@@ -1886,19 +1882,18 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
     const labelX = gridX-8*scale;
     if(isPillHeader){
-      const pillColor = style==='grid' ? gridTimePillColor : timeInk;
-      const textColor = style==='grid' ? gridTimePillText : timeInkText;
+      const pillColor = style==='grid' ? gridPillColor : inkColor;
       const padX = 6*scale, padY = 3*scale, m = ctx.measureText(label);
       const w = m.width, asc = m.actualBoundingBoxAscent||8, desc = m.actualBoundingBoxDescent||3;
       const boxX = labelX-w-padX, boxY = y-(asc+desc)/2-padY, boxW = w+padX*2, boxH = asc+desc+padY*2;
       ctx.fillStyle = pillColor;
       roundRectPath(ctx, boxX, boxY, boxW, boxH, 5*scale);
       ctx.fill();
-      ctx.fillStyle = textColor;
+      ctx.fillStyle = timesTextColor;
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
       ctx.fillText(label, labelX, y);
     } else {
-      ctx.fillStyle = timeLabelColor;
+      ctx.fillStyle = timesTextColor;
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
       ctx.fillText(label, labelX, y);
     }
@@ -1933,7 +1928,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const yy = y+gap/2, hh = h-gap;
 
       const color = getBlockColor(memberId, b.entry.id, member?member.color:'#4169E1');
-      const textColor = classTextColor || (style==='grid' ? gridPillColor : getContrastTextColor(color));
+      const textColor = classesColor || (style==='grid' ? gridPillColor : getContrastTextColor(color));
       const surname = surnameOf(b.entry.instructor);
 
       ctx.fillStyle = color;
@@ -1985,7 +1980,9 @@ function openWallpaperBuilder(memberId){
   let sizeHPct = 100;       // table height stretch slider, 60–160%
   let textScale = 1;        // font-size slider, 70–160%, independent of table shape
   let tableColor = '#2A4492'; // header/divider/hour-label ink color, user-customizable
-  let dayColor = null, timeColor = null, classTextColor = null; // per-section overrides — null = inherit tableColor / automatic default
+  let daysColor = null;     // per-part text color overrides — null = derive from tableColor/style
+  let timesColor = null;
+  let classesColor = null;  // null = auto per-block contrast against each class's own color
 
   const backdrop = el(`
     <div class="modal-backdrop" style="align-items:flex-start;padding:24px 12px;overflow:auto;">
@@ -2068,24 +2065,29 @@ function openWallpaperBuilder(memberId){
         </div>
 
         <div class="row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
-          <span class="hint" style="margin:0;">Font colors:</span>
+          <span class="hint" style="margin:0;width:100%;">Font colors — override any part individually:</span>
           <span class="hint" style="margin:0;">Days</span>
-          <label class="swatch-dot" title="Day label color" style="width:20px;height:20px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
-            <input type="color" id="dayColorInput" value="#2A4492" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />
+          <label class="swatch-dot" title="Days font color" style="width:18px;height:18px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+            <input type="color" id="daysColorInput" value="#2A4492" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />
           </label>
-          <button class="ghost small" id="dayColorAuto" style="display:none;">Auto</button>
+          <button class="ghost small" id="daysColorReset">Auto</button>
 
           <span class="hint" style="margin:0 0 0 8px;">Times</span>
-          <label class="swatch-dot" title="Time label color" style="width:20px;height:20px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
-            <input type="color" id="timeColorInput" value="#2A4492" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />
+          <label class="swatch-dot" title="Times font color" style="width:18px;height:18px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+            <input type="color" id="timesColorInput" value="#2A4492" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />
           </label>
-          <button class="ghost small" id="timeColorAuto" style="display:none;">Auto</button>
+          <button class="ghost small" id="timesColorReset">Auto</button>
 
           <span class="hint" style="margin:0 0 0 8px;">Classes</span>
-          <label class="swatch-dot" title="Class text color" style="width:20px;height:20px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
-            <input type="color" id="classColorInput" value="#1C2430" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />
+          <label class="swatch-dot" title="Classes font color" style="width:18px;height:18px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+            <input type="color" id="classesColorInput" value="#2A4492" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0;border:none;padding:0;" />
           </label>
-          <button class="ghost small" id="classColorAuto" style="display:none;">Auto</button>
+          <button class="ghost small" id="classesColorReset">Auto</button>
+        </div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <button class="gold" id="suggestColorsBtn">✨ Suggest colors for this background</button>
+          <span class="hint" style="margin:0;">Picks a table color that reads well against your chosen background, and resets the font overrides above to auto.</span>
         </div>
 
         <p class="hint" id="dragHint" style="margin:12px 0 6px;">Drag the schedule below to reposition it on the wallpaper.</p>
@@ -2146,7 +2148,7 @@ function openWallpaperBuilder(memberId){
       const layout = computeTableLayout(entries, tableW, fontScale, hScale);
       const baseX = (d.w-tableW)/2 + offsetX;
       const baseY = (d.h-layout.tableH)/2 + offsetY;
-      paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, fontScale, tableColor, textScale, {dayColor, timeColor, classTextColor});
+      paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
     } else {
       // Image mode: canvas is sized to exactly fit the table — no device
       // frame, no background photo, no drag. Width/height stretch sliders
@@ -2158,7 +2160,7 @@ function openWallpaperBuilder(memberId){
       canvas.width = tableW + margin*2;
       canvas.height = layout.tableH + margin*2;
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      paintTable(ctx, layout, margin, margin, tableW, entries, memberId, member, 1, style, fontScale, tableColor, textScale, {dayColor, timeColor, classTextColor});
+      paintTable(ctx, layout, margin, margin, tableW, entries, memberId, member, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
     }
   }
 
@@ -2242,9 +2244,12 @@ function openWallpaperBuilder(memberId){
   const bgUploadBtn = backdrop.querySelector('#bgUploadBtn');
   const bgInput = backdrop.querySelector('#bgUploadInput');
   const tableColorInput = backdrop.querySelector('#tableColorInput');
+  const daysColorInput = backdrop.querySelector('#daysColorInput');
+  const timesColorInput = backdrop.querySelector('#timesColorInput');
+  const classesColorInput = backdrop.querySelector('#classesColorInput');
   const WALLPAPER_BG_PRESETS = [{name:'White', hex:'#FFFFFF'}, ...THEME_PRESETS];
 
-  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, tableColor, dayColor, timeColor, classTextColor}, false)); }
+  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, tableColor, daysColor, timesColor, classesColor}, false)); }
   function renderBgSwatches(){
     bgSwatches.innerHTML = '';
     WALLPAPER_BG_PRESETS.forEach(p=>{
@@ -2274,21 +2279,9 @@ function openWallpaperBuilder(memberId){
         tableColor = saved.tableColor;
         tableColorInput.value = tableColor;
       }
-      if(saved.dayColor && /^#[0-9A-Fa-f]{6}$/.test(saved.dayColor)){
-        dayColor = saved.dayColor;
-        dayColorInput.value = dayColor;
-        dayColorAuto.style.display = 'inline-flex';
-      }
-      if(saved.timeColor && /^#[0-9A-Fa-f]{6}$/.test(saved.timeColor)){
-        timeColor = saved.timeColor;
-        timeColorInput.value = timeColor;
-        timeColorAuto.style.display = 'inline-flex';
-      }
-      if(saved.classTextColor && /^#[0-9A-Fa-f]{6}$/.test(saved.classTextColor)){
-        classTextColor = saved.classTextColor;
-        classColorInput.value = classTextColor;
-        classColorAuto.style.display = 'inline-flex';
-      }
+      if(saved.daysColor && /^#[0-9A-Fa-f]{6}$/.test(saved.daysColor)){ daysColor = saved.daysColor; daysColorInput.value = daysColor; }
+      if(saved.timesColor && /^#[0-9A-Fa-f]{6}$/.test(saved.timesColor)){ timesColor = saved.timesColor; timesColorInput.value = timesColor; }
+      if(saved.classesColor && /^#[0-9A-Fa-f]{6}$/.test(saved.classesColor)){ classesColor = saved.classesColor; classesColorInput.value = classesColor; }
       renderBgSwatches();
       draw();
     }
@@ -2330,46 +2323,59 @@ function openWallpaperBuilder(memberId){
     draw();
   };
 
-  // Per-section overrides — each starts unset (inherits tableColor /
-  // automatic default) and only takes effect once the user actually picks
-  // a color. The Auto button clears it back to that inherited behavior.
-  const dayColorInput = backdrop.querySelector('#dayColorInput');
-  const dayColorAuto = backdrop.querySelector('#dayColorAuto');
-  dayColorInput.onchange = ()=>{
-    dayColor = dayColorInput.value;
-    dayColorAuto.style.display = 'inline-flex';
-    persistBgPref(); draw();
-  };
-  dayColorAuto.onclick = ()=>{
-    dayColor = null;
-    dayColorAuto.style.display = 'none';
-    persistBgPref(); draw();
-  };
+  daysColorInput.onchange = ()=>{ daysColor = daysColorInput.value; persistBgPref(); draw(); };
+  timesColorInput.onchange = ()=>{ timesColor = timesColorInput.value; persistBgPref(); draw(); };
+  classesColorInput.onchange = ()=>{ classesColor = classesColorInput.value; persistBgPref(); draw(); };
+  backdrop.querySelector('#daysColorReset').onclick = ()=>{ daysColor = null; daysColorInput.value = tableColor; persistBgPref(); draw(); };
+  backdrop.querySelector('#timesColorReset').onclick = ()=>{ timesColor = null; timesColorInput.value = tableColor; persistBgPref(); draw(); };
+  backdrop.querySelector('#classesColorReset').onclick = ()=>{ classesColor = null; classesColorInput.value = tableColor; persistBgPref(); draw(); };
 
-  const timeColorInput = backdrop.querySelector('#timeColorInput');
-  const timeColorAuto = backdrop.querySelector('#timeColorAuto');
-  timeColorInput.onchange = ()=>{
-    timeColor = timeColorInput.value;
-    timeColorAuto.style.display = 'inline-flex';
-    persistBgPref(); draw();
-  };
-  timeColorAuto.onclick = ()=>{
-    timeColor = null;
-    timeColorAuto.style.display = 'none';
-    persistBgPref(); draw();
-  };
+  // Samples the current background down to a small offscreen canvas and
+  // averages its pixels — works the same way for a photo, a solid color,
+  // or a gradient (drawn exactly as it renders on the wallpaper), so the
+  // suggestion always reflects what's actually behind the table.
+  function sampleBackgroundAverage(){
+    const sw = 24, sh = 24;
+    const c = document.createElement('canvas');
+    c.width = sw; c.height = sh;
+    const sctx = c.getContext('2d');
+    if(bgImage){
+      drawImageCover(sctx, bgImage, 0, 0, sw, sh);
+    } else if(bgGradient){
+      const isLight = getContrastTextColor(bgHex) === '#1C2430';
+      const grad = sctx.createLinearGradient(0,0,sw,sh);
+      grad.addColorStop(0, bgHex);
+      grad.addColorStop(1, isLight ? darkenHex(bgHex,0.22) : lightenHex(bgHex,0.22));
+      sctx.fillStyle = grad; sctx.fillRect(0,0,sw,sh);
+    } else {
+      sctx.fillStyle = bgHex; sctx.fillRect(0,0,sw,sh);
+    }
+    let r=0,g=0,b=0,n=0;
+    try{
+      const data = sctx.getImageData(0,0,sw,sh).data;
+      for(let i=0;i<data.length;i+=4){ r+=data[i]; g+=data[i+1]; b+=data[i+2]; n++; }
+    }catch(e){
+      // Cross-origin image data can throw — fall back to the flat bgHex.
+      return hexToRgb(bgHex);
+    }
+    return { r: Math.round(r/n), g: Math.round(g/n), b: Math.round(b/n) };
+  }
 
-  const classColorInput = backdrop.querySelector('#classColorInput');
-  const classColorAuto = backdrop.querySelector('#classColorAuto');
-  classColorInput.onchange = ()=>{
-    classTextColor = classColorInput.value;
-    classColorAuto.style.display = 'inline-flex';
-    persistBgPref(); draw();
-  };
-  classColorAuto.onclick = ()=>{
-    classTextColor = null;
-    classColorAuto.style.display = 'none';
-    persistBgPref(); draw();
+  backdrop.querySelector('#suggestColorsBtn').onclick = ()=>{
+    const avg = sampleBackgroundAverage();
+    const avgHex = rgbToHex(avg.r, avg.g, avg.b);
+    const bgIsLight = getContrastTextColor(avgHex) === '#1C2430';
+    // A deep ink on light backgrounds, a soft cream on dark ones — reads
+    // as an intentional color choice rather than flat black/white.
+    tableColor = bgIsLight ? '#22304F' : '#F4F1E8';
+    daysColor = null; timesColor = null; classesColor = null;
+    tableColorInput.value = tableColor;
+    daysColorInput.value = tableColor;
+    timesColorInput.value = tableColor;
+    classesColorInput.value = tableColor;
+    persistBgPref();
+    draw();
+    showToast('Suggested colors applied for this background.');
   };
 
   // Translucency
