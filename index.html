@@ -1735,44 +1735,6 @@ function truncateText(ctx, text, maxWidth){
   return lo>0 ? text.slice(0,lo)+'…' : '…';
 }
 
-// Draws text with a soft halo behind it (opposite-contrast stroke, then
-// fill) so day/hour labels stay readable no matter what's directly behind
-// them — a busy photo, a dark color, anything. Halo color is picked as
-// whichever of white/near-black contrasts against the fill color itself,
-// which reads well against both light and dark surroundings in practice.
-function haloText(ctx, text, x, y, fillColor, lineWidthPx){
-  const halo = getContrastTextColor(fillColor) === '#1C2430' ? 'rgba(255,255,255,0.9)' : 'rgba(28,36,48,0.55)';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = halo;
-  ctx.lineWidth = lineWidthPx;
-  ctx.strokeText(text, x, y);
-  ctx.fillStyle = fillColor;
-  ctx.fillText(text, x, y);
-}
-
-// Draws `text` inside a small rounded outline box with a light backing
-// fill — used for Bold/Grid's day names and hour labels so they stay
-// legible against any background. The box is sized from the text's own
-// measured dimensions, so it always hugs it snugly regardless of font size.
-function boxedText(ctx, text, x, y, opts){
-  const {align='center', baseline='middle', textColor, borderColor, boxFill='rgba(255,255,255,0.88)', padX=6, padY=4, radius=6, lineWidth=1.4} = opts||{};
-  const m = ctx.measureText(text);
-  const w = m.width;
-  const asc = m.actualBoundingBoxAscent || 8;
-  const desc = m.actualBoundingBoxDescent || 3;
-  const h = asc+desc;
-  const boxX = align==='center' ? x-w/2-padX : align==='right' ? x-w-padX : x-padX;
-  const boxY = baseline==='middle' ? y-h/2-padY : baseline==='bottom' ? y-h-padY : y-padY;
-  roundRectPath(ctx, boxX, boxY, w+padX*2, h+padY*2, radius);
-  ctx.fillStyle = boxFill;
-  ctx.fill();
-  ctx.lineWidth = lineWidth;
-  ctx.strokeStyle = borderColor;
-  ctx.stroke();
-  ctx.textAlign = align; ctx.textBaseline = baseline;
-  ctx.fillStyle = textColor;
-  ctx.fillText(text, x, y);
-}
 
 // "Dela Cruz, Juan M." -> "Dela Cruz"; "Juan Dela Cruz" -> "Cruz" (last
 // word) as a fallback when there's no comma. Keeps class blocks compact.
@@ -1845,6 +1807,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   // line, hour labels, bold-style pill fill) — a single user-picked color
   // instead of the fixed theme navy, so "table color" is fully custom.
   const inkColor = tableColor || getCssVar('--navy-text') || '#2A4492';
+  const inkOnInk = getContrastTextColor(inkColor);
   const mutedColor = lightenHex(inkColor, 0.42);
   // textScale is an independent multiplier on font *sizes* only — layout
   // metrics (padding, row height, column width) stay driven by `scale`
@@ -1855,33 +1818,36 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   ctx.globalAlpha = opacity;
 
   if(isPillHeader){
-    // Day header row: outlined box per day (light backing fill + colored
-    // border), uppercase label. 'bold' uses the user's table color;
-    // 'grid' uses a muted gray to match a printed-timetable look.
+    // Day header row: solid pill per day, uppercase label. 'bold' uses the
+    // user's table color; 'grid' uses a muted gray to match a printed-
+    // timetable look.
     const pillH = headerH*0.62;
     const pillY = baseY+pad+(headerH-pillH)/2;
     ctx.font = `700 ${13*ts*scale}px 'Poppins', sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
-      const cx = gridX + i*dayColW + dayColW/2;
-      const cy = pillY+pillH/2;
-      const borderColor = style==='grid' ? 'rgba(95,95,115,0.75)' : inkColor;
-      const textColor = style==='grid' ? '#4A4A5C' : inkColor;
-      boxedText(ctx, DAY_LABEL[day].toUpperCase(), cx, cy, {align:'center', baseline:'middle', textColor, borderColor, padX:10*scale, padY:6*scale, radius:10*scale, lineWidth:1.6*scale});
+      const cx0 = gridX + i*dayColW + 3*scale;
+      const pw = dayColW - 6*scale;
+      ctx.fillStyle = style==='grid' ? 'rgba(95,95,115,0.6)' : inkColor;
+      roundRectPath(ctx, cx0, pillY, pw, pillH, 10*scale);
+      ctx.fill();
+      ctx.fillStyle = style==='grid' ? '#FFFFFF' : inkOnInk;
+      ctx.fillText(DAY_LABEL[day].toUpperCase(), cx0+pw/2, pillY+pillH/2);
     });
     if(style==='grid'){
       ctx.font = `700 ${10.5*ts*scale}px 'Poppins', sans-serif`;
+      ctx.fillStyle = 'rgba(95,95,115,0.7)';
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      haloText(ctx, 'TIME', baseX+pad, baseY+pad+headerH/2, '#5F5F73', 3*scale);
+      ctx.fillText('TIME', baseX+pad, baseY+pad+headerH/2);
     }
   } else {
-    // 'minimal' and 'pastel': plain centered label, sitting directly on the
-    // background — haloed so it stays legible against any color or photo.
-    // Minimal also adds a divider rule.
+    // 'minimal' and 'pastel': plain centered label. Minimal adds a divider rule.
     ctx.font = `700 ${(style==='pastel'?15:16)*ts*scale}px 'Poppins', sans-serif`;
+    ctx.fillStyle = inkColor;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx = gridX + i*dayColW + dayColW/2;
-      haloText(ctx, DAY_LABEL[day], cx, baseY+pad+headerH/2, inkColor, 3.5*ts*scale);
+      ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
     });
     if(style==='minimal'){
       ctx.strokeStyle = inkColor;
@@ -1893,14 +1859,14 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     }
   }
 
-  // Hour labels only — no rule lines across the body, so empty time stays
-  // visually blank/clean instead of a grid of lines through nothing.
-  // Anchored to 'bottom' with a small upward offset so each label sits just
-  // above its gridline instead of straddling it. The 'minimal' style's
-  // header divider sits exactly on the first gridline (7:00 AM), so that
-  // label is skipped entirely rather than drawn on/near the line — every
-  // other label (8:00 AM onward) keeps its original position untouched.
-  // Haloed like the day labels so they read against any background.
+  // Hour labels. 'bold'/'grid' get the same solid pill treatment as the
+  // day header, sized to fit each label, so they stay visible against any
+  // background. 'minimal'/'pastel' stay plain text like the rest of that
+  // style. Anchored to 'bottom' with a small upward offset so each label
+  // sits just above its gridline instead of straddling it. The 'minimal'
+  // style's header divider sits exactly on the first gridline (7:00 AM),
+  // so that label is skipped entirely — every other label (8:00 AM onward)
+  // keeps its original position untouched.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
   for(let t=rangeStart; t<=rangeEnd; t+=60){
     if(style==='minimal' && t===rangeStart) continue;
@@ -1908,11 +1874,21 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     const label = style==='pastel' ? abbrevHourLabel(t) : minutesToLabel(t);
     const labelX = gridX-8*scale;
     if(isPillHeader){
-      const borderColor = style==='grid' ? 'rgba(95,95,115,0.75)' : inkColor;
-      const textColor = style==='grid' ? '#4A4A5C' : inkColor;
-      boxedText(ctx, label, labelX, y-4*scale, {align:'right', baseline:'bottom', textColor, borderColor, padX:5*scale, padY:3*scale, radius:5*scale, lineWidth:1.2*scale});
+      const pillColor = style==='grid' ? 'rgba(95,95,115,0.6)' : inkColor;
+      const textColor = style==='grid' ? '#FFFFFF' : inkOnInk;
+      const padX = 6*scale, padY = 3*scale, m = ctx.measureText(label);
+      const w = m.width, asc = m.actualBoundingBoxAscent||8, desc = m.actualBoundingBoxDescent||3;
+      const boxX = labelX-w-padX, boxY = (y-4*scale)-asc-padY, boxW = w+padX*2, boxH = asc+desc+padY*2;
+      ctx.fillStyle = pillColor;
+      roundRectPath(ctx, boxX, boxY, boxW, boxH, 5*scale);
+      ctx.fill();
+      ctx.fillStyle = textColor;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+      ctx.fillText(label, labelX, y-4*scale);
     } else {
-      haloText(ctx, label, labelX, y-4*scale, mutedColor, 3*ts*scale);
+      ctx.fillStyle = mutedColor;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+      ctx.fillText(label, labelX, y-4*scale);
     }
   }
 
