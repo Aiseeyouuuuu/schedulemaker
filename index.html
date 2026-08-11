@@ -132,10 +132,11 @@
   }
   .board-head div:first-child{border-left:none;}
   .board-body{position:relative;display:grid;grid-template-columns:64px repeat(6,1fr);}
-  .time-col{display:flex;flex-direction:column;overflow:hidden;}
+  .time-col{position:relative;overflow:hidden;}
   .time-cell{
-    height:48px;font-family:'Poppins',sans-serif;font-size:calc(10.5px * var(--font-scale));color:var(--muted);
-    text-align:right;padding-right:6px;border-top:1px solid #EEF0EE;position:relative;top:-6px;
+    position:absolute;left:0;right:0;transform:translateY(-50%);
+    font-family:'Poppins',sans-serif;font-size:calc(10.5px * var(--font-scale));color:var(--muted);
+    text-align:right;padding-right:6px;
   }
   .day-col{position:relative;border-left:1px solid var(--line);}
   .day-col .gridline{position:absolute;left:0;right:0;height:1px;background:#EEF0EE;}
@@ -1606,9 +1607,14 @@ function renderBoard(groups, allowDelete){
     </div>`);
   const body = board.querySelector('.board-body');
   const timeCol = board.querySelector('.time-col');
-  for(let t=BOARD_START;t<BOARD_END;t+=60){
-    const label = t===BOARD_START ? '' : minutesToLabel(t);
-    timeCol.appendChild(el(`<div class="time-cell" style="height:${ROW_H*2}px;">${label}</div>`));
+  // Positioned with the exact same top formula the gridlines below use
+  // (r*ROW_H, same r), so a label lines up pixel-for-pixel with its actual
+  // gridline instead of drifting from an independent flex-stacked layout.
+  // 7:00 AM (BOARD_START) is intentionally left unlabeled.
+  for(let t=BOARD_START; t<BOARD_END; t+=60){
+    if(t===BOARD_START) continue;
+    const topPx = ((t-BOARD_START)/30)*ROW_H;
+    timeCol.appendChild(el(`<div class="time-cell" style="top:${topPx}px;">${minutesToLabel(t)}</div>`));
   }
   const dayCols = [...body.querySelectorAll('.day-col')];
   dayCols.forEach(col=>{
