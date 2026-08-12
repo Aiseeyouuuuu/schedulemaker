@@ -763,11 +763,20 @@ function entriesConflict(entryA, entryB){
 // up, sign out) — each time, it reloads data from whichever tier applies
 // now (that account's cloud data, or this browser's local guest data) and
 // re-renders, so switching accounts always shows the right schedule.
+let __guestChosenThisSession = false; // "Continue without an account" — only skips the gate for this page load
 async function boot(){
   await loadTheme();
   await loadFontScale();
   await loadAll();
-  if(!state.meId){ renderNamePrompt(); return; }
+  if(!state.meId){
+    // Brand-new visitor (no local guest data and no cloud data yet). If
+    // real accounts are configured and they're not already signed in, ask
+    // for sign-in/sign-up FIRST — signing in here can also pull in an
+    // existing account's name/schedule, skipping the name prompt entirely.
+    if(__auth && !currentUid() && !__guestChosenThisSession){ renderAuthGate(); return; }
+    renderNamePrompt();
+    return;
+  }
   render();
 }
 
@@ -844,6 +853,115 @@ function customConfirm(message){
 }
 function $(sel,root=document){ return root.querySelector(sel); }
 function $all(sel,root=document){ return [...root.querySelectorAll(sel)]; }
+
+// Shown to a brand-new visitor BEFORE the name prompt, so they set up (or
+// sign into) their account first — signing into an existing account here
+// pulls in that account's name/schedule directly, skipping the name
+// prompt. "Continue without an account" falls through to the old
+// guest flow for this page load.
+function renderAuthGate(){
+  const app = $('#app');
+  app.innerHTML = '';
+  let mode = 'signup'; // new visitors default to creating an account
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2 id="gateTitle">Schedule Maker</h2>
+        <p class="hint" id="gateHint">Create an account to save your schedule and pick it up on any device.</p>
+        <input id="gateEmail" type="email" placeholder="Email" autocomplete="email" />
+        <input id="gatePassword" type="password" placeholder="Password" autocomplete="new-password" />
+        <p class="hint" id="gateError" style="color:var(--danger);display:none;"></p>
+        <button id="gateSubmit">Create account</button>
+        <p class="hint" style="margin-top:14px;">
+          <a href="#" id="gateToggleMode">Already have an account? Sign in</a>
+        </p>
+        <p class="hint"><a href="#" id="gateForgot">Forgot password?</a></p>
+        <p class="hint" style="margin-top:14px;"><a href="#" id="gateSkip">Continue without an account</a></p>
+      </div>
+    </div>`);
+  app.appendChild(backdrop);
+
+  const title = backdrop.querySelector('#gateTitle');
+  const hint = backdrop.querySelector('#gateHint');
+  const emailInput = backdrop.querySelector('#gateEmail');
+  const passwordInput = backdrop.querySelector('#gatePassword');
+  const errorP = backdrop.querySelector('#gateError');
+  const submitBtn = backdrop.querySelector('#gateSubmit');
+  const toggleLink = backdrop.querySelector('#gateToggleMode');
+  const forgotLink = backdrop.querySelector('#gateForgot');
+  const skipLink = backdrop.querySelector('#gateSkip');
+  emailInput.focus();
+
+  function setMode(m){
+    mode = m;
+    title.textContent = mode==='signup' ? 'Create your account' : 'Sign in';
+    hint.textContent = mode==='signup'
+      ? 'Create an account to save your schedule and pick it up on any device.'
+      : 'Sign in — if you\'ve already set up your schedule under this account, it\'ll load automatically.';
+    submitBtn.textContent = mode==='signup' ? 'Create account' : 'Sign in';
+    toggleLink.textContent = mode==='signup' ? 'Already have an account? Sign in' : 'Need an account? Create one';
+    errorP.style.display = 'none';
+  }
+  toggleLink.onclick = (e)=>{ e.preventDefault(); setMode(mode==='signup' ? 'signin' : 'signup'); };
+
+  forgotLink.onclick = async (e)=>{
+    e.preventDefault();
+    const email = emailInput.value.trim();
+    if(!email){ errorP.style.color='var(--danger)'; errorP.textContent = 'Enter your email above first.'; errorP.style.display = 'block'; return; }
+    try{
+      await __auth.sendPasswordResetEmail(email);
+      errorP.style.color = 'var(--muted)';
+      errorP.textContent = 'Password reset email sent — check your inbox.';
+      errorP.style.display = 'block';
+    }catch(err){
+      errorP.style.color = 'var(--danger)';
+      errorP.textContent = authErrorMessage(err);
+      errorP.style.display = 'block';
+    }
+  };
+
+  skipLink.onclick = (e)=>{
+    e.preventDefault();
+    __guestChosenThisSession = true;
+    renderNamePrompt();
+  };
+
+  const submit = async ()=>{
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+    if(!email || !password){
+      errorP.style.color = 'var(--danger)';
+      errorP.textContent = 'Enter both an email and a password.';
+      errorP.style.display = 'block';
+      return;
+    }
+    submitBtn.disabled = true;
+    const originalLabel = submitBtn.textContent;
+    submitBtn.textContent = mode==='signup' ? 'Creating account…' : 'Signing in…';
+    errorP.style.display = 'none';
+    try{
+      if(mode==='signup'){
+        await __auth.createUserWithEmailAndPassword(email, password);
+        // No local guest data exists yet at this gate (that's what makes
+        // this a new-visitor flow) — nothing to migrate, they'll just get
+        // the name prompt next since this fresh account has no meId yet.
+      } else {
+        await __auth.signInWithEmailAndPassword(email, password);
+      }
+      // onAuthStateChanged fires boot() again: currentUid() is now set, so
+      // the gate is skipped. An existing account's data (including meId)
+      // loads automatically; a brand-new one falls through to the name prompt.
+    }catch(err){
+      errorP.style.color = 'var(--danger)';
+      errorP.textContent = authErrorMessage(err);
+      errorP.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
+    }
+  };
+  submitBtn.onclick = submit;
+  passwordInput.addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+}
 
 function renderNamePrompt(){
   const app = $('#app');
