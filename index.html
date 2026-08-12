@@ -764,10 +764,16 @@ function entriesConflict(entryA, entryB){
 // now (that account's cloud data, or this browser's local guest data) and
 // re-renders, so switching accounts always shows the right schedule.
 let __guestChosenThisSession = false; // "Continue without an account" — only skips the gate for this page load
+let __forceGateAfterSignOut = false;  // set right before signOut() so boot() shows the landing gate instead of falling through to old local guest data
 async function boot(){
   await loadTheme();
   await loadFontScale();
   await loadAll();
+  if(__forceGateAfterSignOut){
+    __forceGateAfterSignOut = false;
+    renderGateChoice();
+    return;
+  }
   if(!state.meId){
     // Brand-new visitor (no local guest data and no cloud data yet). If
     // real accounts are configured and they're not already signed in, ask
@@ -859,72 +865,82 @@ function $all(sel,root=document){ return [...root.querySelectorAll(sel)]; }
 // pulls in that account's name/schedule directly, skipping the name
 // prompt. "Continue without an account" falls through to the old
 // guest flow for this page load.
-function renderAuthGate(){
+function renderAuthGate(){ renderGateChoice(); }
+
+function renderGateChoice(){
   const app = $('#app');
   app.innerHTML = '';
-  let mode = 'signup'; // new visitors default to creating an account
   const backdrop = el(`
     <div class="modal-backdrop">
       <div class="modal">
-        <h2 id="gateTitle">Schedule Maker</h2>
-        <p class="hint" id="gateHint">Create an account to save your schedule and pick it up on any device.</p>
+        <h2>Schedule Maker</h2>
+        <p class="hint">Save your schedule and pick it up on any device.</p>
+        <button id="gateCreateBtn">Create an account</button>
+        <button class="ghost" id="gateSigninBtn" style="margin-top:8px;">Sign in</button>
+        <p class="hint" style="margin-top:16px;"><a href="#" id="gateSkip">Continue without an account</a></p>
+      </div>
+    </div>`);
+  app.appendChild(backdrop);
+  backdrop.querySelector('#gateCreateBtn').onclick = ()=> renderGateForm('signup');
+  backdrop.querySelector('#gateSigninBtn').onclick = ()=> renderGateForm('signin');
+  backdrop.querySelector('#gateSkip').onclick = (e)=>{
+    e.preventDefault();
+    __guestChosenThisSession = true;
+    boot(); // resumes this browser's local guest schedule if one exists, otherwise shows the name prompt
+  };
+}
+
+function renderGateForm(mode){ // mode: 'signup' | 'signin'
+  const app = $('#app');
+  app.innerHTML = '';
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>${mode==='signup' ? 'Create your account' : 'Sign in'}</h2>
+        <p class="hint">${mode==='signup'
+          ? 'Create an account to save your schedule and pick it up on any device.'
+          : 'Sign in — if you\'ve already set up your schedule under this account, it\'ll load automatically.'}</p>
         <input id="gateEmail" type="email" placeholder="Email" autocomplete="email" />
-        <input id="gatePassword" type="password" placeholder="Password" autocomplete="new-password" />
+        <input id="gatePassword" type="password" placeholder="Password" autocomplete="${mode==='signup'?'new-password':'current-password'}" />
         <p class="hint" id="gateError" style="color:var(--danger);display:none;"></p>
-        <button id="gateSubmit">Create account</button>
-        <p class="hint" style="margin-top:14px;">
-          <a href="#" id="gateToggleMode">Already have an account? Sign in</a>
-        </p>
-        <p class="hint"><a href="#" id="gateForgot">Forgot password?</a></p>
-        <p class="hint" style="margin-top:14px;"><a href="#" id="gateSkip">Continue without an account</a></p>
+        <button id="gateSubmit">${mode==='signup' ? 'Create account' : 'Sign in'}</button>
+        <p class="hint" style="margin-top:14px;"><a href="#" id="gateBack">Back</a></p>
+        ${mode==='signin' ? `<p class="hint"><a href="#" id="gateForgot">Forgot password?</a></p>` : ''}
+        <p class="hint" style="margin-top:${mode==='signin'?'0':'14px'};"><a href="#" id="gateSkip">Continue without an account</a></p>
       </div>
     </div>`);
   app.appendChild(backdrop);
 
-  const title = backdrop.querySelector('#gateTitle');
-  const hint = backdrop.querySelector('#gateHint');
   const emailInput = backdrop.querySelector('#gateEmail');
   const passwordInput = backdrop.querySelector('#gatePassword');
   const errorP = backdrop.querySelector('#gateError');
   const submitBtn = backdrop.querySelector('#gateSubmit');
-  const toggleLink = backdrop.querySelector('#gateToggleMode');
-  const forgotLink = backdrop.querySelector('#gateForgot');
-  const skipLink = backdrop.querySelector('#gateSkip');
   emailInput.focus();
 
-  function setMode(m){
-    mode = m;
-    title.textContent = mode==='signup' ? 'Create your account' : 'Sign in';
-    hint.textContent = mode==='signup'
-      ? 'Create an account to save your schedule and pick it up on any device.'
-      : 'Sign in — if you\'ve already set up your schedule under this account, it\'ll load automatically.';
-    submitBtn.textContent = mode==='signup' ? 'Create account' : 'Sign in';
-    toggleLink.textContent = mode==='signup' ? 'Already have an account? Sign in' : 'Need an account? Create one';
-    errorP.style.display = 'none';
-  }
-  toggleLink.onclick = (e)=>{ e.preventDefault(); setMode(mode==='signup' ? 'signin' : 'signup'); };
-
-  forgotLink.onclick = async (e)=>{
-    e.preventDefault();
-    const email = emailInput.value.trim();
-    if(!email){ errorP.style.color='var(--danger)'; errorP.textContent = 'Enter your email above first.'; errorP.style.display = 'block'; return; }
-    try{
-      await __auth.sendPasswordResetEmail(email);
-      errorP.style.color = 'var(--muted)';
-      errorP.textContent = 'Password reset email sent — check your inbox.';
-      errorP.style.display = 'block';
-    }catch(err){
-      errorP.style.color = 'var(--danger)';
-      errorP.textContent = authErrorMessage(err);
-      errorP.style.display = 'block';
-    }
-  };
-
-  skipLink.onclick = (e)=>{
+  backdrop.querySelector('#gateBack').onclick = (e)=>{ e.preventDefault(); renderGateChoice(); };
+  backdrop.querySelector('#gateSkip').onclick = (e)=>{
     e.preventDefault();
     __guestChosenThisSession = true;
-    renderNamePrompt();
+    boot(); // resumes this browser's local guest schedule if one exists, otherwise shows the name prompt
   };
+  const forgotLink = backdrop.querySelector('#gateForgot');
+  if(forgotLink){
+    forgotLink.onclick = async (e)=>{
+      e.preventDefault();
+      const email = emailInput.value.trim();
+      if(!email){ errorP.style.color='var(--danger)'; errorP.textContent = 'Enter your email above first.'; errorP.style.display = 'block'; return; }
+      try{
+        await __auth.sendPasswordResetEmail(email);
+        errorP.style.color = 'var(--muted)';
+        errorP.textContent = 'Password reset email sent — check your inbox.';
+        errorP.style.display = 'block';
+      }catch(err){
+        errorP.style.color = 'var(--danger)';
+        errorP.textContent = authErrorMessage(err);
+        errorP.style.display = 'block';
+      }
+    };
+  }
 
   const submit = async ()=>{
     const email = emailInput.value.trim();
@@ -1155,9 +1171,11 @@ function openAccountModal(){
     document.body.appendChild(backdrop);
     backdrop.querySelector('#acctClose').onclick = ()=> backdrop.remove();
     backdrop.querySelector('#acctSignOut').onclick = async ()=>{
+      __forceGateAfterSignOut = true;
+      __guestChosenThisSession = false; // sign-out is a fresh start — don't silently skip the gate from an earlier guest choice
       await __auth.signOut();
       backdrop.remove();
-      // onAuthStateChanged picks this up and reloads local guest data automatically.
+      // onAuthStateChanged picks this up; boot() sees __forceGateAfterSignOut and shows the landing gate (Create account / Sign in) instead of resuming old local data.
     };
     return;
   }
