@@ -193,17 +193,22 @@
 <body>
 <div class="wrap" id="app"></div>
 
-<!-- ====== FIREBASE (syncs the shared course catalog only) ======
+<!-- ====== FIREBASE (shared catalog + personal cloud accounts) ======
   Fill in FIREBASE_CONFIG below with your own project's config object
   (Firebase console → Project settings → your web app → SDK setup and
   configuration). Until you do, apiKey stays 'PASTE_YOUR_API_KEY_HERE'
   and the app automatically falls back to per-browser localStorage —
   nothing breaks, the shared catalog just won't sync across different
-  visitors' devices until this is filled in. Everyone's own schedule,
-  friends, and colors are personal and never touch Firestore, filled-in
-  config or not. -->
+  visitors' devices until this is filled in.
+  Personal data (members, schedules, colors, etc.) stays local to that
+  browser UNLESS the person signs in with a real account (Firebase Auth,
+  email/password) — signed-in users get their personal data synced to
+  Firestore under their own uid, readable only by them, so they can pick
+  up their schedule on any device. Guests (not signed in) keep the old
+  local-only behavior untouched. -->
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-auth-compat.js"></script>
 <script>
   const FIREBASE_CONFIG = {
     apiKey: "AIzaSyASQrZ_38HBGTrT2-9kqWEwmwZRPQlrup0",
@@ -215,28 +220,34 @@
     measurementId: "G-M0M5ZWC0BP"
   };
   let __db = null;
+  let __auth = null;
   if(FIREBASE_CONFIG.apiKey !== "PASTE_YOUR_API_KEY_HERE"){
     try{
       firebase.initializeApp(FIREBASE_CONFIG);
       __db = firebase.firestore();
+      __auth = firebase.auth();
     }catch(e){ console.error('Firebase init failed', e); }
   }
 </script>
 
 <script>
 /* ============================= STORAGE HELPERS ============================= */
-// Only the CATALOG is shared=true (same course listing for the whole
-// school, so it syncs via Firestore to every visitor once configured).
+// The CATALOG is always shared=true (same course listing for the whole
+// school, synced via Firestore to every visitor once configured).
 // Everything else — members, schedules, manual entries, block colors,
-// groups, your own name/id/theme — is personal (shared=false) and stays
-// local to that individual's own browser, never written to Firestore, so
-// one person's schedule/friends list is never visible to another visitor.
-// Personal-tier fallback order:
+// groups, your own name/id/theme — is personal (shared=false). Where that
+// lives depends on whether the person is signed in:
+//   - Signed in (real Firebase Auth account): synced to Firestore under
+//     their own uid, readable only by them, so it follows them to any
+//     device they log into.
+//   - Not signed in (guest): stays local to that browser only, exactly
+//     like before — nothing is lost, it just doesn't roam.
+// Personal-tier fallback order when NOT signed in:
 //   1. window.storage — only exists inside a Claude artifact preview.
-//   2. localStorage — real-deployment fallback, per-browser, so nothing is
-//      lost for that person even though it isn't synced across devices.
+//   2. localStorage — real-deployment fallback, per-browser.
 function hasArtifactStorage(){ return typeof window.storage !== 'undefined' && window.storage; }
 function lsKey(key, shared){ return 'sked:'+(shared?'shared':'me')+':'+key; }
+function currentUid(){ return (__auth && __auth.currentUser) ? __auth.currentUser.uid : null; }
 
 async function sGet(key, shared=false){
   if(shared && __db){
@@ -244,6 +255,13 @@ async function sGet(key, shared=false){
       const snap = await __db.collection('sked_shared').doc(key).get();
       return snap.exists ? snap.data().value : null;
     }catch(e){ console.error('firestore get failed', key, e); /* fall through */ }
+  }
+  const uid = !shared ? currentUid() : null;
+  if(uid && __db){
+    try{
+      const snap = await __db.collection('sked_users').doc(uid).collection('data').doc(key).get();
+      return snap.exists ? snap.data().value : null;
+    }catch(e){ console.error('firestore personal get failed', key, e); /* fall through to local */ }
   }
   if(hasArtifactStorage()){
     try{ const r = await window.storage.get(key, shared); return r ? JSON.parse(r.value) : null; }
@@ -263,6 +281,16 @@ async function sSet(key, value, shared=false){
       });
       return;
     }catch(e){ console.error('firestore set failed', key, e); /* fall through */ }
+  }
+  const uid = !shared ? currentUid() : null;
+  if(uid && __db){
+    try{
+      const clean = JSON.parse(JSON.stringify(value));
+      await __db.collection('sked_users').doc(uid).collection('data').doc(key).set({
+        value: clean, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      return;
+    }catch(e){ console.error('firestore personal set failed', key, e); /* fall through to local */ }
   }
   if(hasArtifactStorage()){
     try{ await window.storage.set(key, JSON.stringify(value), shared); return; }
@@ -523,6 +551,19 @@ async function loadAll(){
   loadAdminFlag();
 }
 
+// Every personal (shared=false) key the app stores — used to copy a
+// guest's local data into their new account right after they sign up, so
+// creating an account doesn't wipe out work they already did as a guest.
+const PERSONAL_KEYS = ['members','schedules','manualEntries','blockColors','groups','me-id','theme','fontScale'];
+async function migrateGuestDataToAccount(){
+  for(const key of PERSONAL_KEYS){
+    let raw;
+    try{ raw = localStorage.getItem(lsKey(key, false)); }catch(e){ continue; }
+    if(raw==null) continue;
+    try{ await sSet(key, JSON.parse(raw), false); }catch(e){ console.error('migration failed for', key, e); }
+  }
+}
+
 async function saveCatalog(){ return queueSave(()=> sSet('catalog', state.catalog, true)); }
 async function saveMembers(){ return queueSave(()=> sSet('members', state.members, false)); }
 async function saveSchedules(){ return queueSave(()=> sSet('schedules', state.schedules, false)); }
@@ -718,9 +759,11 @@ function entriesConflict(entryA, entryB){
 }
 
 /* ============================= RENDER ROOT ============================= */
+// Runs on first load AND every time sign-in state changes (sign in, sign
+// up, sign out) — each time, it reloads data from whichever tier applies
+// now (that account's cloud data, or this browser's local guest data) and
+// re-renders, so switching accounts always shows the right schedule.
 async function boot(){
-  if(window.__skedBooted) return;
-  window.__skedBooted = true;
   await loadTheme();
   await loadFontScale();
   await loadAll();
@@ -952,6 +995,152 @@ function openAdminModal(){
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
 }
 
+// Friendlier text for the Firebase Auth error codes people actually hit.
+function authErrorMessage(e){
+  const map = {
+    'auth/invalid-email': 'That email address doesn\'t look right.',
+    'auth/user-not-found': 'No account found with that email.',
+    'auth/wrong-password': 'Incorrect password.',
+    'auth/invalid-credential': 'Incorrect email or password.',
+    'auth/email-already-in-use': 'An account already exists with that email — try signing in instead.',
+    'auth/weak-password': 'Password should be at least 6 characters.',
+    'auth/too-many-requests': 'Too many attempts — please wait a bit and try again.',
+    'auth/network-request-failed': 'Network error — check your connection and try again.',
+  };
+  return map[e && e.code] || (e && e.message) || 'Something went wrong. Please try again.';
+}
+
+// Sign in / sign up / sign out for a real cloud account. Signed-in users'
+// personal data (schedule, friends, colors, etc.) syncs to Firestore under
+// their own uid — see sGet/sSet — so it follows them to any device.
+function openAccountModal(){
+  if(!__auth){
+    showToast('Cloud accounts aren\'t set up for this deployment yet.');
+    return;
+  }
+  const uid = currentUid();
+
+  if(uid){
+    const user = __auth.currentUser;
+    const backdrop = el(`
+      <div class="modal-backdrop">
+        <div class="modal">
+          <h2>Your account</h2>
+          <p class="hint">Signed in as<br/><b>${(user.email||'').replace(/</g,'&lt;')}</b></p>
+          <p class="hint">Your schedule, friends, and colors are synced to this account — sign in with it on any device to pick up right where you left off.</p>
+          <div class="row" style="justify-content:center;margin-top:6px;">
+            <button class="ghost" id="acctClose">Close</button>
+            <button style="background:var(--danger);" id="acctSignOut">Sign out</button>
+          </div>
+        </div>
+      </div>`);
+    document.body.appendChild(backdrop);
+    backdrop.querySelector('#acctClose').onclick = ()=> backdrop.remove();
+    backdrop.querySelector('#acctSignOut').onclick = async ()=>{
+      await __auth.signOut();
+      backdrop.remove();
+      // onAuthStateChanged picks this up and reloads local guest data automatically.
+    };
+    return;
+  }
+
+  let mode = 'signin'; // 'signin' | 'signup'
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2 id="acctTitle">Sign in</h2>
+        <p class="hint" id="acctHint">Sign in to save your schedule and pick it up on any device.</p>
+        <input id="acctEmail" type="email" placeholder="Email" autocomplete="email" />
+        <input id="acctPassword" type="password" placeholder="Password" autocomplete="current-password" />
+        <p class="hint" id="acctError" style="color:var(--danger);display:none;"></p>
+        <div class="row" style="justify-content:center;margin-top:6px;">
+          <button class="ghost" id="acctCancel">Cancel</button>
+          <button id="acctSubmit">Sign in</button>
+        </div>
+        <p class="hint" style="margin-top:14px;">
+          <a href="#" id="acctToggleMode">Need an account? Create one</a>
+        </p>
+        <p class="hint"><a href="#" id="acctForgot">Forgot password?</a></p>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+
+  const title = backdrop.querySelector('#acctTitle');
+  const hint = backdrop.querySelector('#acctHint');
+  const emailInput = backdrop.querySelector('#acctEmail');
+  const passwordInput = backdrop.querySelector('#acctPassword');
+  const errorP = backdrop.querySelector('#acctError');
+  const submitBtn = backdrop.querySelector('#acctSubmit');
+  const toggleLink = backdrop.querySelector('#acctToggleMode');
+  const forgotLink = backdrop.querySelector('#acctForgot');
+  emailInput.focus();
+
+  function setMode(m){
+    mode = m;
+    title.textContent = mode==='signin' ? 'Sign in' : 'Create account';
+    hint.textContent = mode==='signin'
+      ? 'Sign in to save your schedule and pick it up on any device.'
+      : 'Creating an account moves this browser\'s schedule to your new account, so nothing you\'ve already made gets lost.';
+    submitBtn.textContent = mode==='signin' ? 'Sign in' : 'Create account';
+    toggleLink.textContent = mode==='signin' ? 'Need an account? Create one' : 'Already have an account? Sign in';
+    errorP.style.display = 'none';
+  }
+  toggleLink.onclick = (e)=>{ e.preventDefault(); setMode(mode==='signin' ? 'signup' : 'signin'); };
+
+  forgotLink.onclick = async (e)=>{
+    e.preventDefault();
+    const email = emailInput.value.trim();
+    if(!email){ errorP.textContent = 'Enter your email above first.'; errorP.style.display = 'block'; return; }
+    try{
+      await __auth.sendPasswordResetEmail(email);
+      errorP.style.color = 'var(--muted)';
+      errorP.textContent = 'Password reset email sent — check your inbox.';
+      errorP.style.display = 'block';
+    }catch(err){
+      errorP.style.color = 'var(--danger)';
+      errorP.textContent = authErrorMessage(err);
+      errorP.style.display = 'block';
+    }
+  };
+
+  backdrop.querySelector('#acctCancel').onclick = ()=> backdrop.remove();
+
+  const submit = async ()=>{
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+    if(!email || !password){
+      errorP.style.color = 'var(--danger)';
+      errorP.textContent = 'Enter both an email and a password.';
+      errorP.style.display = 'block';
+      return;
+    }
+    submitBtn.disabled = true;
+    const originalLabel = submitBtn.textContent;
+    submitBtn.textContent = mode==='signin' ? 'Signing in…' : 'Creating account…';
+    errorP.style.display = 'none';
+    try{
+      if(mode==='signin'){
+        await __auth.signInWithEmailAndPassword(email, password);
+      } else {
+        await __auth.createUserWithEmailAndPassword(email, password);
+        // Carry this browser's guest data (if any) into the brand-new
+        // account so signing up doesn't wipe out existing work.
+        await migrateGuestDataToAccount();
+      }
+      backdrop.remove();
+      // onAuthStateChanged reloads data for the new signed-in state and re-renders.
+    }catch(err){
+      errorP.style.color = 'var(--danger)';
+      errorP.textContent = authErrorMessage(err);
+      errorP.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
+    }
+  };
+  submitBtn.onclick = submit;
+  passwordInput.addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+}
+
 function render(){
   const app = $('#app');
   app.innerHTML = '';
@@ -964,6 +1153,7 @@ function render(){
 
 function renderHeader(){
   const me = getMember(state.meId);
+  const uid = currentUid();
   const header = el(`
     <div class="app-header">
       <div>
@@ -974,7 +1164,8 @@ function renderHeader(){
         <button class="edit-name-btn" id="fontBtn" title="Adjust font size" style="font-size:calc(13px * var(--font-scale));font-weight:700;">Aa</button>
         <button class="swatch-btn" id="themeBtn" title="Change theme color"
           style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
-        <div class="whoami">signed in as<br/><b>${me?me.name:''}</b> <button id="editNameBtn" class="edit-name-btn" title="Edit your name">✎</button></div>
+        <button class="edit-name-btn" id="acctBtn" title="${uid?'Your account (synced)':'Sign in to save your schedule anywhere'}" style="font-size:calc(14px * var(--font-scale));">${uid?'☁️':'👤'}</button>
+        <div class="whoami">you're known as<br/><b>${me?me.name:''}</b> <button id="editNameBtn" class="edit-name-btn" title="Edit your name">✎</button></div>
       </div>
     </div>`);
   const themeBtn = header.querySelector('#themeBtn');
@@ -983,6 +1174,7 @@ function renderHeader(){
   fontBtn.onclick = (e)=>{ e.stopPropagation(); openFontSizePicker(fontBtn); };
   header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
   header.querySelector('#adminBtn').onclick = (e)=>{ e.stopPropagation(); openAdminModal(); };
+  header.querySelector('#acctBtn').onclick = (e)=>{ e.stopPropagation(); openAccountModal(); };
   return header;
 }
 
@@ -2494,7 +2686,11 @@ function openWallpaperBuilder(memberId){
   draw();
 }
 
-boot();
+if(__auth){
+  __auth.onAuthStateChanged(()=> boot());
+} else {
+  boot();
+}
 </script>
 </body>
 </html>
