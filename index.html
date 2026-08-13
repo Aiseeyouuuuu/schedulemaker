@@ -510,9 +510,10 @@ const PASTEL_COLORS = ['#FADADD','#FFE5B4','#FFFACD','#D9F2D9','#D6EAF8','#E0D6F
 
 let state = {
   catalog: [],       // shared master list of sections {id,code,section,title,units,instructor,remarks,meetings:[{days,start,end,room}]}
-  members: [],       // shared [{id,name,color}]
+  members: [],       // shared [{id,name,color}] -- includes local manual friends AND, for signed-in accounts, linked account-friends (id:'acct:'+uid, isAccountFriend:true, remoteUid)
   schedules: {},      // shared { memberId: [entryId,...] }  -- entries reference catalog OR are inline manual objects
   manualEntries: {},  // shared { memberId: {entryId: entryObj} } for manual (non-catalog) additions
+  remoteManualEntries: {}, // { remoteUid: {entryId: entryObj} } -- cached copy of an account-friend's OWN manual entries, read-only
   blockColors: {},    // shared { memberId: { entryId: '#hex' } } -- per-person color override for a class block
   groups: [],          // shared [{id, name, memberIds:[...]}] -- named subsets of members for quick Combined filtering
   meId: null,
@@ -522,6 +523,8 @@ let state = {
   combinedOn: new Set(),
   staged: [],          // pending parsed rows awaiting confirmation
   isAdmin: false,       // unlocks the catalog-import panel; see ADMIN_PASSCODE below
+  incomingRequests: [], // account friend requests sent TO you, awaiting your accept/decline
+  outgoingRequests: [], // account friend requests you sent, awaiting their accept
 };
 
 // ============================= ADMIN GATE =============================
@@ -562,6 +565,160 @@ async function migrateGuestDataToAccount(){
     if(raw==null) continue;
     try{ await sSet(key, JSON.parse(raw), false); }catch(e){ console.error('migration failed for', key, e); }
   }
+}
+
+// ============================= ACCOUNT FRIENDS =============================
+// Lets two signed-in accounts find each other by name, send/accept a
+// request, and — once accepted — each automatically sees the other's own
+// "My Schedule" (read-only) in their Friends tab. Separate from the older
+// manual-friend feature above (typing in someone's classes yourself), which
+// still works unchanged for people without accounts.
+function nameLower(s){ return (s||'').trim().toLowerCase(); }
+
+// Keeps this account's name searchable by others. Called after boot (if
+// signed in) and whenever the person edits their own display name.
+async function ensureDirectoryProfile(){
+  const uid = currentUid();
+  if(!__db || !uid) return;
+  const me = getMember(state.meId);
+  if(!me) return;
+  try{
+    await __db.collection('user_directory').doc(uid).set({
+      uid, name: me.name, nameLower: nameLower(me.name),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(e){ console.error('directory profile update failed', e); }
+}
+
+// Prefix search on the lowercase name field — Firestore has no full-text
+// search, so this only matches names that START WITH the query.
+async function searchDirectory(q){
+  const uid = currentUid();
+  if(!__db || !uid || !q.trim()) return [];
+  const ql = nameLower(q);
+  try{
+    const snap = await __db.collection('user_directory')
+      .where('nameLower','>=',ql).where('nameLower','<=',ql+'\uf8ff')
+      .limit(15).get();
+    return snap.docs.map(d=>d.data()).filter(u=>u.uid!==uid);
+  }catch(e){ console.error('friend search failed', e); return []; }
+}
+
+async function acceptFriendRequestDoc(reqId, req){
+  const a = req.from, b = req.to, aName = req.fromName, bName = req.toName;
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  await Promise.all([
+    __db.collection('sked_users').doc(a).collection('friends').doc(b).set({uid:b, name:bName, since:now}),
+    __db.collection('sked_users').doc(b).collection('friends').doc(a).set({uid:a, name:aName, since:now}),
+    __db.collection('friend_requests').doc(reqId).delete(),
+  ]);
+}
+
+// Sending a request while the other person already sent you one completes
+// the match immediately instead of leaving two crossed pending requests.
+async function sendFriendRequest(toUid, toName){
+  const uid = currentUid();
+  if(!__db || !uid) return 'error';
+  const me = getMember(state.meId);
+  const myName = me ? me.name : 'Someone';
+  const reverseId = toUid+'_'+uid;
+  const forwardId = uid+'_'+toUid;
+  try{
+    const reverseSnap = await __db.collection('friend_requests').doc(reverseId).get();
+    if(reverseSnap.exists && reverseSnap.data().status==='pending'){
+      await acceptFriendRequestDoc(reverseSnap.id, reverseSnap.data());
+      return 'accepted';
+    }
+    await __db.collection('friend_requests').doc(forwardId).set({
+      from: uid, fromName: myName, to: toUid, toName,
+      status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    return 'sent';
+  }catch(e){ console.error('sendFriendRequest failed', e); return 'error'; }
+}
+async function acceptFriendRequest(req){
+  try{ await acceptFriendRequestDoc(req.id, req); }catch(e){ console.error(e); }
+  await loadFriendsData();
+  render();
+}
+async function declineFriendRequest(req){
+  try{ await __db.collection('friend_requests').doc(req.id).delete(); }catch(e){ console.error(e); }
+  await loadFriendsData();
+  render();
+}
+async function cancelOutgoingRequest(req){
+  try{ await __db.collection('friend_requests').doc(req.id).delete(); }catch(e){ console.error(e); }
+  await loadFriendsData();
+  render();
+}
+async function unfriendAccount(remoteUid){
+  const ok = await customConfirm(`Remove this friend?\n\nYou'll both stop seeing each other's schedules. This can't be undone.`);
+  if(!ok) return;
+  const uid = currentUid();
+  try{
+    await Promise.all([
+      __db.collection('sked_users').doc(uid).collection('friends').doc(remoteUid).delete(),
+      __db.collection('sked_users').doc(remoteUid).collection('friends').doc(uid).delete(),
+    ]);
+  }catch(e){ console.error(e); }
+  const memberId = 'acct:'+remoteUid;
+  state.members = state.members.filter(m=>m.remoteUid!==remoteUid);
+  delete state.schedules[memberId];
+  delete state.blockColors[memberId];
+  delete state.remoteManualEntries[remoteUid];
+  state.combinedOn.delete(memberId);
+  if(state.friendEditingId===memberId) state.friendEditingId = null;
+  render();
+}
+
+// Pulls one account-friend's OWN classes (never their friends-of-friends —
+// their 'me-id' doc says which entry in THEIR schedules map is really
+// theirs) into the local read-only cache so the Friends/Combined tabs can
+// show it via the normal renderBoard/entryFor pipeline.
+async function fetchFriendSchedule(remoteUid){
+  if(!__db) return;
+  const memberId = 'acct:'+remoteUid;
+  try{
+    const base = __db.collection('sked_users').doc(remoteUid).collection('data');
+    const [meIdSnap, schedSnap, manualSnap] = await Promise.all([
+      base.doc('me-id').get(), base.doc('schedules').get(), base.doc('manualEntries').get(),
+    ]);
+    const theirMeId = meIdSnap.exists ? meIdSnap.data().value : null;
+    const remoteSchedules = schedSnap.exists ? (schedSnap.data().value||{}) : {};
+    const remoteManual = manualSnap.exists ? (manualSnap.data().value||{}) : {};
+    state.schedules[memberId] = (theirMeId && remoteSchedules[theirMeId]) ? remoteSchedules[theirMeId] : [];
+    state.remoteManualEntries[remoteUid] = (theirMeId && remoteManual[theirMeId]) ? remoteManual[theirMeId] : {};
+  }catch(e){ console.error('fetchFriendSchedule failed', remoteUid, e); }
+}
+
+// Refreshes accepted friends + pending requests, and syncs state.members so
+// every accepted friend automatically shows up in the Friends tab without
+// the person needing to add them manually.
+async function loadFriendsData(){
+  const uid = currentUid();
+  if(!__db || !uid) return;
+  try{
+    const [friendsSnap, inSnap, outSnap] = await Promise.all([
+      __db.collection('sked_users').doc(uid).collection('friends').get(),
+      __db.collection('friend_requests').where('to','==',uid).where('status','==','pending').get(),
+      __db.collection('friend_requests').where('from','==',uid).where('status','==','pending').get(),
+    ]);
+    state.incomingRequests = inSnap.docs.map(d=>({id:d.id, ...d.data()}));
+    state.outgoingRequests = outSnap.docs.map(d=>({id:d.id, ...d.data()}));
+
+    const friendDocs = friendsSnap.docs.map(d=>d.data());
+    state.members = state.members.filter(m=>!m.isAccountFriend || friendDocs.some(f=>f.uid===m.remoteUid));
+    for(const f of friendDocs){
+      let m = state.members.find(x=>x.remoteUid===f.uid);
+      if(!m){
+        m = {id:'acct:'+f.uid, name:f.name, color:colorForIndex(state.members.length), isAccountFriend:true, remoteUid:f.uid};
+        state.members.push(m);
+      } else {
+        m.name = f.name;
+      }
+    }
+    await Promise.all(friendDocs.map(f=>fetchFriendSchedule(f.uid)));
+  }catch(e){ console.error('loadFriendsData failed', e); }
 }
 
 async function saveCatalog(){ return queueSave(()=> sSet('catalog', state.catalog, true)); }
@@ -738,10 +895,12 @@ function catalogKey(code, section){
 }
 
 function entryFor(id){
-  // id could be a catalog id or a manual entry id
+  // id could be a catalog id, a local manual entry id, or an account
+  // friend's own manual entry id (cached read-only after fetchFriendSchedule)
   const c = state.catalog.find(c=>c.id===id);
   if(c) return c;
   for(const mid in state.manualEntries){ if(state.manualEntries[mid][id]) return state.manualEntries[mid][id]; }
+  for(const uid in state.remoteManualEntries){ if(state.remoteManualEntries[uid][id]) return state.remoteManualEntries[uid][id]; }
   return null;
 }
 
@@ -782,6 +941,10 @@ async function boot(){
     if(__auth && !currentUid() && !__guestChosenThisSession){ renderAuthGate(); return; }
     renderNamePrompt();
     return;
+  }
+  if(currentUid()){
+    await ensureDirectoryProfile();
+    await loadFriendsData();
   }
   render();
 }
@@ -1006,6 +1169,7 @@ function renderNamePrompt(){
     state.meId = id;
     await saveMembers(); await saveSchedules(); await saveManual();
     await sSet('me-id', id, false);
+    if(currentUid()){ await ensureDirectoryProfile(); await loadFriendsData(); }
     render();
   };
   nameInput.addEventListener('keydown', e=>{ if(e.key==='Enter') nameGo.click(); });
@@ -1037,6 +1201,7 @@ function openEditNameModal(){
     if(!val){ backdrop.remove(); return; }
     const m = getMember(state.meId);
     if(m){ m.name = val; await saveMembers(); }
+    if(currentUid()) await ensureDirectoryProfile(); // keep your searchable name in sync for friend search
     backdrop.remove();
     render();
   };
@@ -1752,26 +1917,134 @@ function renderGroupsPanel(){
 }
 
 /* ============================= FRIENDS TAB ============================= */
+// Search-by-name + pending requests UI for real account friends. Only
+// meaningful when signed in — search/requests need a directory entry and a
+// uid to attach requests to, neither of which a guest has.
+function renderAccountFriendsPanel(){
+  if(!__auth){ return el(`<div></div>`); } // accounts not configured for this deployment at all
+  if(!currentUid()){
+    return el(`<div class="panel"><h3>Add friends by account</h3><p class="hint">Sign in (👤 in the header) to search for friends by name — once you're both signed in and connected, you'll automatically see each other's schedule here.</p></div>`);
+  }
+
+  const panel = el(`
+    <div class="panel">
+      <h3>Add friends by account</h3>
+      <div class="row">
+        <input type="text" id="friendSearchInput" placeholder="Search by name…" style="width:200px"/>
+        <button id="friendSearchBtn">Search</button>
+      </div>
+      <div id="friendSearchResults" class="row" style="flex-wrap:wrap;margin-top:8px;"></div>
+      <div id="friendReqSections"></div>
+    </div>`);
+
+  const searchInput = panel.querySelector('#friendSearchInput');
+  const resultsEl = panel.querySelector('#friendSearchResults');
+  const doSearch = async ()=>{
+    const q = searchInput.value;
+    if(!q.trim()){ resultsEl.innerHTML=''; return; }
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(el(`<span class="hint" style="margin:0;">Searching…</span>`));
+    const results = await searchDirectory(q);
+    const alreadyFriends = new Set(state.members.filter(m=>m.isAccountFriend).map(m=>m.remoteUid));
+    const pendingOut = new Set(state.outgoingRequests.map(r=>r.to));
+    resultsEl.innerHTML = '';
+    if(!results.length){
+      resultsEl.appendChild(el(`<span class="hint" style="margin:0;">No one found with that name.</span>`));
+      return;
+    }
+    results.forEach(u=>{
+      const already = alreadyFriends.has(u.uid);
+      const pending = pendingOut.has(u.uid);
+      const row = el(`<div class="chip" style="cursor:default;"><span>${u.name}</span></div>`);
+      if(already){
+        row.appendChild(el(`<span class="hint" style="margin:0 0 0 6px;">Already friends</span>`));
+      } else if(pending){
+        row.appendChild(el(`<span class="hint" style="margin:0 0 0 6px;">Requested</span>`));
+      } else {
+        const btn = el(`<button style="padding:4px 10px;font-size:11.5px;margin-left:6px;">Add</button>`);
+        btn.onclick = async ()=>{
+          btn.disabled = true; btn.textContent = '…';
+          const result = await sendFriendRequest(u.uid, u.name);
+          if(result==='error'){ btn.disabled=false; btn.textContent='Add'; return; }
+          await loadFriendsData();
+          render();
+        };
+        row.appendChild(btn);
+      }
+      resultsEl.appendChild(row);
+    });
+  };
+  panel.querySelector('#friendSearchBtn').onclick = doSearch;
+  searchInput.addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
+
+  const reqSections = panel.querySelector('#friendReqSections');
+  if(state.incomingRequests.length){
+    const sec = el(`<div style="margin-top:12px;"><p class="hint" style="margin:0 0 6px;">Friend requests</p><div class="row" style="flex-wrap:wrap;"></div></div>`);
+    const row = sec.querySelector('.row');
+    state.incomingRequests.forEach(r=>{
+      const item = el(`<div class="chip" style="cursor:default;"><span>${r.fromName}</span></div>`);
+      const accept = el(`<button style="padding:4px 10px;font-size:11.5px;margin-left:6px;">Accept</button>`);
+      const decline = el(`<button class="ghost" style="padding:4px 10px;font-size:11.5px;margin-left:4px;">Decline</button>`);
+      accept.onclick = ()=> acceptFriendRequest(r);
+      decline.onclick = ()=> declineFriendRequest(r);
+      item.appendChild(accept); item.appendChild(decline);
+      row.appendChild(item);
+    });
+    reqSections.appendChild(sec);
+  }
+  if(state.outgoingRequests.length){
+    const sec = el(`<div style="margin-top:12px;"><p class="hint" style="margin:0 0 6px;">Sent requests</p><div class="row" style="flex-wrap:wrap;"></div></div>`);
+    const row = sec.querySelector('.row');
+    state.outgoingRequests.forEach(r=>{
+      const item = el(`<div class="chip" style="cursor:default;"><span>${r.toName}</span></div>`);
+      const cancel = el(`<button class="ghost" style="padding:4px 10px;font-size:11.5px;margin-left:6px;">Cancel</button>`);
+      cancel.onclick = ()=> cancelOutgoingRequest(r);
+      item.appendChild(cancel);
+      row.appendChild(item);
+    });
+    reqSections.appendChild(sec);
+  }
+  return panel;
+}
+
+// Read-only board for an account friend — their real "My Schedule", never
+// editable here since it isn't your data.
+function renderReadOnlyFriendBoard(memberId){
+  const m = getMember(memberId);
+  const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
+  const wrap = el(`<div></div>`);
+  wrap.appendChild(el(`<div class="panel"><h3>${m.name}'s schedule</h3><p class="hint" style="margin:0;">This is ${m.name}'s own account schedule — read-only.</p></div>`));
+  if(!entries.length){
+    wrap.appendChild(el(`<div class="empty">${m.name} hasn't added any classes yet.</div>`));
+    return wrap;
+  }
+  wrap.appendChild(renderBoard([{member:m, color:m.color, entries}], false));
+  return wrap;
+}
+
 function renderFriendsTab(){
   const wrap = el(`<div></div>`);
+  wrap.appendChild(renderAccountFriendsPanel());
+
   const manage = el(`
     <div class="panel">
-      <h3>Friends</h3>
+      <h3>Manually-tracked friends</h3>
       <div class="friend-manage" id="chipRow"></div>
       <div class="row">
         <input type="text" id="friendName" placeholder="Friend's name" style="width:200px"/>
         <button id="addFriend">Add friend</button>
       </div>
-      <p class="hint">Friends you add here are saved to your own browser only — great for building a combined view of you and the people you're comparing schedules with, without it being visible to anyone else who opens this site.</p>
+      <p class="hint">Type in a friend's classes yourself — saved to your own browser only. Friends connected by account (above) show up automatically instead.</p>
     </div>`);
   const chipRow = manage.querySelector('#chipRow');
   state.members.forEach(m=>{
     const isMe = m.id===state.meId;
     const colorLabel = isMe ? 'your' : `${m.name}'s`;
+    const removeTitle = m.isAccountFriend ? `Unfriend ${m.name}` : `Remove ${m.name}`;
     const chip = el(`<div class="chip ${!isMe && state.friendEditingId===m.id?'active':''}">
       <button class="chip-dot" style="background:${m.color}" title="Change ${colorLabel} color"></button>
-      <span class="chip-label" style="${isMe?'cursor:default;':''}">${m.name}${isMe?' (you)':''}</span>
-      ${isMe?'':`<span class="x" title="Remove ${m.name}">×</span>`}
+      <span class="chip-label" style="${isMe?'cursor:default;':''}">${m.name}${isMe?' (you)':''}${m.isAccountFriend?' 🔗':''}</span>
+      ${isMe?'':`<span class="x" title="${removeTitle}">×</span>`}
     </div>`);
     if(!isMe){
       chip.querySelector('.chip-label').onclick = ()=>{ state.friendEditingId = m.id; render(); };
@@ -1788,6 +2061,7 @@ function renderFriendsTab(){
     if(!isMe){
       chip.querySelector('.x').onclick = async (e)=>{
         e.stopPropagation();
+        if(m.isAccountFriend){ await unfriendAccount(m.remoteUid); return; }
         const ok = await customConfirm(`Remove ${m.name} entirely?\n\nTheir added classes will be deleted too, and they'll be taken out of any groups. This can't be undone.`);
         if(!ok) return;
         await removeMember(m.id);
@@ -1811,13 +2085,14 @@ function renderFriendsTab(){
   wrap.appendChild(renderGroupsPanel());
 
   if(!state.members.filter(m=>m.id!==state.meId).length){
-    wrap.appendChild(el(`<div class="empty">No friends added yet. Add one above to start building their schedule.</div>`));
+    wrap.appendChild(el(`<div class="empty">No friends yet. Search for one above, or add one manually to start building their schedule.</div>`));
     return wrap;
   }
   if(!state.friendEditingId || !getMember(state.friendEditingId)){
     state.friendEditingId = state.members.find(m=>m.id!==state.meId).id;
   }
-  wrap.appendChild(renderMemberEditor(state.friendEditingId));
+  const editingMember = getMember(state.friendEditingId);
+  wrap.appendChild(editingMember.isAccountFriend ? renderReadOnlyFriendBoard(state.friendEditingId) : renderMemberEditor(state.friendEditingId));
   return wrap;
 }
 
