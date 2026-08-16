@@ -304,6 +304,23 @@ async function sSet(key, value, shared=false){
   try{ localStorage.setItem(lsKey(key, shared), JSON.stringify(value)); }
   catch(e){ console.error('storage set failed', key, e); }
 }
+async function sDel(key, shared=false){
+  if(shared && __db){
+    try{ await __db.collection('sked_shared').doc(key).delete(); return; }
+    catch(e){ console.error('firestore delete failed', key, e); /* fall through */ }
+  }
+  const uid = !shared ? currentUid() : null;
+  if(uid && __db){
+    try{ await __db.collection('sked_users').doc(uid).collection('data').doc(key).delete(); return; }
+    catch(e){ console.error('firestore personal delete failed', key, e); /* fall through to local */ }
+  }
+  if(hasArtifactStorage()){
+    try{ await window.storage.delete(key, shared); return; }
+    catch(e){ /* fall through to local fallback */ }
+  }
+  try{ localStorage.removeItem(lsKey(key, shared)); }
+  catch(e){ console.error('storage delete failed', key, e); }
+}
 
 // Two saves firing close together (e.g. adding two classes back-to-back) can
 // race and hit the backend as conflicting concurrent writes. Chaining every
@@ -536,14 +553,92 @@ const PASTEL_COLORS = ['#FADADD','#FFE5B4','#FFFACD','#D9F2D9','#D6EAF8','#E0D6F
 // rather than silently mis-labeling a substitute font as the real thing.
 const FONT_OPTIONS = [{"n":"Arimo","s":"'Arimo', sans-serif"},{"n":"Canva Sans","s":"sans-serif"},{"n":"Monteserrat","s":"'Montserrat', sans-serif"},{"n":"Open Sans","s":"'Open Sans', sans-serif"},{"n":"Poppins","s":"'Poppins', sans-serif"},{"n":"Glacial Indifference","s":"sans-serif"},{"n":"League Spartan","s":"'League Spartan', sans-serif"},{"n":"Anton","s":"'Anton', sans-serif"},{"n":"DM Sans","s":"'DM Sans', sans-serif"},{"n":"Archivo Black","s":"'Archivo Black', sans-serif"},{"n":"Roboto","s":"'Roboto', sans-serif"},{"n":"Garet","s":"sans-serif"},{"n":"Alice","s":"'Alice', serif"},{"n":"Open Sauce","s":"sans-serif"},{"n":"Brittany","s":"cursive"},{"n":"Arial MT Pro","s":"'Arial', sans-serif"},{"n":"Gagalin","s":"cursive"},{"n":"Times New Roman MT","s":"'Times New Roman', serif"},{"n":"Lora","s":"'Lora', serif"},{"n":"The Seasons","s":"serif"},{"n":"Moontime","s":"'Moontime', cursive"},{"n":"Comic Sans","s":"'Comic Sans MS', cursive"},{"n":"Shrikhand","s":"'Shrikhand', cursive"},{"n":"Agrandir","s":"sans-serif"},{"n":"Bebas Neue","s":"'Bebas Neue', sans-serif"},{"n":"Horizon","s":"sans-serif"},{"n":"Etna Sans Serif","s":"sans-serif"},{"n":"Fredoka","s":"'Fredoka', sans-serif"},{"n":"Cinzel Decorative","s":"'Cinzel Decorative', serif"},{"n":"Cinzel","s":"'Cinzel', serif"},{"n":"Noto Serif Ethiopic Condensed","s":"'Noto Serif Ethiopic', serif"},{"n":"Cormorant Garamond","s":"'Cormorant Garamond', serif"},{"n":"Lilita One","s":"'Lilita One', cursive"},{"n":"Copperplate Gothic 29 BC","s":"'Copperplate', fantasy"},{"n":"Playfair Display","s":"'Playfair Display', serif"},{"n":"Telegraf","s":"sans-serif"},{"n":"Abril Fatface","s":"'Abril Fatface', serif"},{"n":"Bodoni FLF","s":"serif"},{"n":"Norwester","s":"sans-serif"},{"n":"Bukhari Script","s":"cursive"},{"n":"Canva Student Font","s":"cursive"},{"n":"HK Modular","s":"sans-serif"},{"n":"Hangyaboly","s":"cursive"},{"n":"Nickainley","s":"cursive"},{"n":"Alex Brush","s":"'Alex Brush', cursive"},{"n":"XB Niloofar","s":"sans-serif"},{"n":"Yeseva One","s":"'Yeseva One', serif"},{"n":"Impact","s":"'Impact', sans-serif"},{"n":"Biski","s":"sans-serif"},{"n":"Arapey","s":"'Arapey', serif"},{"n":"Ahsing","s":"cursive"},{"n":"Barriecito","s":"'Barriecito', cursive"},{"n":"Noja","s":"sans-serif"},{"n":"Alta","s":"sans-serif"},{"n":"Arvo","s":"'Arvo', serif"},{"n":"Blaka","s":"'Blaka', cursive"},{"n":"Brick Sans","s":"sans-serif"},{"n":"Oswald","s":"'Oswald', sans-serif"},{"n":"Slopes","s":"cursive"},{"n":"Aprila","s":"sans-serif"},{"n":"Lazydog","s":"cursive"},{"n":"Magnolia Script","s":"cursive"},{"n":"Adlery Pro","s":"cursive"},{"n":"Apricots","s":"'Apricots', cursive"},{"n":"Chewy","s":"'Chewy', cursive"},{"n":"Grand Hotel","s":"'Grand Hotel', cursive"},{"n":"Lulu Font TH","s":"sans-serif"},{"n":"Marykate","s":"cursive"},{"n":"Schoolbell","s":"'Schoolbell', cursive"},{"n":"TT Drugs","s":"sans-serif"},{"n":"Lancelot","s":"'Lancelot', serif"},{"n":"Lato","s":"'Lato', sans-serif"},{"n":"Old Standard","s":"'Old Standard TT', serif"},{"n":"Quicksand","s":"'Quicksand', sans-serif"},{"n":"Advetime","s":"cursive"},{"n":"Anonymous Pro","s":"'Anonymous Pro', monospace"},{"n":"Architype Aubette","s":"sans-serif"},{"n":"Architype Bayer-type","s":"sans-serif"},{"n":"Arial Unicode","s":"'Arial Unicode MS', sans-serif"},{"n":"Avenir","s":"'Avenir', sans-serif"},{"n":"Belleza","s":"'Belleza', sans-serif"},{"n":"Benedict","s":"cursive"},{"n":"Binate","s":"sans-serif"},{"n":"Braggadocio","s":"'Braggadocio', fantasy"},{"n":"Bright","s":"serif"},{"n":"Buffalo","s":"cursive"},{"n":"Caitlin","s":"cursive"},{"n":"Calgary","s":"sans-serif"},{"n":"Cardo","s":"'Cardo', serif"},{"n":"Cheque","s":"serif"},{"n":"Chloe","s":"cursive"},{"n":"Citadel Script","s":"cursive"},{"n":"Copperplate Gothic 29 AB","s":"'Copperplate', fantasy"},{"n":"Copperplate Gothic","s":"'Copperplate', fantasy"},{"n":"Copperplate Gothic 32 BC","s":"'Copperplate', fantasy"},{"n":"Devasta","s":"sans-serif"},{"n":"Emitha","s":"cursive"},{"n":"Fabrica","s":"serif"},{"n":"Findel","s":"cursive"},{"n":"Fiona","s":"cursive"},{"n":"Futura","s":"'Futura', sans-serif"},{"n":"Futura Black","s":"'Futura', sans-serif"},{"n":"Garamond","s":"'Garamond', serif"},{"n":"Georgia Pro","s":"'Georgia', serif"},{"n":"Gotham","s":"sans-serif"},{"n":"Helvetica Now","s":"'Helvetica Neue', sans-serif"},{"n":"Helvetica World","s":"'Helvetica', sans-serif"},{"n":"Hey Gotcha!","s":"cursive"},{"n":"Horizon Outlined","s":"sans-serif"},{"n":"Intro Rust","s":"sans-serif"},{"n":"ITC Bauhaus","s":"sans-serif"},{"n":"ITC Benguiat","s":"serif"},{"n":"Joliet","s":"cursive"},{"n":"Jonathan","s":"cursive"},{"n":"Kare","s":"sans-serif"},{"n":"Knockout Cruiserweight","s":"sans-serif"},{"n":"Knockout Featherweight","s":"sans-serif"},{"n":"Knockout Flyweight","s":"sans-serif"},{"n":"Knockout Sumo","s":"sans-serif"},{"n":"Knockout Welterweight","s":"sans-serif"},{"n":"League Gothic","s":"'League Gothic', sans-serif"},{"n":"Libre Baskerville","s":"'Libre Baskerville', serif"},{"n":"London","s":"cursive"},{"n":"Lovelo","s":"sans-serif"},{"n":"Madelyn","s":"cursive"},{"n":"Nixie One","s":"'Nixie One', serif"},{"n":"Noto Serif","s":"'Noto Serif', serif"},{"n":"Olivare Base","s":"serif"},{"n":"Pierson","s":"cursive"},{"n":"PL Barnum Block","s":"sans-serif"},{"n":"Proxima Nova","s":"sans-serif"},{"n":"Recoleta","s":"serif"},{"n":"Sailors","s":"cursive"},{"n":"Sanchez","s":"'Sanchez', serif"},{"n":"Sensa Brush","s":"cursive"},{"n":"Source Serif Pro","s":"'Source Serif 4', serif"},{"n":"Stoic","s":"sans-serif"},{"n":"Sunborn","s":"sans-serif"},{"n":"Tenor Sans","s":"'Tenor Sans', sans-serif"},{"n":"Trecuchet MS","s":"'Trebuchet MS', sans-serif"},{"n":"Univers","s":"sans-serif"},{"n":"Versailles","s":"serif"},{"n":"Virtual","s":"sans-serif"},{"n":"Zing Rust Base","s":"sans-serif"}];
 const DEFAULT_SCHEDULE_FONT = 'Poppins';
+// Kept modest so a single font file's base64 form comfortably fits inside
+// one Firestore document (1 MiB limit) alongside its metadata.
+const CUSTOM_FONT_MAX_BYTES = 700*1024;
+const CUSTOM_FONT_MIME = {woff2:'font/woff2', woff:'font/woff', ttf:'font/ttf', otf:'font/otf'};
+
 function fontStackFor(name){
+  const custom = state.customFonts.find(x=>x.name===name);
+  if(custom) return `'${custom.name}', sans-serif`;
   const f = FONT_OPTIONS.find(x=>x.n===name);
   return f ? f.s : "'Poppins', sans-serif";
 }
+// Custom (user-uploaded) fonts are listed first, ahead of the built-in list.
+function getAllFontOptions(){
+  return [...state.customFonts.map(f=>({n:f.name, s:`'${f.name}', sans-serif`, custom:true, id:f.id})), ...FONT_OPTIONS];
+}
+function isKnownFontName(name){
+  return state.customFonts.some(f=>f.name===name) || FONT_OPTIONS.some(f=>f.n===name);
+}
+
+function uniqueFontName(base){
+  let name = base, i = 2;
+  while(isKnownFontName(name) || FONT_OPTIONS.some(f=>f.n===name)) name = `${base} (${i++})`;
+  return name;
+}
+
+// Loads a font's bytes into the browser's live font set. Both the on-site
+// board and the wallpaper canvas need this to actually happen before they
+// can render text in it — just having the base64 saved isn't enough.
+async function registerFontFace(name, mime, dataUrl){
+  const face = new FontFace(name, `url(${dataUrl})`);
+  document.fonts.add(face);
+  await face.load();
+  return face;
+}
+
+async function loadCustomFonts(){
+  const ids = (await sGet('customFontIndex', false)) || [];
+  const loaded = [];
+  for(const id of ids){
+    const entry = await sGet(`customFont:${id}`, false);
+    if(!entry || !entry.data) continue;
+    try{
+      await registerFontFace(entry.name, entry.mime, entry.data);
+      loaded.push({id, name:entry.name, mime:entry.mime, data:entry.data});
+    }catch(e){ console.error('failed to load custom font', entry.name, e); }
+  }
+  state.customFonts = loaded;
+}
+
+// Reads, registers, and persists an uploaded font file. Throws (with a
+// human-readable message) on anything the caller should show the user.
+async function addCustomFont(file){
+  const ext = (file.name.split('.').pop()||'').toLowerCase();
+  const mime = CUSTOM_FONT_MIME[ext];
+  if(!mime) throw new Error('That doesn\'t look like a font file — use .ttf, .otf, .woff, or .woff2.');
+  if(file.size > CUSTOM_FONT_MAX_BYTES) throw new Error(`That font file is too big (max ${Math.round(CUSTOM_FONT_MAX_BYTES/1024)}KB) to save to your account.`);
+  const baseName = (file.name.replace(/\.[^.]+$/, '') || 'My font').trim().slice(0,60);
+  const name = uniqueFontName(baseName);
+  const dataUrl = await new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = ()=> resolve(r.result);
+    r.onerror = ()=> reject(new Error('Could not read that file.'));
+    r.readAsDataURL(file);
+  });
+  await registerFontFace(name, mime, dataUrl); // throws if the file isn't a valid font
+  const id = (crypto.randomUUID ? crypto.randomUUID() : `f${Date.now()}${Math.random().toString(36).slice(2)}`);
+  const entry = {id, name, mime, data:dataUrl};
+  state.customFonts.push(entry);
+  const ids = (await sGet('customFontIndex', false)) || [];
+  await sSet(`customFont:${id}`, entry, false);
+  await sSet('customFontIndex', [...ids, id], false);
+  return name;
+}
+
+async function deleteCustomFont(id){
+  const entry = state.customFonts.find(f=>f.id===id);
+  state.customFonts = state.customFonts.filter(f=>f.id!==id);
+  const ids = (await sGet('customFontIndex', false)) || [];
+  await sSet('customFontIndex', ids.filter(x=>x!==id), false);
+  await sDel(`customFont:${id}`, false);
+  return entry;
+}
 
 // Reusable font-picker modal — every option is rendered in its own actual
-// font so it's easy to eyeball, with a search box since the list is long.
-// Used both for the on-site schedule font and the wallpaper/table font.
+// font so it's easy to eyeball, with a search box since the list is long,
+// and an upload control at the top for the user's own font files.
 function openFontPickerModal(title, currentName, onSelect){
   document.querySelectorAll('.font-picker-backdrop').forEach(m=>m.remove());
   const backdrop = el(`
@@ -553,34 +648,74 @@ function openFontPickerModal(title, currentName, onSelect){
           <h2 style="margin:0;">${title}</h2>
           <button class="ghost small" id="fpClose">Close</button>
         </div>
+        <div class="row" style="margin-top:12px;align-items:center;">
+          <button class="chip" id="fpUploadBtn">⬆️ Upload a font…</button>
+          <input type="file" id="fpUploadInput" accept=".ttf,.otf,.woff,.woff2" style="display:none;"/>
+          <span class="hint" id="fpUploadHint" style="margin:0;">.ttf, .otf, .woff, or .woff2 — up to ${Math.round(CUSTOM_FONT_MAX_BYTES/1024)}KB</span>
+        </div>
         <input type="text" id="fpSearch" placeholder="Search fonts…"
-          style="width:100%;margin-top:12px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-family:'Poppins',sans-serif;font-size:calc(13.5px * var(--font-scale));"/>
-        <div id="fpList" style="margin-top:10px;max-height:56vh;overflow:auto;border:1px solid var(--line);border-radius:8px;"></div>
+          style="width:100%;margin-top:10px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-family:'Poppins',sans-serif;font-size:calc(13.5px * var(--font-scale));"/>
+        <div id="fpList" style="margin-top:10px;max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:8px;"></div>
       </div>
     </div>`);
   document.body.appendChild(backdrop);
   const listEl = backdrop.querySelector('#fpList');
   const searchEl = backdrop.querySelector('#fpSearch');
+  const uploadBtn = backdrop.querySelector('#fpUploadBtn');
+  const uploadInput = backdrop.querySelector('#fpUploadInput');
+  const uploadHint = backdrop.querySelector('#fpUploadHint');
+  const defaultHintText = uploadHint.textContent;
   function renderList(filter){
     const q = (filter||'').trim().toLowerCase();
     listEl.innerHTML = '';
-    const items = FONT_OPTIONS.filter(f=> !q || f.n.toLowerCase().includes(q));
+    const items = getAllFontOptions().filter(f=> !q || f.n.toLowerCase().includes(q));
     if(!items.length){
       listEl.appendChild(el(`<div class="combo-empty">No fonts match "${filter.replace(/"/g,'')}".</div>`));
       return;
     }
     items.forEach(f=>{
       const active = f.n === currentName;
-      const row = el(`<div class="combo-item" style="display:flex;align-items:center;justify-content:space-between;${active?'background:var(--line);':''}">
-        <span style="font-family:${f.s};font-size:16px;">${f.n}</span>
-        ${active?'<span style="color:var(--navy-text);font-weight:700;">✓</span>':''}
+      const row = el(`<div class="combo-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;${active?'background:var(--line);':''}">
+        <span style="font-family:${f.s};font-size:16px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.n}</span>
+        ${f.custom?'<span class="hint" style="margin:0;flex:none;">Yours</span>':''}
+        ${active?'<span style="color:var(--navy-text);font-weight:700;flex:none;">✓</span>':''}
+        ${f.custom?'<button class="danger" title="Delete this font" style="flex:none;">×</button>':''}
       </div>`);
-      row.onclick = ()=>{ backdrop.remove(); onSelect(f.n); };
+      row.querySelector('span[style*="flex:1"]').onclick = ()=>{ backdrop.remove(); onSelect(f.n); };
+      if(f.custom){
+        row.querySelector('button.danger').onclick = async (e)=>{
+          e.stopPropagation();
+          if(!confirm(`Delete "${f.n}"? This can't be undone.`)) return;
+          await deleteCustomFont(f.id);
+          renderList(searchEl.value);
+        };
+      }
       listEl.appendChild(row);
     });
   }
   renderList('');
   searchEl.oninput = ()=> renderList(searchEl.value);
+  uploadBtn.onclick = ()=> uploadInput.click();
+  uploadInput.onchange = async ()=>{
+    const file = uploadInput.files[0];
+    uploadInput.value = '';
+    if(!file) return;
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Loading font…';
+    uploadHint.textContent = defaultHintText;
+    try{
+      const name = await addCustomFont(file);
+      backdrop.remove();
+      onSelect(name);
+      return;
+    }catch(err){
+      uploadHint.textContent = err.message || 'Could not load that font.';
+      uploadHint.style.color = 'var(--danger)';
+    }finally{
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = '⬆️ Upload a font…';
+    }
+  };
   backdrop.querySelector('#fpClose').onclick = ()=> backdrop.remove();
   backdrop.onclick = (e)=>{ if(e.target===backdrop) backdrop.remove(); };
   setTimeout(()=>searchEl.focus(), 30);
@@ -603,6 +738,7 @@ let state = {
   isAdmin: false,       // unlocks the catalog-import panel; see ADMIN_PASSCODE below
   incomingRequests: [], // account friend requests sent TO you, awaiting your accept/decline
   outgoingRequests: [], // account friend requests you sent, awaiting their accept
+  customFonts: [],     // personal [{id,name,mime,data}] -- fonts the user uploaded themselves (data is a base64 data: URL)
 };
 
 // ============================= ADMIN GATE =============================
@@ -973,7 +1109,7 @@ async function applyScheduleFont(name, persist){
 }
 async function loadScheduleFont(){
   const saved = await sGet('scheduleFont', false);
-  const value = (typeof saved==='string' && FONT_OPTIONS.some(f=>f.n===saved)) ? saved : DEFAULT_SCHEDULE_FONT;
+  const value = (typeof saved==='string' && isKnownFontName(saved)) ? saved : DEFAULT_SCHEDULE_FONT;
   await applyScheduleFont(value, false);
 }
 function openScheduleFontPicker(){
@@ -1094,6 +1230,7 @@ async function boot(){
   await loadDarkMode(); // must run before loadTheme() — bg/surface/ink depend on light-vs-dark
   await loadTheme();
   await loadFontScale();
+  await loadCustomFonts();
   await loadScheduleFont();
   await loadLabelInterval();
   await loadAll();
@@ -3145,7 +3282,7 @@ function openWallpaperBuilder(groups){
       if(saved.daysColor && /^#[0-9A-Fa-f]{6}$/.test(saved.daysColor)){ daysColor = saved.daysColor; daysColorInput.value = daysColor; }
       if(saved.timesColor && /^#[0-9A-Fa-f]{6}$/.test(saved.timesColor)){ timesColor = saved.timesColor; timesColorInput.value = timesColor; }
       if(saved.classesColor && /^#[0-9A-Fa-f]{6}$/.test(saved.classesColor)){ classesColor = saved.classesColor; classesColorInput.value = classesColor; }
-      if(saved.tableFont && FONT_OPTIONS.some(f=>f.n===saved.tableFont)){
+      if(saved.tableFont && isKnownFontName(saved.tableFont)){
         tableFont = saved.tableFont;
         tableFontBtn.textContent = tableFont;
         tableFontBtn.style.fontFamily = fontStackFor(tableFont);
