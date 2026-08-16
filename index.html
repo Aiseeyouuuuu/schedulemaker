@@ -2605,20 +2605,23 @@ function renderGroupsPanel(){
 // class in their own schedule automatically loads and writes to the exact
 // same shared list — no separate "who's in this class together" modeling
 // needed. Tasks not tied to a real class ("Others") stay personal.
-const TASK_STATUSES = ['Not started','In Progress','Did Not Push','Completed'];
-const TASK_ONSITE_OPTS = ['Onsite','Online'];
+const TASK_STATUSES = ['Not Started','In Progress','Did Not Push','Completed'];
+const TASK_ONSITE_OPTS = ['Onsite','Online','Both'];
 function taskStatusColors(status){
   switch(status){
     case 'Did Not Push': return {bg:'#F3C6C6', fg:'#7A1E1E'};
     case 'Completed':    return {bg:'#D9F2D9', fg:'#2E5B22'};
     case 'In Progress':  return {bg:'#FFE7B0', fg:'#7A5A12'};
-    default:              return {bg:'#D6EAF8', fg:'#274E70'}; // Not started
+    default:              return {bg:'#D6EAF8', fg:'#274E70'}; // Not Started
   }
 }
 function taskUrgencyColors(urgency){
   switch(urgency){
     case 'OVERDUE':       return {bg:'#7A1E1E', fg:'#FFFFFF'};
+    case 'TODAY':         return {bg:'#E8862E', fg:'#FFFFFF'};
     case 'URGENT':        return {bg:'#F6D6D6', fg:'#7A1E1E'};
+    case 'MID':           return {bg:'#FFE7B0', fg:'#7A5A12'};
+    case 'RELAXED':       return {bg:'#D6EAF8', fg:'#274E70'};
     case 'COMPLETED':     return {bg:'#BEEFA9', fg:'#2E5B22'};
     case 'DID NOT PUSH':  return {bg:'#111111', fg:'#FFFFFF'};
     default:               return {bg:'transparent', fg:'var(--muted)'};
@@ -2666,7 +2669,7 @@ async function savePersonalTasks(){
   await queueSave(()=> sSet('personalTasks', state.personalTasks, false));
 }
 function newTaskObj(){
-  return { id:'t_'+Math.random().toString(36).slice(2,9), task:'', status:'Not started', onsite:'Onsite', dueDate:'', link:'', notes:'' };
+  return { id:'t_'+Math.random().toString(36).slice(2,9), task:'', status:'Not Started', onsite:'Onsite', dueDate:'', link:'', notes:'' };
 }
 async function addTask(subjectKey){
   const t = newTaskObj();
@@ -2699,30 +2702,48 @@ async function deleteTask(subjectKey, taskId){
   render();
 }
 
-// Decorates a flat, date-sorted task list with .urgency and (dense,
-// date-grouped) .rank — see the walkthrough in the PR/chat for why this
-// exact scheme reproduces the reference tracker's numbers.
+// Mirrors the Excel formulas exactly:
+//   Urgency: COMPLETED / DID NOT PUSH / blank / OVERDUE / TODAY / URGENT (≤5 days) / MID (≤7 days) / RELAXED
+//   Rank: MATCH(date, SORT(UNIQUE(dates of everything not COMPLETED/DID NOT PUSH/blank)), 0)
+//         — i.e. a dense rank shared by every task due on the same day, in ascending date order.
 function computeTaskUrgencyAndRank(tasks){
   const today = new Date(); today.setHours(0,0,0,0);
-  const sorted = [...tasks].sort((a,b)=>{
+  const msPerDay = 24*60*60*1000;
+
+  const withUrgency = tasks.map(t=>{
+    let urgency;
+    if(t.status==='Completed') urgency = 'COMPLETED';
+    else if(t.status==='Did Not Push') urgency = 'DID NOT PUSH';
+    else if(!t.dueDate) urgency = '';
+    else{
+      const due = new Date(t.dueDate+'T00:00:00');
+      const diffDays = Math.round((due-today)/msPerDay);
+      if(diffDays<0) urgency = 'OVERDUE';
+      else if(diffDays===0) urgency = 'TODAY';
+      else if(diffDays<=5) urgency = 'URGENT';
+      else if(diffDays<=7) urgency = 'MID';
+      else urgency = 'RELAXED';
+    }
+    return {...t, urgency};
+  });
+
+  // Rank pool: every task with a due date that isn't COMPLETED/DID NOT PUSH — same FILTER as the sheet.
+  const activeDates = [...new Set(withUrgency.filter(t=>t.dueDate && t.urgency!=='COMPLETED' && t.urgency!=='DID NOT PUSH').map(t=>t.dueDate))].sort();
+
+  const decorated = withUrgency.map(t=>{
+    let rank;
+    if(t.urgency==='COMPLETED') rank='COMPLETED';
+    else if(t.urgency==='DID NOT PUSH') rank='DID NOT PUSH';
+    else if(!t.dueDate) rank='';
+    else rank = activeDates.indexOf(t.dueDate)+1;
+    return {...t, rank};
+  });
+
+  return decorated.sort((a,b)=>{
     if(!a.dueDate && !b.dueDate) return 0;
     if(!a.dueDate) return 1;
     if(!b.dueDate) return -1;
     return a.dueDate.localeCompare(b.dueDate);
-  });
-  let rankCounter = 0, lastDate = null;
-  return sorted.map(t=>{
-    let urgency, rank;
-    if(t.status==='Completed'){ urgency='COMPLETED'; rank='COMPLETED'; }
-    else if(t.status==='Did Not Push'){ urgency='DID NOT PUSH'; rank='DID NOT PUSH'; }
-    else if(!t.dueDate){ urgency='—'; rank='—'; }
-    else{
-      const due = new Date(t.dueDate+'T00:00:00');
-      urgency = due < today ? 'OVERDUE' : 'URGENT';
-      if(t.dueDate !== lastDate){ rankCounter++; lastDate = t.dueDate; }
-      rank = rankCounter;
-    }
-    return {...t, urgency, rank};
   });
 }
 
@@ -2767,10 +2788,10 @@ function renderTasksTab(){
 
   const tbody = panel.querySelector('#tasksBody');
   if(!decorated.length){
-    tbody.appendChild(el(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No tasks yet. Add one above — pick a class subject to share it with classmates, or "Others" to keep it just for you.</td></tr>`));
+    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No tasks yet. Add one above — pick a class subject to share it with classmates, or "Others" to keep it just for you.</td></tr>`));
   }
   decorated.forEach(t=>{
-    const tr = el(`<tr></tr>`);
+    const tr = elRow(`<tr></tr>`);
 
     const taskTd = el(`<td><input type="text" value="${(t.task||'').replace(/"/g,'&quot;')}" placeholder="Task name" /></td>`);
     taskTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'task', e.target.value);
