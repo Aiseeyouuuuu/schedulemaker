@@ -1062,6 +1062,7 @@ let state = {
   googleClientId: '',      // personal — OAuth Client ID for direct Google Calendar insert (not a secret)
   tasks: {},           // cache of shared per-subject task lists: { subjectKey: [task,...] } — loaded for subjects in your own schedule
   personalTasks: [],   // personal task list for tasks not tied to a shared class subject ("Others")
+  personalStatuses: {}, // personal — { taskId: status } — your own progress on a SHARED class task, kept separate from the shared task list so marking something Completed doesn't change what classmates see
 };
 
 // ============================= ADMIN GATE =============================
@@ -2685,6 +2686,7 @@ function taskSubjectColor(label, allLabelsInOrder){
 async function ensureTasksLoaded(){
   if(!state.__personalTasksLoaded){
     state.personalTasks = (await sGet('personalTasks', false)) || [];
+    state.personalStatuses = (await sGet('taskStatuses', false)) || {};
     state.__personalTasksLoaded = true;
   }
   const subjects = taskSubjectOptions().filter(s=>s.key!=='others');
@@ -2699,6 +2701,25 @@ async function saveSubjectTasks(key){
 }
 async function savePersonalTasks(){
   await queueSave(()=> sSet('personalTasks', state.personalTasks, false));
+}
+async function saveTaskStatuses(){
+  await queueSave(()=> sSet('taskStatuses', state.personalStatuses, false));
+}
+// A class's task LIST is shared (everyone in that class sees the same
+// tasks), but each person's progress on it is their own — one classmate
+// finishing a task shouldn't flip it to "Completed" for everyone else. So
+// status for a shared-subject task lives in this personal, per-user map
+// instead of on the shared task object itself. "Others" tasks are already
+// fully personal (never synced to classmates), so their status just stays
+// on the task like before.
+function getEffectiveStatus(subjectKey, t){
+  if(subjectKey==='others') return t.status || 'Not Started';
+  return state.personalStatuses[t.id] || t.status || 'Not Started';
+}
+async function setTaskStatus(subjectKey, taskId, status){
+  if(subjectKey==='others'){ await updateTaskField(subjectKey, taskId, 'status', status); return; }
+  state.personalStatuses[taskId] = status;
+  await saveTaskStatuses();
 }
 function newTaskObj(){
   return { id:'t_'+Math.random().toString(36).slice(2,9), task:'', status:'Not Started', onsite:'Onsite', dueDate:'', link:'', notes:'' };
@@ -2731,6 +2752,7 @@ async function moveTaskSubject(oldKey, taskId, newKey){
 async function deleteTask(subjectKey, taskId){
   if(subjectKey==='others'){ state.personalTasks = state.personalTasks.filter(x=>x.id!==taskId); await savePersonalTasks(); }
   else { state.tasks[subjectKey] = (state.tasks[subjectKey]||[]).filter(x=>x.id!==taskId); await saveSubjectTasks(subjectKey); }
+  if(taskId in state.personalStatuses){ delete state.personalStatuses[taskId]; await saveTaskStatuses(); }
   render();
 }
 
@@ -2783,7 +2805,7 @@ function renderTasksTab(){
   const wrap = el(`<div></div>`);
   wrap.appendChild(el(`<div class="panel">
     <h3>Tasks</h3>
-    <p class="hint" style="margin:0;">Tasks for a class you're taking are shared automatically with anyone else who has that exact class (same code + section) in their own schedule — add one here and it shows up on their tracker too. Tasks filed under "Others" stay private to you.</p>
+    <p class="hint" style="margin:0;">Tasks for a class you're taking are shared automatically with anyone else who has that exact class (same code + section) in their own schedule — add one here and it shows up on their tracker too. Tasks filed under "Others" stay private to you. Status is always just your own — marking a shared task Completed only updates your view, not your classmates'.</p>
   </div>`));
 
   const subjects = taskSubjectOptions();
@@ -2792,7 +2814,7 @@ function renderTasksTab(){
   const merged = [];
   subjects.forEach(s=>{
     const list = s.key==='others' ? state.personalTasks : (state.tasks[s.key]||[]);
-    list.forEach(t=> merged.push({...t, __subjectKey:s.key, __subjectLabel:s.label}));
+    list.forEach(t=> merged.push({...t, status:getEffectiveStatus(s.key, t), __subjectKey:s.key, __subjectLabel:s.label}));
   });
   const decorated = computeTaskUrgencyAndRank(merged);
 
@@ -2838,7 +2860,7 @@ function renderTasksTab(){
     TASK_STATUSES.forEach(s=> statusSel.appendChild(el(`<option value="${s}" ${t.status===s?'selected':''}>${s}</option>`)));
     const paintStatus = ()=>{ const c=taskStatusColors(statusSel.value); statusSel.style.background=c.bg; statusSel.style.color=c.fg; };
     paintStatus();
-    statusSel.onchange = async ()=>{ await updateTaskField(t.__subjectKey, t.id, 'status', statusSel.value); render(); };
+    statusSel.onchange = async ()=>{ await setTaskStatus(t.__subjectKey, t.id, statusSel.value); render(); };
     statusTd.appendChild(statusSel); tr.appendChild(statusTd);
 
     const subjTd = elCell(`<td></td>`);
