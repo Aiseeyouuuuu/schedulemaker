@@ -126,13 +126,18 @@
   /* Status/Subject use a custom pill button + popover instead of a native
      <select> — a real <select>'s closed box always clips its label to one
      line no matter what CSS is applied, so long text can't be shown in
-     full any other way. */
+     full any other way. Wraps only at whole-word boundaries (never mid-word)
+     so text stays on one line whenever it fits, and only drops a full word
+     to the next line when it doesn't. */
   .task-pill-btn{
-    display:block;width:100%;border:none;border-radius:14px;padding:6px 10px;
+    display:flex;align-items:center;justify-content:center;gap:5px;width:100%;
+    border:none;border-radius:14px;padding:6px 10px;
     font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11.5px * var(--font-scale));
-    cursor:pointer;white-space:normal;word-break:break-word;text-align:center;line-height:1.35;
+    cursor:pointer;line-height:1.35;
   }
   .task-pill-btn:hover{filter:brightness(0.96);}
+  .task-pill-btn .pill-label{flex:1 1 auto;white-space:normal;word-break:normal;overflow-wrap:normal;text-align:center;}
+  .task-pill-btn .pill-caret{flex:none;font-size:calc(9px * var(--font-scale));line-height:1;opacity:0.65;transform:scaleY(0.85);}
   .field-popover{
     position:fixed;background:var(--surface);border:1px solid var(--line);border-radius:8px;
     padding:5px;display:flex;flex-direction:column;gap:3px;z-index:200;box-shadow:0 6px 16px rgba(0,0,0,0.18);
@@ -140,7 +145,7 @@
   }
   .field-popover-item{
     padding:8px 12px;border-radius:6px;cursor:pointer;font-family:'Poppins',sans-serif;font-weight:600;
-    font-size:calc(12.5px * var(--font-scale));white-space:normal;word-break:break-word;line-height:1.35;
+    font-size:calc(12.5px * var(--font-scale));white-space:normal;word-break:normal;overflow-wrap:normal;line-height:1.35;
   }
   .field-popover-item:hover{filter:brightness(0.95);}
   .task-badge{display:inline-block;width:100%;text-align:center;border-radius:6px;padding:6px 8px;font-weight:700;font-size:calc(11px * var(--font-scale));letter-spacing:0.3px;white-space:nowrap;}
@@ -2901,8 +2906,9 @@ function renderTasksTab(){
     tr.appendChild(taskTd);
 
     const statusTd = elCell(`<td class="grow-cell"></td>`);
-    const statusBtn = el(`<button type="button" class="task-pill-btn"></button>`);
-    const paintStatus = ()=>{ const c=taskStatusColors(t.status); statusBtn.style.background=c.bg; statusBtn.style.color=c.fg; statusBtn.textContent=t.status; };
+    const statusBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
+    const statusLabel = statusBtn.querySelector('.pill-label');
+    const paintStatus = ()=>{ const c=taskStatusColors(t.status); statusBtn.style.background=c.bg; statusBtn.style.color=c.fg; statusLabel.textContent=t.status; };
     paintStatus();
     statusBtn.onclick = (e)=>{
       e.stopPropagation();
@@ -2912,10 +2918,10 @@ function renderTasksTab(){
     statusTd.appendChild(statusBtn); tr.appendChild(statusTd);
 
     const subjTd = elCell(`<td class="grow-cell"></td>`);
-    const subjBtn = el(`<button type="button" class="task-pill-btn"></button>`);
+    const subjBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
     const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
     subjBtn.style.background = c; subjBtn.style.color = '#2A2E3D';
-    subjBtn.textContent = t.__subjectLabel;
+    subjBtn.querySelector('.pill-label').textContent = t.__subjectLabel;
     subjBtn.onclick = (e)=>{
       e.stopPropagation();
       const items = subjects.map(s=>{ const cc=taskSubjectColor(s.label, subjectLabels); return {value:s.key, label:s.label, bg:cc, fg:'#2A2E3D'}; });
