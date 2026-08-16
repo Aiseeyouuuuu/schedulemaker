@@ -388,6 +388,18 @@ function abbrevHourLabel(mins){
   return `${h12}${ap}`;
 }
 
+// Time-label ticks always anchor to 8:00 AM regardless of the chosen
+// interval (30min, 1hr, 1hr30, etc.) — so switching intervals never shifts
+// where the labels land, it only changes how many show up. If the grid's
+// visible range starts after 8am (someone's earliest class is later),
+// this finds the first tick at-or-after that start which still lines up
+// with the 8am anchor.
+function computeLabelStart(rangeStart, interval){
+  const anchor = 8*60;
+  if(rangeStart <= anchor) return anchor;
+  return anchor + Math.ceil((rangeStart-anchor)/interval)*interval;
+}
+
 /* ============================= AISIS HTML TABLE PARSER (exact) ============================= */
 function militaryToMinutes(str){
   str = String(str).padStart(4,'0');
@@ -2271,11 +2283,11 @@ function renderBoard(groups, allowDelete){
   // Positioned with the exact same top formula the gridlines below use
   // (r*ROW_H, same r), so a label lines up pixel-for-pixel with its actual
   // gridline instead of drifting from an independent flex-stacked layout.
-  // Interval is user-adjustable (state.labelInterval, default 60min) —
-  // snapped up from BOARD_START so labels always land on clean multiples
-  // of the chosen interval rather than drifting off BOARD_START's :30.
+  // Interval is user-adjustable (state.labelInterval, default 60min);
+  // ticks always anchor to 8:00 AM regardless of interval — see
+  // computeLabelStart — so changing intervals never shifts the labels.
   const labelInterval = state.labelInterval || 60;
-  const firstLabelT = Math.ceil(BOARD_START/labelInterval)*labelInterval;
+  const firstLabelT = computeLabelStart(BOARD_START, labelInterval);
   for(let t=firstLabelT; t<BOARD_END; t+=labelInterval){
     const topPx = ((t-BOARD_START)/30)*ROW_H;
     timeCol.appendChild(el(`<div class="time-cell" style="top:${topPx}px;">${minutesToLabel(t)}</div>`));
@@ -2571,13 +2583,11 @@ function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, s
   // background. 'minimal'/'editorial' stay plain text like the rest of
   // that style. Vertically centered right on the gridline it represents
   // (rather than floating above it), so it lines up with a class block
-  // that starts at that exact time. rangeStart itself is a half-hour
-  // before the first :00 mark (blank padding row so the top label never
-  // collides with the day header row above it) — labels start at that
-  // first :00 mark, not at rangeStart, so no "7:30"-style label appears.
+  // that starts at that exact time. Ticks always anchor to 8:00 AM
+  // regardless of interval — see computeLabelStart.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
   const interval = labelInterval || 60;
-  const firstLabelT = Math.ceil(rangeStart/interval)*interval;
+  const firstLabelT = computeLabelStart(rangeStart, interval);
   for(let t=firstLabelT; t<=rangeEnd; t+=interval){
     const y = bodyY + ((t-rangeStart)/30)*rowH;
     const label = style==='editorial' ? abbrevHourLabel(t) : minutesToLabel(t);
