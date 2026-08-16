@@ -2679,6 +2679,9 @@ function openWallpaperBuilder(groups){
           </label>
           <button class="chip" id="bgUploadBtn">Upload a photo…</button>
           <input type="file" id="bgUploadInput" accept="image/*" style="display:none;"/>
+          <label id="bgTransparentWrap" style="display:none;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;">
+            <input type="checkbox" id="bgTransparentToggle"/> Transparent
+          </label>
         </div>
 
         <div id="opacityRow" class="row" style="margin-top:10px;align-items:center;">
@@ -2807,8 +2810,10 @@ function openWallpaperBuilder(groups){
       paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
     } else {
       // Image mode: canvas is sized to exactly fit the table — no device
-      // frame, no background photo, no drag. Width/height stretch sliders
-      // control the table's shape; text stays a fixed, crisp size.
+      // frame, no drag. Width/height stretch sliders control the table's
+      // shape; text stays a fixed, crisp size. Background is the same
+      // color/gradient/photo system as wallpaper mode, unless "Transparent"
+      // is checked (then the canvas is left with no fill at all).
       const fontScale = 1;
       const margin = 24;
       const tableW = IMAGE_MODE_BASE_W*0.88*wScale;
@@ -2816,6 +2821,21 @@ function openWallpaperBuilder(groups){
       canvas.width = tableW + margin*2;
       canvas.height = layout.tableH + margin*2;
       ctx.clearRect(0,0,canvas.width,canvas.height);
+      if(!bgTransparent){
+        if(bgImage){
+          drawImageCover(ctx, bgImage, 0, 0, canvas.width, canvas.height);
+        } else if(bgGradient){
+          const isLight = getContrastTextColor(bgHex) === '#1C2430';
+          const grad = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
+          grad.addColorStop(0, bgHex);
+          grad.addColorStop(1, isLight ? darkenHex(bgHex,0.22) : lightenHex(bgHex,0.22));
+          ctx.fillStyle = grad;
+          ctx.fillRect(0,0,canvas.width,canvas.height);
+        } else {
+          ctx.fillStyle = bgHex;
+          ctx.fillRect(0,0,canvas.width,canvas.height);
+        }
+      }
       paintTable(ctx, layout, margin, margin, tableW, groups, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
     }
   }
@@ -2830,7 +2850,8 @@ function openWallpaperBuilder(groups){
     modeImageBtn.classList.toggle('active', m==='image');
     const isWallpaper = m==='wallpaper';
     deviceRow.style.display = isWallpaper ? 'flex' : 'none';
-    bgRow.style.display = isWallpaper ? 'flex' : 'none';
+    bgRow.style.display = 'flex'; // background controls now apply to both modes
+    bgTransparentWrap.style.display = isWallpaper ? 'none' : 'flex'; // transparent bg only makes sense for a cropped image, not a screen wallpaper
     opacityRow.style.display = isWallpaper ? 'flex' : 'none';
     dragHint.style.display = isWallpaper ? 'block' : 'none';
     resetBtn.style.display = isWallpaper ? 'inline-flex' : 'none';
@@ -2891,10 +2912,12 @@ function openWallpaperBuilder(groups){
   // Background source — a color/gradient (from a preset swatch or the
   // custom color wheel) or an uploaded photo. White is the default; the
   // old theme-tinted look lives on as the "Pastel Yellow" preset.
-  let bgHex = '#FFFFFF', bgGradient = false;
+  let bgHex = '#FFFFFF', bgGradient = false, bgTransparent = false;
   const bgSwatches = backdrop.querySelector('#bgSwatches');
   const bgGradToggle = backdrop.querySelector('#bgGradToggle');
   const bgCustomInput = backdrop.querySelector('#bgCustomInput');
+  const bgTransparentWrap = backdrop.querySelector('#bgTransparentWrap');
+  const bgTransparentToggle = backdrop.querySelector('#bgTransparentToggle');
   const bgUploadBtn = backdrop.querySelector('#bgUploadBtn');
   const bgInput = backdrop.querySelector('#bgUploadInput');
   const tableColorInput = backdrop.querySelector('#tableColorInput');
@@ -2903,7 +2926,7 @@ function openWallpaperBuilder(groups){
   const classesColorInput = backdrop.querySelector('#classesColorInput');
   const WALLPAPER_BG_PRESETS = [{name:'White', hex:'#FFFFFF'}, ...THEME_PRESETS];
 
-  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, tableColor, daysColor, timesColor, classesColor}, false)); }
+  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, transparent:bgTransparent, tableColor, daysColor, timesColor, classesColor}, false)); }
   function renderBgSwatches(){
     bgSwatches.innerHTML = '';
     WALLPAPER_BG_PRESETS.forEach(p=>{
@@ -2927,7 +2950,9 @@ function openWallpaperBuilder(groups){
     if(saved && /^#[0-9A-Fa-f]{6}$/.test(saved.hex)){
       bgHex = saved.hex;
       bgGradient = !!saved.gradient;
+      bgTransparent = !!saved.transparent;
       bgGradToggle.checked = bgGradient;
+      bgTransparentToggle.checked = bgTransparent;
       bgCustomInput.value = bgHex;
       if(saved.tableColor && /^#[0-9A-Fa-f]{6}$/.test(saved.tableColor)){
         tableColor = saved.tableColor;
@@ -2942,6 +2967,11 @@ function openWallpaperBuilder(groups){
   })();
   bgGradToggle.onchange = ()=>{
     bgGradient = bgGradToggle.checked;
+    persistBgPref();
+    draw();
+  };
+  bgTransparentToggle.onchange = ()=>{
+    bgTransparent = bgTransparentToggle.checked;
     persistBgPref();
     draw();
   };
