@@ -10,6 +10,10 @@
      Fonts in that list with no free web-embeddable equivalent (e.g. Canva-exclusive or licensed
      desktop fonts) intentionally aren't loaded here — they fall back to a close generic style. -->
 <link href="https://fonts.googleapis.com/css2?family=Arimo&family=Montserrat&family=Open+Sans&family=League+Spartan&family=Anton&family=DM+Sans&family=Archivo+Black&family=Roboto&family=Alice&family=Lora&family=Moontime&family=Shrikhand&family=Bebas+Neue&family=Fredoka&family=Cinzel+Decorative&family=Cinzel&family=Noto+Serif+Ethiopic&family=Cormorant+Garamond&family=Lilita+One&family=Playfair+Display&family=Abril+Fatface&family=Alex+Brush&family=Yeseva+One&family=Arapey&family=Barriecito&family=Arvo&family=Blaka&family=Oswald&family=Apricots&family=Chewy&family=Grand+Hotel&family=Schoolbell&family=Lancelot&family=Lato&family=Old+Standard+TT&family=Quicksand&family=Anonymous+Pro&family=Belleza&family=Cardo&family=League+Gothic&family=Libre+Baskerville&family=Nixie+One&family=Noto+Serif&family=Sanchez&family=Source+Serif+4&family=Tenor+Sans&display=swap" rel="stylesheet">
+<!-- Google Identity Services — used only for the "Add to Google Calendar"
+     one-click insert (OAuth token flow). Loaded async; guarded everywhere
+     it's used since it only works when a Client ID has been configured. -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
     --bg:#F0F3FD;
@@ -432,6 +436,300 @@ function militaryToMinutes(str){
 
 function looksLikeHtml(text){ return /<\s*(td|tr|table)\b/i.test(text); }
 
+/* ============================= SEMESTER / SCHOOL YEAR ============================= */
+// Which term is currently selected, and what school year it belongs to.
+// The date ranges below follow the pattern given for SY2026-2027 (Intersession
+// Jun 8–Jul 18 2026, First Sem Aug 5–Dec 5 2026, Second Sem Jan 11–May 15 2027)
+// and are re-applied to whatever school year the person picks: Intersession
+// and First Semester fall in the FIRST year of the pair, Second Semester
+// falls in the SECOND year.
+const SEMESTER_TYPES = [
+  {value:'intersession', label:'Intersession'},
+  {value:'first', label:'First Semester'},
+  {value:'second', label:'Second Semester'},
+];
+function semesterLabel(type, schoolYear){
+  const t = SEMESTER_TYPES.find(s=>s.value===type);
+  return `${t?t.label:'First Semester'}, SY ${schoolYear}`;
+}
+// Returns {start:Date, end:Date} — both at local midnight/end-of-day.
+function semesterDateRange(type, schoolYear){
+  const parts = String(schoolYear).split('-').map(s=>parseInt(s,10));
+  const y1 = parts[0], y2 = Number.isFinite(parts[1]) ? parts[1] : parts[0]+1;
+  if(type==='intersession') return {start:new Date(y1,5,8), end:new Date(y1,6,18)};   // Jun 8 – Jul 18
+  if(type==='second')       return {start:new Date(y2,0,11), end:new Date(y2,4,15)};  // Jan 11 – May 15
+  return {start:new Date(y1,7,5), end:new Date(y1,11,5)};                             // Aug 5 – Dec 5 (first sem, default)
+}
+// Best-guess default school year + term based on today's date.
+function defaultSchoolYear(){
+  const now = new Date(); const y = now.getFullYear(), m = now.getMonth();
+  return m<=4 ? `${y-1}-${y}` : `${y}-${y+1}`; // Jan–May belongs to the school year that started the previous calendar year
+}
+function schoolYearOptions(){
+  const y = new Date().getFullYear();
+  const opts = [];
+  for(let yy=y-2; yy<=y+5; yy++) opts.push(`${yy}-${yy+1}`);
+  if(state.schoolYear && !opts.includes(state.schoolYear)) opts.unshift(state.schoolYear);
+  return opts;
+}
+
+/* ============================= GOOGLE CALENDAR EXPORT (.ics) ============================= */
+// No backend/OAuth is configured for this deployment, so a true one-click
+// "insert directly into Google Calendar" isn't possible from a static page.
+// Instead this builds a standard .ics file with one recurring weekly event
+// per class meeting (correct days + times, recurring for the selected
+// semester's date range) that Google Calendar imports in a single step —
+// Settings → Import & export → Select file → Import.
+const ICS_BYDAY = {Mon:'MO',Tue:'TU',Wed:'WE',Thu:'TH',Fri:'FR',Sat:'SA'};
+const ICS_WEEKDAY_NUM = {Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+function icsPad(n){ return String(n).padStart(2,'0'); }
+function icsDateTime(d){
+  return `${d.getFullYear()}${icsPad(d.getMonth()+1)}${icsPad(d.getDate())}T${icsPad(d.getHours())}${icsPad(d.getMinutes())}00`;
+}
+function icsEscape(s){
+  return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+}
+// Earliest date on/after rangeStart that lands on one of `days`.
+function firstOccurrenceOnOrAfter(rangeStart, days){
+  let best = null;
+  (days||[]).forEach(d=>{
+    const target = ICS_WEEKDAY_NUM[d];
+    if(target==null) return;
+    const diff = (target - rangeStart.getDay() + 7) % 7;
+    const cand = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate()+diff);
+    if(!best || cand < best) best = cand;
+  });
+  return best;
+}
+function buildIcsForEntries(entries, range){
+  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Schedule Maker//EN','CALSCALE:GREGORIAN'];
+  const stamp = icsDateTime(new Date())+'Z';
+  const untilBase = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate(), 23,59,0);
+  let n = 0, any = false;
+  entries.forEach(entry=>{
+    (entry.meetings||[]).forEach(m=>{
+      if(!m.days || !m.days.length || m.start==null || m.end==null) return;
+      const firstDate = firstOccurrenceOnOrAfter(range.start, m.days);
+      if(!firstDate || firstDate > range.end) return;
+      const dtStart = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate(), Math.floor(m.start/60), m.start%60);
+      const dtEnd = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate(), Math.floor(m.end/60), m.end%60);
+      const byday = m.days.map(d=>ICS_BYDAY[d]).filter(Boolean).join(',');
+      if(!byday) return;
+      any = true;
+      lines.push('BEGIN:VEVENT');
+      lines.push(`UID:sked-${n++}-${Math.random().toString(36).slice(2,9)}@schedule-maker`);
+      lines.push(`DTSTAMP:${stamp}`);
+      lines.push(`DTSTART:${icsDateTime(dtStart)}`);
+      lines.push(`DTEND:${icsDateTime(dtEnd)}`);
+      lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${byday};UNTIL=${icsDateTime(untilBase)}`);
+      lines.push(`SUMMARY:${icsEscape((entry.code||'Class')+(entry.section?' '+entry.section:''))}`);
+      const desc = [entry.title, entry.instructor?('Instructor: '+entry.instructor):''].filter(Boolean).join('\\n');
+      if(desc) lines.push(`DESCRIPTION:${icsEscape(desc)}`);
+      if(m.room) lines.push(`LOCATION:${icsEscape(m.room)}`);
+      lines.push('END:VEVENT');
+    });
+  });
+  lines.push('END:VCALENDAR');
+  return {text: lines.join('\r\n'), any};
+}
+function exportScheduleToGoogleCalendar(memberId){
+  const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
+  if(!entries.length){ showToast('Add a class first — nothing to export yet.'); return; }
+  const range = semesterDateRange(state.semesterType, state.schoolYear);
+  const {text, any} = buildIcsForEntries(entries, range);
+  if(!any){ showToast("None of your classes fall within the selected term's dates."); return; }
+  const blob = new Blob([text], {type:'text/calendar;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `schedule-${state.semesterType}-${state.schoolYear}.ics`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  showToast('Calendar file downloaded. In Google Calendar: Settings → Import & export → Select file → Import.');
+}
+
+/* ============================= GOOGLE CALENDAR — DIRECT ONE-CLICK INSERT ============================= */
+// Real, no-import-step insertion via the Calendar API, using a
+// per-person Google Cloud OAuth Client ID (see openGoogleCalendarSetupModal
+// for the walkthrough). The Client ID is a public identifier — not a
+// secret — so it's fine to keep it in browser storage the same way the
+// other personal prefs are stored.
+let __gisTokenClient = null;
+let __gisAccessToken = null;
+let __gisTokenExpiry = 0;
+
+function getGoogleClientId(){ return state.googleClientId || ''; }
+
+function ensureTokenClient(clientId){
+  if(!(window.google && google.accounts && google.accounts.oauth2)){
+    throw new Error("Google's sign-in library hasn't loaded yet — check your connection and try again in a moment.");
+  }
+  if(__gisTokenClient && __gisTokenClient.__clientId === clientId) return __gisTokenClient;
+  __gisTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/calendar.events',
+    callback: ()=>{}, // overridden per request below
+  });
+  __gisTokenClient.__clientId = clientId;
+  return __gisTokenClient;
+}
+
+function requestGoogleAccessToken(clientId, forceConsent){
+  return new Promise((resolve, reject)=>{
+    let tc;
+    try{ tc = ensureTokenClient(clientId); }catch(e){ reject(e); return; }
+    tc.callback = (resp)=>{
+      if(resp && resp.access_token){
+        __gisAccessToken = resp.access_token;
+        __gisTokenExpiry = Date.now() + ((resp.expires_in||3300)*1000);
+        resolve(resp.access_token);
+      } else {
+        reject(new Error((resp && resp.error) || 'Google sign-in was cancelled or failed.'));
+      }
+    };
+    tc.error_callback = (err)=> reject(new Error((err && err.message) || 'Google sign-in was cancelled or failed.'));
+    tc.requestAccessToken({ prompt: forceConsent ? 'consent' : (__gisAccessToken ? '' : 'consent') });
+  });
+}
+
+async function getValidAccessToken(clientId){
+  if(__gisAccessToken && Date.now() < __gisTokenExpiry - 30000) return __gisAccessToken;
+  return requestGoogleAccessToken(clientId, false);
+}
+
+function toGcalDateTime(d){
+  return `${d.getFullYear()}-${icsPad(d.getMonth()+1)}-${icsPad(d.getDate())}T${icsPad(d.getHours())}:${icsPad(d.getMinutes())}:00`;
+}
+// Same meeting math as the .ics builder, but as Calendar API event bodies
+// (structured start/end/timeZone + an RRULE string) instead of raw ICS text.
+function buildGoogleCalendarEventBodies(entries, range, termLabel){
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Manila';
+  const untilUtc = icsDateTime(new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate(), 23,59,0)) + 'Z';
+  const events = [];
+  entries.forEach(entry=>{
+    (entry.meetings||[]).forEach(m=>{
+      if(!m.days || !m.days.length || m.start==null || m.end==null) return;
+      const firstDate = firstOccurrenceOnOrAfter(range.start, m.days);
+      if(!firstDate || firstDate > range.end) return;
+      const byday = m.days.map(d=>ICS_BYDAY[d]).filter(Boolean).join(',');
+      if(!byday) return;
+      const startDate = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate(), Math.floor(m.start/60), m.start%60);
+      const endDate = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate(), Math.floor(m.end/60), m.end%60);
+      const description = [entry.title, entry.instructor?('Instructor: '+entry.instructor):'', termLabel].filter(Boolean).join('\n');
+      events.push({
+        summary: (entry.code||'Class') + (entry.section ? ' '+entry.section : ''),
+        location: m.room || undefined,
+        description: description || undefined,
+        start: { dateTime: toGcalDateTime(startDate), timeZone: tz },
+        end:   { dateTime: toGcalDateTime(endDate),   timeZone: tz },
+        recurrence: [`RRULE:FREQ=WEEKLY;BYDAY=${byday};UNTIL=${untilUtc}`],
+      });
+    });
+  });
+  return events;
+}
+
+async function insertEventBatch(events, token){
+  let ok=0; const failed=[];
+  for(const ev of events){
+    try{
+      const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method:'POST',
+        headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+        body: JSON.stringify(ev)
+      });
+      if(res.ok){ ok++; }
+      else { failed.push({ev, status:res.status}); console.error('Calendar insert failed', res.status, await res.text().catch(()=> '')); }
+    }catch(e){ failed.push({ev, status:0}); console.error('Calendar insert error', e); }
+  }
+  return {ok, failed};
+}
+
+async function insertScheduleIntoGoogleCalendar(memberId){
+  const clientId = getGoogleClientId();
+  if(!clientId){ openGoogleCalendarSetupModal(); return; }
+
+  const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
+  if(!entries.length){ showToast('Add a class first — nothing to add yet.'); return; }
+  const range = semesterDateRange(state.semesterType, state.schoolYear);
+  const termLabel = semesterLabel(state.semesterType, state.schoolYear);
+  const events = buildGoogleCalendarEventBodies(entries, range, termLabel);
+  if(!events.length){ showToast("None of your classes fall within the selected term's dates."); return; }
+
+  let token;
+  try{ token = await getValidAccessToken(clientId); }
+  catch(e){ showToast('Google sign-in failed: ' + e.message); return; }
+
+  showToast(`Adding ${events.length} class${events.length===1?'':'es'} to Google Calendar…`);
+  let {ok, failed} = await insertEventBatch(events, token);
+
+  // If everything failed and it looks like an auth problem, the cached
+  // token was likely stale/revoked — force a fresh consent prompt and
+  // retry once before giving up.
+  if(ok===0 && failed.length && failed.every(f=>f.status===401)){
+    __gisAccessToken = null;
+    try{
+      token = await requestGoogleAccessToken(clientId, true);
+      const retry = await insertEventBatch(failed.map(f=>f.ev), token);
+      ok += retry.ok; failed = retry.failed;
+    }catch(e){ showToast('Google sign-in failed: ' + e.message); return; }
+  }
+
+  if(!failed.length) showToast(`Added ${ok} class${ok===1?'':'es'} directly to your Google Calendar 🎉`);
+  else showToast(`Added ${ok}, ${failed.length} failed to add — see browser console for details.`);
+}
+
+// Lets the person paste in their own OAuth Client ID (from Google Cloud
+// Console) so "Add to Google Calendar" can insert events directly instead
+// of falling back to the .ics download. Saved as a personal pref.
+function openGoogleCalendarSetupModal(){
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal" style="width:min(94vw,460px);max-width:460px;text-align:left;">
+        <h2 style="margin-top:0;">Connect Google Calendar</h2>
+        <p class="hint" style="margin:0 0 10px;">
+          Paste the OAuth Client ID from your Google Cloud project below.
+          Don't have one yet? Click "Setup steps" for a walkthrough — it
+          takes a few minutes and is free.
+        </p>
+        <input id="gcalClientIdInput" type="text" placeholder="xxxxxxxx.apps.googleusercontent.com" style="width:100%;" value="${(state.googleClientId||'').replace(/"/g,'&quot;')}"/>
+        <div class="row" style="justify-content:space-between;margin-top:12px;">
+          <button class="ghost" id="gcalSetupSteps">Setup steps</button>
+          <div class="row" style="gap:8px;">
+            <button class="ghost" id="gcalCancel">Cancel</button>
+            <button id="gcalSave">Save & connect</button>
+          </div>
+        </div>
+        <div id="gcalStepsBox" style="display:none;margin-top:12px;"></div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#gcalClientIdInput');
+  input.focus();
+
+  backdrop.querySelector('#gcalCancel').onclick = ()=> backdrop.remove();
+  backdrop.querySelector('#gcalSetupSteps').onclick = ()=>{
+    const box = backdrop.querySelector('#gcalStepsBox');
+    box.style.display = box.style.display==='none' ? 'block' : 'none';
+    box.innerHTML = `<ol class="hint" style="margin:0;padding-left:18px;line-height:1.7;">
+      <li>Go to <b>console.cloud.google.com</b> and create a new project (top-left project picker → "New project").</li>
+      <li><b>APIs & Services → Library</b> → search "Google Calendar API" → Enable.</li>
+      <li><b>APIs & Services → OAuth consent screen</b> → choose "External" → fill in an app name and your email → add the scope <code>.../auth/calendar.events</code> → add yourself as a test user (or publish the app).</li>
+      <li><b>APIs & Services → Credentials → Create Credentials → OAuth client ID</b> → Application type "Web application".</li>
+      <li>Under "Authorized JavaScript origins", add the exact URL where this page is hosted (e.g. <code>https://you.github.io</code>) — a local <code>file://</code> path won't work; this must be a real http(s) address.</li>
+      <li>Copy the generated Client ID (ends in <code>.apps.googleusercontent.com</code>) and paste it above.</li>
+    </ol>`;
+  };
+  backdrop.querySelector('#gcalSave').onclick = async ()=>{
+    const val = input.value.trim();
+    if(!val){ backdrop.remove(); return; }
+    state.googleClientId = val;
+    await queueSave(()=> sSet('googleClientId', val, false));
+    __gisTokenClient = null; __gisAccessToken = null; // force a fresh client for the new ID
+    backdrop.remove();
+    insertScheduleIntoGoogleCalendar(state.meId);
+  };
+}
+
 // Parses AISIS's public classSkeds.do result table. Returns one staged row
 // per meeting line (a section with lecture+lab on different days/times yields
 // two rows sharing the same code+section) — these get grouped back together
@@ -739,6 +1037,9 @@ let state = {
   incomingRequests: [], // account friend requests sent TO you, awaiting your accept/decline
   outgoingRequests: [], // account friend requests you sent, awaiting their accept
   customFonts: [],     // personal [{id,name,mime,data}] -- fonts the user uploaded themselves (data is a base64 data: URL)
+  semesterType: 'first',   // personal — 'intersession' | 'first' | 'second'
+  schoolYear: null,        // personal — 'YYYY-YYYY+1', set on load via defaultSchoolYear()
+  googleClientId: '',      // personal — OAuth Client ID for direct Google Calendar insert (not a secret)
 };
 
 // ============================= ADMIN GATE =============================
@@ -765,13 +1066,16 @@ async function loadAll(){
   state.blockColors = (await sGet('blockColors', false)) || {};
   state.groups = (await sGet('groups', false)) || [];
   state.meId = await sGet('me-id', false);
+  state.semesterType = (await sGet('semesterType', false)) || 'first';
+  state.schoolYear = (await sGet('schoolYear', false)) || defaultSchoolYear();
+  state.googleClientId = (await sGet('googleClientId', false)) || '';
   loadAdminFlag();
 }
 
 // Every personal (shared=false) key the app stores — used to copy a
 // guest's local data into their new account right after they sign up, so
 // creating an account doesn't wipe out work they already did as a guest.
-const PERSONAL_KEYS = ['members','schedules','manualEntries','blockColors','groups','me-id','theme','fontScale','labelInterval','darkMode'];
+const PERSONAL_KEYS = ['members','schedules','manualEntries','blockColors','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear','googleClientId'];
 async function migrateGuestDataToAccount(){
   for(const key of PERSONAL_KEYS){
     let raw;
@@ -2111,18 +2415,65 @@ function renderMemberEditor(memberId){
   const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
   const boardEl = renderBoard([{member, entries, color: member?member.color:'#6B5CA0'}], true);
 
+  if(memberId === state.meId) wrap.appendChild(renderSemesterBar());
   wrap.appendChild(renderAddClassBar(memberId, boardEl));
   if(!entries.length){
     wrap.appendChild(el(`<p class="hint" style="margin:0 0 12px;">No classes yet for <b>${member?member.name:''}</b>. Search above to add one — hover a result to preview it on the grid below first.</p>`));
   }
   wrap.appendChild(boardEl);
   if(memberId === state.meId){
-    const wpRow = el(`<div class="row" style="margin-top:14px;">
+    const wpRow = el(`<div class="row" style="margin-top:14px;align-items:center;">
       <button class="ghost" id="makeWallpaperBtn">⬇️ Download</button>
+      <button id="gcalBtn">📅 Add to Google Calendar</button>
+      <button class="ghost small" id="gcalSettingsBtn" title="Change Google Calendar connection">⚙️</button>
+      <button class="ghost small" id="gcalIcsBtn" title="Download a .ics file instead (manual import)">.ics instead</button>
     </div>`);
     wpRow.querySelector('#makeWallpaperBtn').onclick = ()=> openWallpaperBuilder([{member, entries}]);
+    wpRow.querySelector('#gcalBtn').onclick = ()=> insertScheduleIntoGoogleCalendar(memberId);
+    wpRow.querySelector('#gcalSettingsBtn').onclick = ()=> openGoogleCalendarSetupModal();
+    wpRow.querySelector('#gcalIcsBtn').onclick = ()=> exportScheduleToGoogleCalendar(memberId);
     wrap.appendChild(wpRow);
   }
+  return wrap;
+}
+
+// Term/school-year picker + the "First Semester, SY 2026-2027"-style label
+// shown above the "Add a Class" bar. Selection is personal and persists
+// like the other per-user prefs (theme, font size, etc.) — it also drives
+// the date range used when exporting to Google Calendar below.
+function renderSemesterBar(){
+  const wrap = el(`<div class="panel" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <div class="row" style="gap:8px;">
+      <select id="semesterTypeSelect"></select>
+      <select id="schoolYearSelect"></select>
+    </div>
+    <div id="semesterLabelText" style="font-weight:700;color:var(--navy-text);font-size:calc(16px * var(--font-scale));font-family:'Poppins',sans-serif;"></div>
+  </div>`);
+
+  const typeSelect = wrap.querySelector('#semesterTypeSelect');
+  SEMESTER_TYPES.forEach(t=>{
+    typeSelect.appendChild(el(`<option value="${t.value}" ${state.semesterType===t.value?'selected':''}>${t.label}</option>`));
+  });
+  const yearSelect = wrap.querySelector('#schoolYearSelect');
+  schoolYearOptions().forEach(y=>{
+    yearSelect.appendChild(el(`<option value="${y}" ${state.schoolYear===y?'selected':''}>SY ${y}</option>`));
+  });
+
+  const labelEl = wrap.querySelector('#semesterLabelText');
+  const updateLabel = ()=>{ labelEl.textContent = semesterLabel(state.semesterType, state.schoolYear); };
+  updateLabel();
+
+  typeSelect.onchange = async ()=>{
+    state.semesterType = typeSelect.value;
+    updateLabel();
+    await queueSave(()=> sSet('semesterType', state.semesterType, false));
+  };
+  yearSelect.onchange = async ()=>{
+    state.schoolYear = yearSelect.value;
+    updateLabel();
+    await queueSave(()=> sSet('schoolYear', state.schoolYear, false));
+  };
+
   return wrap;
 }
 
