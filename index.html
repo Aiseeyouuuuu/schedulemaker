@@ -4,27 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Schedule Maker</title>
-<script>
-// Applied synchronously, before first paint, so guests (whose preference
-// lives in localStorage) don't see a flash of light mode. Signed-in users'
-// preference lives in Firestore and is applied once boot() loads it.
-(function(){
-  try{
-    var raw = localStorage.getItem('sked:me:colorScheme');
-    var saved = raw ? JSON.parse(raw) : null;
-    var mode = (saved==='dark'||saved==='light') ? saved
-      : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-theme', mode);
-  }catch(e){}
-})();
-</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#F0F3FD;
     --surface:#FFFFFF;
-    --surface-alt:#FAFBFA;
     --ink:#2A2E3D;
     --navy:#4169E1;
     --navy-2:#8AA3EC;
@@ -34,32 +19,13 @@
     --gold:#C9E4DE;
     --gold-ink:#3F5C4E;
     --line:#D9E1F9;
-    --border-soft:#F0F1EF;
-    --hover-bg:#F4F6F4;
-    --modal-overlay:rgba(107,92,160,0.45);
-    --shadow-soft:rgba(0,0,0,0.1);
-    --shadow-strong:rgba(0,0,0,0.18);
     --muted:#6B7290;
     --danger:#C24F6A;
     --radius:10px;
     --font-scale:1;
   }
-  [data-theme="dark"]{
-    --surface:#1E2333;
-    --surface-alt:#242A3C;
-    --ink:#E4E6F0;
-    --gold:#2E4A3E;
-    --gold-ink:#B7DCC9;
-    --border-soft:#2C3247;
-    --hover-bg:#262C40;
-    --modal-overlay:rgba(0,0,0,0.6);
-    --shadow-soft:rgba(0,0,0,0.35);
-    --shadow-strong:rgba(0,0,0,0.5);
-    --muted:#9298B8;
-    --danger:#E28A9E;
-  }
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Poppins',sans-serif;-webkit-font-smoothing:antialiased;transition:background .2s ease, color .2s ease;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Poppins',sans-serif;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 80px;}
 
   /* ---- header ---- */
@@ -93,11 +59,11 @@
 
   textarea{
     width:100%;min-height:90px;font-family:'Poppins',sans-serif;font-size:calc(12.5px * var(--font-scale));
-    border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical;background:var(--surface-alt);color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical;background:#FAFBFA;
   }
   input[type=text], input[type=time], input[type=password], select{
     font-family:'Poppins',sans-serif;font-size:calc(13.5px * var(--font-scale));border:1px solid var(--line);
-    border-radius:8px;padding:8px 10px;background:var(--surface);color:var(--ink);
+    border-radius:8px;padding:8px 10px;background:#fff;
   }
   button{
     font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(13px * var(--font-scale));
@@ -114,14 +80,14 @@
   .combo{position:relative;flex:1;min-width:240px;}
   .combo input{width:100%;padding:10px 12px;}
   .combo-list{
-    position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);
+    position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;
     border:1px solid var(--line);border-radius:8px;max-height:260px;overflow:auto;
-    box-shadow:0 8px 20px var(--shadow-soft);z-index:20;display:none;
+    box-shadow:0 8px 20px rgba(0,0,0,0.1);z-index:20;display:none;
   }
   .combo-list.open{display:block;}
-  .combo-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border-soft);font-size:calc(13px * var(--font-scale));}
+  .combo-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #F0F1EF;font-size:calc(13px * var(--font-scale));}
   .combo-item:last-child{border-bottom:none;}
-  .combo-item:hover{background:var(--hover-bg);}
+  .combo-item:hover{background:#F4F6F4;}
   .combo-item .code{font-family:'Poppins',sans-serif;font-weight:600;color:var(--navy-text);margin-right:8px;}
   .combo-item .meta{color:var(--muted);font-size:calc(11.5px * var(--font-scale));}
   .combo-empty{padding:12px;color:var(--muted);font-size:calc(12.5px * var(--font-scale));}
@@ -134,15 +100,15 @@
   /* ---- staging table ---- */
   table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:calc(12.5px * var(--font-scale));}
   table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:calc(11px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
-  table.stage td{padding:4px 6px;border-bottom:1px solid var(--border-soft);}
-  table.stage input{width:100%;border:1px solid transparent;background:transparent;color:var(--ink);padding:4px 5px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;}
-  table.stage input:focus{border-color:var(--line);background:var(--surface);}
-  table.stage tr:hover td{background:var(--hover-bg);}
+  table.stage td{padding:4px 6px;border-bottom:1px solid #F0F1EF;}
+  table.stage input{width:100%;border:1px solid transparent;background:transparent;padding:4px 5px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;}
+  table.stage input:focus{border-color:var(--line);background:#fff;}
+  table.stage tr:hover td{background:#FAFBF9;}
 
   /* ---- chips ---- */
   .chip{
     display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;
-    border:1px solid var(--line);background:var(--surface);font-size:calc(12.5px * var(--font-scale));user-select:none;cursor:pointer;
+    border:1px solid var(--line);background:#fff;font-size:calc(12.5px * var(--font-scale));user-select:none;cursor:pointer;
     color:var(--ink);
   }
   .chip.active{border-color:var(--navy-text);background:var(--navy);color:var(--navy-ink);}
@@ -173,7 +139,7 @@
     text-align:right;padding-right:6px;
   }
   .day-col{position:relative;border-left:1px solid var(--line);}
-  .day-col .gridline{position:absolute;left:0;right:0;height:1px;background:var(--border-soft);}
+  .day-col .gridline{position:absolute;left:0;right:0;height:1px;background:#EEF0EE;}
   .block{
     position:absolute;left:3px;right:3px;border-radius:6px;overflow:hidden;
     padding:5px 7px;font-size:calc(11px * var(--font-scale));line-height:1.3;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.12);
@@ -194,8 +160,8 @@
     border:1.5px solid rgba(255,255,255,0.85);cursor:pointer;padding:0;
   }
   .swatch-popover{
-    position:fixed;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px;
-    display:grid;grid-template-columns:repeat(4,1fr);gap:5px;z-index:200;box-shadow:0 6px 16px var(--shadow-strong);
+    position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px;
+    display:grid;grid-template-columns:repeat(4,1fr);gap:5px;z-index:200;box-shadow:0 6px 16px rgba(0,0,0,0.18);
   }
   .swatch-dot{width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(0,0,0,0.12);cursor:pointer;padding:0;}
   .swatch-dot:hover{transform:scale(1.15);}
@@ -213,8 +179,8 @@
 
   .friend-manage{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
 
-  .modal-backdrop{position:fixed;inset:0;background:var(--modal-overlay);display:flex;align-items:center;justify-content:center;z-index:100;}
-  .modal{background:var(--surface);color:var(--ink);border-radius:12px;padding:26px;width:340px;text-align:center;}
+  .modal-backdrop{position:fixed;inset:0;background:rgba(107,92,160,0.45);display:flex;align-items:center;justify-content:center;z-index:100;}
+  .modal{background:#fff;border-radius:12px;padding:26px;width:340px;text-align:center;}
   .modal h2{font-family:'Poppins',sans-serif;color:var(--navy-text);margin-top:0;}
   .modal input{width:100%;margin:14px 0;text-align:center;font-size:calc(15px * var(--font-scale));padding:10px;}
 
@@ -559,7 +525,6 @@ let state = {
   isAdmin: false,       // unlocks the catalog-import panel; see ADMIN_PASSCODE below
   incomingRequests: [], // account friend requests sent TO you, awaiting your accept/decline
   outgoingRequests: [], // account friend requests you sent, awaiting their accept
-  colorScheme: 'light', // 'light' | 'dark' -- overwritten by loadColorScheme() during boot()
 };
 
 // ============================= ADMIN GATE =============================
@@ -838,47 +803,23 @@ function darkenHex(hex, amt){ return mixHex(hex, '#000000', amt); }
 
 // Sets every theme CSS variable from a single accent color and (optionally)
 // persists it to the user's own storage so it's personal, not shared.
-// Accent-derived colors (--bg, --line, --navy-text) flip their light/dark
-// mix direction depending on the current color scheme, so a light accent
-// still reads as an intentional dark-mode tint rather than a lightened
-// pastel plastered on a dark page.
 async function applyTheme(hex, persist){
   if(!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
   const root = document.documentElement.style;
   const rgb = hexToRgb(hex);
-  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
   root.setProperty('--navy', hex);
   root.setProperty('--navy-2', lightenHex(hex, 0.35));
-  root.setProperty('--navy-text', dark ? lightenHex(hex, 0.4) : darkenHex(hex, 0.35));
+  root.setProperty('--navy-text', darkenHex(hex, 0.35));
   root.setProperty('--navy-ink', getContrastTextColor(hex));
   root.setProperty('--navy-rgb', `${rgb.r},${rgb.g},${rgb.b}`);
-  root.setProperty('--bg', dark ? darkenHex(hex, 0.88) : lightenHex(hex, 0.92));
-  root.setProperty('--line', dark ? darkenHex(hex, 0.65) : lightenHex(hex, 0.8));
+  root.setProperty('--bg', lightenHex(hex, 0.92));
+  root.setProperty('--line', lightenHex(hex, 0.8));
   state.themeHex = hex;
   if(persist) await queueSave(()=> sSet('theme', hex, false));
 }
 async function loadTheme(){
   const saved = await sGet('theme', false);
   await applyTheme((saved && /^#[0-9A-Fa-f]{6}$/.test(saved)) ? saved : DEFAULT_THEME, false);
-}
-
-/* ============================= COLOR SCHEME (LIGHT/DARK) ============================= */
-async function applyColorScheme(mode, persist){
-  document.documentElement.setAttribute('data-theme', mode);
-  state.colorScheme = mode;
-  // Recompute the accent-derived variables for the new scheme.
-  await applyTheme(state.themeHex || DEFAULT_THEME, false);
-  if(persist) await queueSave(()=> sSet('colorScheme', mode, false));
-}
-async function loadColorScheme(){
-  const saved = await sGet('colorScheme', false);
-  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const mode = (saved==='dark'||saved==='light') ? saved : (prefersDark ? 'dark' : 'light');
-  await applyColorScheme(mode, false);
-}
-async function toggleColorScheme(){
-  await applyColorScheme(state.colorScheme==='dark' ? 'light' : 'dark', true);
-  render();
 }
 
 /* ============================= FONT SIZE ============================= */
@@ -984,7 +925,6 @@ function entriesConflict(entryA, entryB){
 let __guestChosenThisSession = false; // "Continue without an account" — only skips the gate for this page load
 let __forceGateAfterSignOut = false;  // set right before signOut() so boot() shows the landing gate instead of falling through to old local guest data
 async function boot(){
-  await loadColorScheme();
   await loadTheme();
   await loadFontScale();
   await loadAll();
@@ -1523,7 +1463,6 @@ function renderHeader(){
       <div class="row" style="align-items:center;gap:14px;">
         <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:calc(14px * var(--font-scale));">${state.isAdmin?'🔓':'🔒'}</button>
         <button class="edit-name-btn" id="fontBtn" title="Adjust font size" style="font-size:calc(13px * var(--font-scale));font-weight:700;">Aa</button>
-        <button class="edit-name-btn" id="darkModeBtn" title="${state.colorScheme==='dark'?'Switch to light mode':'Switch to dark mode'}" style="font-size:calc(15px * var(--font-scale));">${state.colorScheme==='dark'?'☀️':'🌙'}</button>
         <button class="swatch-btn" id="themeBtn" title="Change theme color"
           style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
         <button class="edit-name-btn" id="acctBtn" title="${uid?'Your account (synced)':'Sign in to save your schedule anywhere'}" style="font-size:calc(14px * var(--font-scale));">${uid?'☁️':'👤'}</button>
@@ -1534,7 +1473,6 @@ function renderHeader(){
   themeBtn.onclick = (e)=>{ e.stopPropagation(); openThemePicker(themeBtn); };
   const fontBtn = header.querySelector('#fontBtn');
   fontBtn.onclick = (e)=>{ e.stopPropagation(); openFontSizePicker(fontBtn); };
-  header.querySelector('#darkModeBtn').onclick = (e)=>{ e.stopPropagation(); toggleColorScheme(); };
   header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
   header.querySelector('#adminBtn').onclick = (e)=>{ e.stopPropagation(); openAdminModal(); };
   header.querySelector('#acctBtn').onclick = (e)=>{ e.stopPropagation(); openAccountModal(); };
@@ -1869,7 +1807,7 @@ function renderMemberEditor(memberId){
     const wpRow = el(`<div class="row" style="margin-top:14px;">
       <button class="ghost" id="makeWallpaperBtn">⬇️ Download</button>
     </div>`);
-    wpRow.querySelector('#makeWallpaperBtn').onclick = ()=> openWallpaperBuilder(memberId);
+    wpRow.querySelector('#makeWallpaperBtn').onclick = ()=> openWallpaperBuilder([{member, entries}]);
     wrap.appendChild(wpRow);
   }
   return wrap;
@@ -2226,6 +2164,12 @@ function renderCombinedTab(){
   boardGroups.forEach(g=>legend.appendChild(el(`<div class="item"><span class="dot" style="background:${g.color}"></span>${g.member.name}</div>`)));
   wrap.appendChild(legend);
   wrap.appendChild(renderBoard(boardGroups, false));
+
+  const wpRow = el(`<div class="row" style="margin-top:14px;">
+    <button class="ghost" id="makeCombinedWallpaperBtn">⬇️ Download combined schedule</button>
+  </div>`);
+  wpRow.querySelector('#makeCombinedWallpaperBtn').onclick = ()=> openWallpaperBuilder(boardGroups);
+  wrap.appendChild(wpRow);
   return wrap;
 }
 
@@ -2449,8 +2393,9 @@ function computeWallpaperTimeRange(entries){
 // Both export modes call this first: wallpaper mode already knows its
 // canvas size, but image mode needs the table's own height before it can
 // size the canvas.
-function computeTableLayout(entries, tableW, scale, heightScale=1){
-  const {start:rangeStart, end:rangeEnd} = computeWallpaperTimeRange(entries);
+function computeTableLayout(groups, tableW, scale, heightScale=1){
+  const allEntries = groups.flatMap(g=>g.entries);
+  const {start:rangeStart, end:rangeEnd} = computeWallpaperTimeRange(allEntries);
   const totalRows = (rangeEnd-rangeStart)/30;
   const pad = 20*scale;
   const timeGutterW = 76*scale;
@@ -2459,8 +2404,12 @@ function computeTableLayout(entries, tableW, scale, heightScale=1){
   const headerH = 68*scale*heightScale;
   const rowH = 30*scale*heightScale;
   const bodyH = totalRows*rowH;
-  const tableH = pad*2 + headerH + bodyH;
-  return {rangeStart, rangeEnd, totalRows, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH};
+  // A legend strip (colored dot + name per person) only when downloading
+  // more than one person's schedule at once — a single-person download
+  // doesn't need one, it's obviously "yours".
+  const legendH = groups.length>1 ? 30*scale : 0;
+  const tableH = pad*2 + legendH + headerH + bodyH;
+  return {rangeStart, rangeEnd, totalRows, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, legendH, tableH};
 }
 
 // Renders the schedule "card" onto the export canvas at (baseX,baseY).
@@ -2474,10 +2423,18 @@ function computeTableLayout(entries, tableW, scale, heightScale=1){
 //   'editorial' — soft rounded card, plain hour-only labels ("8a","12p").
 // The table itself has no background fill — it sits directly on the
 // wallpaper/background behind it, no white card.
-function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, scale, tableColor, textScale, daysColor, timesColor, classesColor){
-  const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, tableH} = layout;
+// `groups` is an array of {member, entries}. A single group behaves exactly
+// as before (per-class pastel colors, via getBlockColor). More than one
+// group means this is a combined download: every block uses that person's
+// FIXED color instead — same rule the on-site Combined tab already follows
+// — and a small legend (dot + name per person) is drawn above the day
+// header so the image is self-explanatory without the site open.
+function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, scale, tableColor, textScale, daysColor, timesColor, classesColor){
+  const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, legendH, tableH} = layout;
+  const isCombined = groups.length > 1;
   const gridX = baseX+pad+timeGutterW;
-  const bodyY = baseY+pad+headerH;
+  const headerTopY = baseY+pad+legendH; // day header starts below the legend strip, if any
+  const bodyY = headerTopY+headerH;
   const isPillHeader = style==='bold';
   // tableColor drives every non-class-block ink color (headers, divider
   // line, hour labels, bold-style pill fill) — a single user-picked color
@@ -2501,11 +2458,30 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   const daysTextColor = daysColor || defaultDaysColor;
   const timesTextColor = timesColor || defaultTimesColor;
 
+  if(isCombined){
+    // One evenly-divided row across the full content width — a colored
+    // dot plus that person's name, truncated to fit its own segment so it
+    // never overflows regardless of how many people are included.
+    const segW = contentW/groups.length;
+    const dotR = 5*scale;
+    const cy = baseY+pad+legendH/2;
+    ctx.font = `600 ${10.5*ts*scale}px 'Poppins', sans-serif`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    groups.forEach((g,i)=>{
+      const segX = baseX+pad + i*segW;
+      ctx.fillStyle = g.member.color;
+      ctx.beginPath(); ctx.arc(segX+dotR, cy, dotR, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = daysTextColor;
+      const label = g.member.id===state.meId ? `${g.member.name} (you)` : g.member.name;
+      ctx.fillText(truncateText(ctx, label, segW-dotR*2-10*scale), segX+dotR*2+6*scale, cy);
+    });
+  }
+
   if(isPillHeader){
     // Day header row: solid pill per day, uppercase label, in the user's
     // table color.
     const pillH = headerH*0.62;
-    const pillY = baseY+pad+(headerH-pillH)/2;
+    const pillY = headerTopY+(headerH-pillH)/2;
     ctx.font = `700 ${13*ts*scale}px 'Poppins', sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
@@ -2524,7 +2500,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx = gridX + i*dayColW + dayColW/2;
-      ctx.fillText(DAY_LABEL[day], cx, baseY+pad+headerH/2);
+      ctx.fillText(DAY_LABEL[day], cx, headerTopY+headerH/2);
     });
     if(style==='minimal'){
       // Sits a little above the body, not exactly on the first hour tick —
@@ -2571,15 +2547,18 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
     }
   }
 
-  // Class blocks — same flatten + lane-pack approach as the live board
+  // Class blocks — same flatten + lane-pack approach as the live board,
+  // now flattened across every group instead of just one person.
   const perDay = DAY_ORDER.map(()=>[]);
-  entries.forEach(entry=>{
-    (entry.meetings||[]).forEach(m=>{
-      if(m.start==null || m.end==null || !m.days.length) return;
-      m.days.forEach(day=>{
-        const colIdx = DAY_ORDER.indexOf(day);
-        if(colIdx<0) return;
-        perDay[colIdx].push({start:m.start, end:m.end, room:m.room, entry});
+  groups.forEach(g=>{
+    g.entries.forEach(entry=>{
+      (entry.meetings||[]).forEach(m=>{
+        if(m.start==null || m.end==null || !m.days.length) return;
+        m.days.forEach(day=>{
+          const colIdx = DAY_ORDER.indexOf(day);
+          if(colIdx<0) return;
+          perDay[colIdx].push({start:m.start, end:m.end, room:m.room, entry, groupMember:g.member});
+        });
       });
     });
   });
@@ -2599,7 +2578,10 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
       const w = blockW - gap;
       const yy = y+gap/2, hh = h-gap;
 
-      const color = getBlockColor(memberId, b.entry.id, member?member.color:'#4169E1');
+      // Combined downloads use each person's fixed color (matching the
+      // on-site Combined tab exactly); a single-person download keeps the
+      // per-class pastel override.
+      const color = isCombined ? b.groupMember.color : getBlockColor(b.groupMember.id, b.entry.id, b.groupMember.color);
       const textColor = classesColor || getContrastTextColor(color);
       const surname = surnameOf(b.entry.instructor);
 
@@ -2638,9 +2620,12 @@ function paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member
   ctx.restore();
 }
 
-function openWallpaperBuilder(memberId){
-  const member = getMember(memberId);
-  const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);
+// `groups` is an array of {member, entries}. Pass a single-item array for
+// a personal download (behaves exactly as before), or several for a
+// combined download — paintTable and the layout math both key off
+// groups.length to switch between per-class and per-person coloring.
+function openWallpaperBuilder(groups){
+  const isCombined = groups.length > 1;
 
   let mode = 'wallpaper';   // 'wallpaper' | 'image'
   let device = 'phone';
@@ -2660,7 +2645,7 @@ function openWallpaperBuilder(memberId){
     <div class="modal-backdrop" style="align-items:flex-start;padding:24px 12px;overflow:auto;">
       <div class="modal" style="width:min(94vw,760px);max-width:760px;text-align:left;">
         <div class="row" style="justify-content:space-between;align-items:center;">
-          <h2 style="margin:0;" id="wpTitle">Make a wallpaper</h2>
+          <h2 style="margin:0;" id="wpTitle">${isCombined ? 'Download combined schedule' : 'Make a wallpaper'}</h2>
           <button class="ghost small" id="wpClose">Close</button>
         </div>
 
@@ -2766,7 +2751,7 @@ function openWallpaperBuilder(memberId){
           <canvas id="wpCanvas" style="max-width:100%;max-height:58vh;border-radius:6px;cursor:grab;touch-action:none;"></canvas>
         </div>
 
-        <p class="hint" style="margin:14px 0 6px;">Class colors</p>
+        <p class="hint" id="wpColorListLabel" style="margin:14px 0 6px;">Class colors</p>
         <div id="wpColorList" class="row" style="flex-wrap:wrap;"></div>
 
         <div class="row" style="margin-top:16px;justify-content:flex-end;">
@@ -2816,10 +2801,10 @@ function openWallpaperBuilder(memberId){
       // shape without warping its text.
       const fontScale = Math.hypot(d.w, d.h) / Math.hypot(1080, 1920);
       const tableW = d.w*0.88*wScale;
-      const layout = computeTableLayout(entries, tableW, fontScale, hScale);
+      const layout = computeTableLayout(groups, tableW, fontScale, hScale);
       const baseX = (d.w-tableW)/2 + offsetX;
       const baseY = (d.h-layout.tableH)/2 + offsetY;
-      paintTable(ctx, layout, baseX, baseY, tableW, entries, memberId, member, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
+      paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
     } else {
       // Image mode: canvas is sized to exactly fit the table — no device
       // frame, no background photo, no drag. Width/height stretch sliders
@@ -2827,11 +2812,11 @@ function openWallpaperBuilder(memberId){
       const fontScale = 1;
       const margin = 24;
       const tableW = IMAGE_MODE_BASE_W*0.88*wScale;
-      const layout = computeTableLayout(entries, tableW, fontScale, hScale);
+      const layout = computeTableLayout(groups, tableW, fontScale, hScale);
       canvas.width = tableW + margin*2;
       canvas.height = layout.tableH + margin*2;
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      paintTable(ctx, layout, margin, margin, tableW, entries, memberId, member, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
+      paintTable(ctx, layout, margin, margin, tableW, groups, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
     }
   }
 
@@ -3106,17 +3091,44 @@ function openWallpaperBuilder(memberId){
 
   resetBtn.onclick = ()=>{ offsetX=0; offsetY=0; draw(); };
 
-  // Per-class color editing — writes through the same shared blockColors
-  // store the live grid uses, so it's a single source of truth.
+  // Per-class color editing (personal) writes through the same shared
+  // blockColors store the live grid uses. Combined mode instead lists each
+  // person with their fixed color — editing it here writes to the same
+  // member.color the on-site Combined tab uses, so it stays one source of
+  // truth either way.
   function renderColorList(){
     const listEl = backdrop.querySelector('#wpColorList');
+    const labelEl = backdrop.querySelector('#wpColorListLabel');
     listEl.innerHTML = '';
+    if(isCombined){
+      labelEl.textContent = 'People';
+      groups.forEach(g=>{
+        const chip = el(`<div class="chip" style="cursor:default;">
+          <button class="chip-dot" style="background:${g.member.color};" title="Change ${g.member.name}'s color"></button>
+          <span>${g.member.name}${g.member.id===state.meId?' (you)':''}</span>
+        </div>`);
+        const dotBtn = chip.querySelector('.chip-dot');
+        dotBtn.onclick = (e)=>{
+          e.stopPropagation();
+          openColorPicker(dotBtn, MEMBER_COLORS, async (newColor)=>{
+            g.member.color = newColor;
+            await saveMembers();
+            dotBtn.style.background = newColor;
+            draw();
+          }, g.member.color);
+        };
+        listEl.appendChild(chip);
+      });
+      return;
+    }
+    labelEl.textContent = 'Class colors';
+    const {member, entries} = groups[0];
     if(!entries.length){
       listEl.appendChild(el(`<span class="hint" style="margin:0;">No classes yet — add some in My Schedule first.</span>`));
       return;
     }
     entries.forEach(entry=>{
-      const color = getBlockColor(memberId, entry.id, member?member.color:'#4169E1');
+      const color = getBlockColor(member.id, entry.id, member?member.color:'#4169E1');
       const chip = el(`<div class="chip" style="cursor:default;">
         <button class="chip-dot" style="background:${color};" title="Change color"></button>
         <span>${entry.code||'—'} ${entry.section||''}</span>
@@ -3125,7 +3137,7 @@ function openWallpaperBuilder(memberId){
       dotBtn.onclick = (e)=>{
         e.stopPropagation();
         openColorPicker(dotBtn, PASTEL_COLORS, async (newColor)=>{
-          setBlockColor(memberId, entry.id, newColor);
+          setBlockColor(member.id, entry.id, newColor);
           await saveBlockColors();
           dotBtn.style.background = newColor;
           draw();
@@ -3149,7 +3161,9 @@ function openWallpaperBuilder(memberId){
       if(!blob) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = mode==='wallpaper' ? `schedule-wallpaper-${device}.png` : `schedule-image.png`;
+      a.href = url; a.download = mode==='wallpaper'
+        ? `${isCombined?'combined-':''}schedule-wallpaper-${device}.png`
+        : `${isCombined?'combined-':''}schedule-image.png`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(url), 4000);
     }, 'image/png');
