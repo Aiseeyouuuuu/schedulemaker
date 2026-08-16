@@ -2905,7 +2905,7 @@ function renderTasksTab(){
     scheduleAutoResize(taskInput);
     tr.appendChild(taskTd);
 
-    const statusTd = elCell(`<td class="grow-cell"></td>`);
+    const statusTd = elCell(`<td></td>`);
     const statusBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
     const statusLabel = statusBtn.querySelector('.pill-label');
     const paintStatus = ()=>{ const c=taskStatusColors(t.status); statusBtn.style.background=c.bg; statusBtn.style.color=c.fg; statusLabel.textContent=t.status; };
@@ -2917,7 +2917,7 @@ function renderTasksTab(){
     };
     statusTd.appendChild(statusBtn); tr.appendChild(statusTd);
 
-    const subjTd = elCell(`<td class="grow-cell"></td>`);
+    const subjTd = elCell(`<td></td>`);
     const subjBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
     const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
     subjBtn.style.background = c; subjBtn.style.color = '#2A2E3D';
