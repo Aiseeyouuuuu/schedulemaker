@@ -6,6 +6,10 @@
 <title>Schedule Maker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<!-- Every Google-hosted font offered in the schedule/wallpaper font picker (see FONT_OPTIONS below).
+     Fonts in that list with no free web-embeddable equivalent (e.g. Canva-exclusive or licensed
+     desktop fonts) intentionally aren't loaded here — they fall back to a close generic style. -->
+<link href="https://fonts.googleapis.com/css2?family=Arimo&family=Montserrat&family=Open+Sans&family=League+Spartan&family=Anton&family=DM+Sans&family=Archivo+Black&family=Roboto&family=Alice&family=Lora&family=Moontime&family=Shrikhand&family=Bebas+Neue&family=Fredoka&family=Cinzel+Decorative&family=Cinzel&family=Noto+Serif+Ethiopic&family=Cormorant+Garamond&family=Lilita+One&family=Playfair+Display&family=Abril+Fatface&family=Alex+Brush&family=Yeseva+One&family=Arapey&family=Barriecito&family=Arvo&family=Blaka&family=Oswald&family=Apricots&family=Chewy&family=Grand+Hotel&family=Schoolbell&family=Lancelot&family=Lato&family=Old+Standard+TT&family=Quicksand&family=Anonymous+Pro&family=Belleza&family=Cardo&family=League+Gothic&family=Libre+Baskerville&family=Nixie+One&family=Noto+Serif&family=Sanchez&family=Source+Serif+4&family=Tenor+Sans&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#F0F3FD;
@@ -23,6 +27,7 @@
     --danger:#C24F6A;
     --radius:10px;
     --font-scale:1;
+    --schedule-font:'Poppins', sans-serif;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Poppins',sans-serif;-webkit-font-smoothing:antialiased;}
@@ -124,10 +129,10 @@
   }
 
   /* ---- grid (departure board) ---- */
-  .board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
+  .board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;font-family:var(--schedule-font);}
   .board-head{display:grid;grid-template-columns:64px repeat(6,1fr);border-bottom:2px solid var(--navy-text);}
   .board-head div{
-    font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(12px * var(--font-scale));color:var(--navy-text);
+    font-family:var(--schedule-font);font-weight:600;font-size:calc(12px * var(--font-scale));color:var(--navy-text);
     padding:10px 6px;text-align:center;border-left:1px solid var(--line);
   }
   .board-head div:first-child{border-left:none;}
@@ -135,7 +140,7 @@
   .time-col{position:relative;overflow:hidden;}
   .time-cell{
     position:absolute;left:0;right:0;transform:translateY(-50%);
-    font-family:'Poppins',sans-serif;font-size:calc(10.5px * var(--font-scale));color:var(--muted);
+    font-family:var(--schedule-font);font-size:calc(10.5px * var(--font-scale));color:var(--muted);
     text-align:right;padding-right:6px;
   }
   .day-col{position:relative;border-left:1px solid var(--line);}
@@ -144,7 +149,7 @@
     position:absolute;left:3px;right:3px;border-radius:6px;overflow:hidden;
     padding:5px 7px;font-size:calc(11px * var(--font-scale));line-height:1.3;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.12);
   }
-  .block .code{font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11.5px * var(--font-scale));display:block;}
+  .block .code{font-family:var(--schedule-font);font-weight:600;font-size:calc(11.5px * var(--font-scale));display:block;}
   .block .title{opacity:.92;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .block .room{opacity:.8;font-size:calc(10px * var(--font-scale));display:block;}
   .block .del{
@@ -519,6 +524,67 @@ function parseScheduleText(text){
 /* ============================= APP STATE ============================= */
 const MEMBER_COLORS = ['#0B2545','#C8553D','#2A9D8F','#6A4C93','#E08E45','#3D6B9E','#8F5D5D','#4E7A51'];
 const PASTEL_COLORS = ['#FADADD','#FFE5B4','#FFFACD','#D9F2D9','#D6EAF8','#E0D6F5','#F5D6E0','#D6F5EC'];
+
+/* ============================= FONT PICKER ============================= */
+// `n` is the label shown in the picker (and stored for the user's choice).
+// `s` is the actual CSS font-family value applied for it. Most entries here
+// are real Google Fonts (loaded via the <link> in <head>) or common system
+// fonts. A handful of names on the requested list are Canva-exclusive or
+// commercially-licensed desktop fonts with no free web-embeddable file
+// available anywhere — for those, `s` is just a close generic family
+// (sans-serif/serif/cursive/monospace) so the picker still works sensibly
+// rather than silently mis-labeling a substitute font as the real thing.
+const FONT_OPTIONS = [{"n":"Arimo","s":"'Arimo', sans-serif"},{"n":"Canva Sans","s":"sans-serif"},{"n":"Monteserrat","s":"'Montserrat', sans-serif"},{"n":"Open Sans","s":"'Open Sans', sans-serif"},{"n":"Poppins","s":"'Poppins', sans-serif"},{"n":"Glacial Indifference","s":"sans-serif"},{"n":"League Spartan","s":"'League Spartan', sans-serif"},{"n":"Anton","s":"'Anton', sans-serif"},{"n":"DM Sans","s":"'DM Sans', sans-serif"},{"n":"Archivo Black","s":"'Archivo Black', sans-serif"},{"n":"Roboto","s":"'Roboto', sans-serif"},{"n":"Garet","s":"sans-serif"},{"n":"Alice","s":"'Alice', serif"},{"n":"Open Sauce","s":"sans-serif"},{"n":"Brittany","s":"cursive"},{"n":"Arial MT Pro","s":"'Arial', sans-serif"},{"n":"Gagalin","s":"cursive"},{"n":"Times New Roman MT","s":"'Times New Roman', serif"},{"n":"Lora","s":"'Lora', serif"},{"n":"The Seasons","s":"serif"},{"n":"Moontime","s":"'Moontime', cursive"},{"n":"Comic Sans","s":"'Comic Sans MS', cursive"},{"n":"Shrikhand","s":"'Shrikhand', cursive"},{"n":"Agrandir","s":"sans-serif"},{"n":"Bebas Neue","s":"'Bebas Neue', sans-serif"},{"n":"Horizon","s":"sans-serif"},{"n":"Etna Sans Serif","s":"sans-serif"},{"n":"Fredoka","s":"'Fredoka', sans-serif"},{"n":"Cinzel Decorative","s":"'Cinzel Decorative', serif"},{"n":"Cinzel","s":"'Cinzel', serif"},{"n":"Noto Serif Ethiopic Condensed","s":"'Noto Serif Ethiopic', serif"},{"n":"Cormorant Garamond","s":"'Cormorant Garamond', serif"},{"n":"Lilita One","s":"'Lilita One', cursive"},{"n":"Copperplate Gothic 29 BC","s":"'Copperplate', fantasy"},{"n":"Playfair Display","s":"'Playfair Display', serif"},{"n":"Telegraf","s":"sans-serif"},{"n":"Abril Fatface","s":"'Abril Fatface', serif"},{"n":"Bodoni FLF","s":"serif"},{"n":"Norwester","s":"sans-serif"},{"n":"Bukhari Script","s":"cursive"},{"n":"Canva Student Font","s":"cursive"},{"n":"HK Modular","s":"sans-serif"},{"n":"Hangyaboly","s":"cursive"},{"n":"Nickainley","s":"cursive"},{"n":"Alex Brush","s":"'Alex Brush', cursive"},{"n":"XB Niloofar","s":"sans-serif"},{"n":"Yeseva One","s":"'Yeseva One', serif"},{"n":"Impact","s":"'Impact', sans-serif"},{"n":"Biski","s":"sans-serif"},{"n":"Arapey","s":"'Arapey', serif"},{"n":"Ahsing","s":"cursive"},{"n":"Barriecito","s":"'Barriecito', cursive"},{"n":"Noja","s":"sans-serif"},{"n":"Alta","s":"sans-serif"},{"n":"Arvo","s":"'Arvo', serif"},{"n":"Blaka","s":"'Blaka', cursive"},{"n":"Brick Sans","s":"sans-serif"},{"n":"Oswald","s":"'Oswald', sans-serif"},{"n":"Slopes","s":"cursive"},{"n":"Aprila","s":"sans-serif"},{"n":"Lazydog","s":"cursive"},{"n":"Magnolia Script","s":"cursive"},{"n":"Adlery Pro","s":"cursive"},{"n":"Apricots","s":"'Apricots', cursive"},{"n":"Chewy","s":"'Chewy', cursive"},{"n":"Grand Hotel","s":"'Grand Hotel', cursive"},{"n":"Lulu Font TH","s":"sans-serif"},{"n":"Marykate","s":"cursive"},{"n":"Schoolbell","s":"'Schoolbell', cursive"},{"n":"TT Drugs","s":"sans-serif"},{"n":"Lancelot","s":"'Lancelot', serif"},{"n":"Lato","s":"'Lato', sans-serif"},{"n":"Old Standard","s":"'Old Standard TT', serif"},{"n":"Quicksand","s":"'Quicksand', sans-serif"},{"n":"Advetime","s":"cursive"},{"n":"Anonymous Pro","s":"'Anonymous Pro', monospace"},{"n":"Architype Aubette","s":"sans-serif"},{"n":"Architype Bayer-type","s":"sans-serif"},{"n":"Arial Unicode","s":"'Arial Unicode MS', sans-serif"},{"n":"Avenir","s":"'Avenir', sans-serif"},{"n":"Belleza","s":"'Belleza', sans-serif"},{"n":"Benedict","s":"cursive"},{"n":"Binate","s":"sans-serif"},{"n":"Braggadocio","s":"'Braggadocio', fantasy"},{"n":"Bright","s":"serif"},{"n":"Buffalo","s":"cursive"},{"n":"Caitlin","s":"cursive"},{"n":"Calgary","s":"sans-serif"},{"n":"Cardo","s":"'Cardo', serif"},{"n":"Cheque","s":"serif"},{"n":"Chloe","s":"cursive"},{"n":"Citadel Script","s":"cursive"},{"n":"Copperplate Gothic 29 AB","s":"'Copperplate', fantasy"},{"n":"Copperplate Gothic","s":"'Copperplate', fantasy"},{"n":"Copperplate Gothic 32 BC","s":"'Copperplate', fantasy"},{"n":"Devasta","s":"sans-serif"},{"n":"Emitha","s":"cursive"},{"n":"Fabrica","s":"serif"},{"n":"Findel","s":"cursive"},{"n":"Fiona","s":"cursive"},{"n":"Futura","s":"'Futura', sans-serif"},{"n":"Futura Black","s":"'Futura', sans-serif"},{"n":"Garamond","s":"'Garamond', serif"},{"n":"Georgia Pro","s":"'Georgia', serif"},{"n":"Gotham","s":"sans-serif"},{"n":"Helvetica Now","s":"'Helvetica Neue', sans-serif"},{"n":"Helvetica World","s":"'Helvetica', sans-serif"},{"n":"Hey Gotcha!","s":"cursive"},{"n":"Horizon Outlined","s":"sans-serif"},{"n":"Intro Rust","s":"sans-serif"},{"n":"ITC Bauhaus","s":"sans-serif"},{"n":"ITC Benguiat","s":"serif"},{"n":"Joliet","s":"cursive"},{"n":"Jonathan","s":"cursive"},{"n":"Kare","s":"sans-serif"},{"n":"Knockout Cruiserweight","s":"sans-serif"},{"n":"Knockout Featherweight","s":"sans-serif"},{"n":"Knockout Flyweight","s":"sans-serif"},{"n":"Knockout Sumo","s":"sans-serif"},{"n":"Knockout Welterweight","s":"sans-serif"},{"n":"League Gothic","s":"'League Gothic', sans-serif"},{"n":"Libre Baskerville","s":"'Libre Baskerville', serif"},{"n":"London","s":"cursive"},{"n":"Lovelo","s":"sans-serif"},{"n":"Madelyn","s":"cursive"},{"n":"Nixie One","s":"'Nixie One', serif"},{"n":"Noto Serif","s":"'Noto Serif', serif"},{"n":"Olivare Base","s":"serif"},{"n":"Pierson","s":"cursive"},{"n":"PL Barnum Block","s":"sans-serif"},{"n":"Proxima Nova","s":"sans-serif"},{"n":"Recoleta","s":"serif"},{"n":"Sailors","s":"cursive"},{"n":"Sanchez","s":"'Sanchez', serif"},{"n":"Sensa Brush","s":"cursive"},{"n":"Source Serif Pro","s":"'Source Serif 4', serif"},{"n":"Stoic","s":"sans-serif"},{"n":"Sunborn","s":"sans-serif"},{"n":"Tenor Sans","s":"'Tenor Sans', sans-serif"},{"n":"Trecuchet MS","s":"'Trebuchet MS', sans-serif"},{"n":"Univers","s":"sans-serif"},{"n":"Versailles","s":"serif"},{"n":"Virtual","s":"sans-serif"},{"n":"Zing Rust Base","s":"sans-serif"}];
+const DEFAULT_SCHEDULE_FONT = 'Poppins';
+function fontStackFor(name){
+  const f = FONT_OPTIONS.find(x=>x.n===name);
+  return f ? f.s : "'Poppins', sans-serif";
+}
+
+// Reusable font-picker modal — every option is rendered in its own actual
+// font so it's easy to eyeball, with a search box since the list is long.
+// Used both for the on-site schedule font and the wallpaper/table font.
+function openFontPickerModal(title, currentName, onSelect){
+  document.querySelectorAll('.font-picker-backdrop').forEach(m=>m.remove());
+  const backdrop = el(`
+    <div class="modal-backdrop font-picker-backdrop" style="align-items:flex-start;padding:24px 12px;overflow:auto;z-index:110;">
+      <div class="modal" style="width:min(94vw,480px);max-width:480px;text-align:left;">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <h2 style="margin:0;">${title}</h2>
+          <button class="ghost small" id="fpClose">Close</button>
+        </div>
+        <input type="text" id="fpSearch" placeholder="Search fonts…"
+          style="width:100%;margin-top:12px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-family:'Poppins',sans-serif;font-size:calc(13.5px * var(--font-scale));"/>
+        <div id="fpList" style="margin-top:10px;max-height:56vh;overflow:auto;border:1px solid var(--line);border-radius:8px;"></div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const listEl = backdrop.querySelector('#fpList');
+  const searchEl = backdrop.querySelector('#fpSearch');
+  function renderList(filter){
+    const q = (filter||'').trim().toLowerCase();
+    listEl.innerHTML = '';
+    const items = FONT_OPTIONS.filter(f=> !q || f.n.toLowerCase().includes(q));
+    if(!items.length){
+      listEl.appendChild(el(`<div class="combo-empty">No fonts match "${filter.replace(/"/g,'')}".</div>`));
+      return;
+    }
+    items.forEach(f=>{
+      const active = f.n === currentName;
+      const row = el(`<div class="combo-item" style="display:flex;align-items:center;justify-content:space-between;${active?'background:var(--line);':''}">
+        <span style="font-family:${f.s};font-size:16px;">${f.n}</span>
+        ${active?'<span style="color:var(--navy-text);font-weight:700;">✓</span>':''}
+      </div>`);
+      row.onclick = ()=>{ backdrop.remove(); onSelect(f.n); };
+      listEl.appendChild(row);
+    });
+  }
+  renderList('');
+  searchEl.oninput = ()=> renderList(searchEl.value);
+  backdrop.querySelector('#fpClose').onclick = ()=> backdrop.remove();
+  backdrop.onclick = (e)=>{ if(e.target===backdrop) backdrop.remove(); };
+  setTimeout(()=>searchEl.focus(), 30);
+}
 
 let state = {
   catalog: [],       // shared master list of sections {id,code,section,title,units,instructor,remarks,meetings:[{days,start,end,room}]}
@@ -899,6 +965,24 @@ function openFontSizePicker(anchorEl){
   }, 0);
 }
 
+/* ============================= SCHEDULE FONT (on-site) ============================= */
+async function applyScheduleFont(name, persist){
+  document.documentElement.style.setProperty('--schedule-font', fontStackFor(name));
+  state.scheduleFont = name;
+  if(persist) await queueSave(()=> sSet('scheduleFont', name, false));
+}
+async function loadScheduleFont(){
+  const saved = await sGet('scheduleFont', false);
+  const value = (typeof saved==='string' && FONT_OPTIONS.some(f=>f.n===saved)) ? saved : DEFAULT_SCHEDULE_FONT;
+  await applyScheduleFont(value, false);
+}
+function openScheduleFontPicker(){
+  openFontPickerModal('Schedule font', state.scheduleFont || DEFAULT_SCHEDULE_FONT, async (name)=>{
+    await applyScheduleFont(name, true);
+    render();
+  });
+}
+
 /* ============================= TIME-LABEL INTERVAL ============================= */
 // How often the left-hand reference column gets a time label — every class
 // block still occupies its exact real start/end time regardless of this
@@ -1010,6 +1094,7 @@ async function boot(){
   await loadDarkMode(); // must run before loadTheme() — bg/surface/ink depend on light-vs-dark
   await loadTheme();
   await loadFontScale();
+  await loadScheduleFont();
   await loadLabelInterval();
   await loadAll();
   if(__forceGateAfterSignOut){
@@ -1548,6 +1633,7 @@ function renderHeader(){
         <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:calc(14px * var(--font-scale));">${state.isAdmin?'🔓':'🔒'}</button>
         <button class="edit-name-btn" id="darkModeBtn" title="${state.darkMode?'Switch to light mode':'Switch to dark mode'}" style="font-size:calc(14px * var(--font-scale));">${state.darkMode?'☀️':'🌙'}</button>
         <button class="edit-name-btn" id="fontBtn" title="Adjust font size" style="font-size:calc(13px * var(--font-scale));font-weight:700;">Aa</button>
+        <button class="edit-name-btn" id="scheduleFontBtn" title="Choose schedule font" style="font-size:calc(14px * var(--font-scale));">🔤</button>
         <button class="edit-name-btn" id="intervalBtn" title="Change time-label interval" style="font-size:calc(14px * var(--font-scale));">⏱</button>
         <button class="swatch-btn" id="themeBtn" title="Change theme color"
           style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
@@ -1559,6 +1645,7 @@ function renderHeader(){
   themeBtn.onclick = (e)=>{ e.stopPropagation(); openThemePicker(themeBtn); };
   const fontBtn = header.querySelector('#fontBtn');
   fontBtn.onclick = (e)=>{ e.stopPropagation(); openFontSizePicker(fontBtn); };
+  header.querySelector('#scheduleFontBtn').onclick = (e)=>{ e.stopPropagation(); openScheduleFontPicker(); };
   const intervalBtn = header.querySelector('#intervalBtn');
   intervalBtn.onclick = (e)=>{ e.stopPropagation(); openLabelIntervalPicker(intervalBtn); };
   header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
@@ -2520,8 +2607,9 @@ function computeTableLayout(groups, tableW, scale, heightScale=1){
 // FIXED color instead — same rule the on-site Combined tab already follows
 // — and a small legend (dot + name per person) is drawn above the day
 // header so the image is self-explanatory without the site open.
-function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, scale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval){
+function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, scale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval, tableFont){
   const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, legendH, tableH} = layout;
+  const fontStack = fontStackFor(tableFont || DEFAULT_SCHEDULE_FONT);
   const isCombined = groups.length > 1;
   const gridX = baseX+pad+timeGutterW;
   const headerTopY = baseY+pad+legendH; // day header starts below the legend strip, if any
@@ -2556,7 +2644,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, s
     const segW = contentW/groups.length;
     const dotR = 5*scale;
     const cy = baseY+pad+legendH/2;
-    ctx.font = `600 ${10.5*ts*scale}px 'Poppins', sans-serif`;
+    ctx.font = `600 ${10.5*ts*scale}px ${fontStack}`;
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     groups.forEach((g,i)=>{
       const segX = baseX+pad + i*segW;
@@ -2573,7 +2661,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, s
     // table color.
     const pillH = headerH*0.62;
     const pillY = headerTopY+(headerH-pillH)/2;
-    ctx.font = `700 ${13*ts*scale}px 'Poppins', sans-serif`;
+    ctx.font = `700 ${13*ts*scale}px ${fontStack}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
       const cx0 = gridX + i*dayColW + 3*scale;
@@ -2586,7 +2674,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, s
     });
   } else {
     // 'minimal' and 'editorial': plain centered label. Minimal adds a divider rule.
-    ctx.font = `700 ${(style==='editorial'?15:16)*ts*scale}px 'Poppins', sans-serif`;
+    ctx.font = `700 ${(style==='editorial'?15:16)*ts*scale}px ${fontStack}`;
     ctx.fillStyle = daysTextColor;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     DAY_ORDER.forEach((day,i)=>{
@@ -2613,7 +2701,7 @@ function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, s
   // (rather than floating above it), so it lines up with a class block
   // that starts at that exact time. Ticks always anchor to 8:00 AM
   // regardless of interval — see computeLabelStart.
-  ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
+  ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px ${fontStack}`;
   const interval = labelInterval || 60;
   const firstLabelT = computeLabelStart(rangeStart, interval);
   for(let t=firstLabelT; t<=rangeEnd; t+=interval){
@@ -2688,11 +2776,11 @@ function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, s
       // Four separate lines, space permitting: code+section, time, location,
       // professor — same fields as the live board, one per line.
       ctx.fillStyle = textColor;
-      ctx.font = `700 ${(isPillHeader?12.5:11.5)*ts*scale}px 'Poppins', sans-serif`;
+      ctx.font = `700 ${(isPillHeader?12.5:11.5)*ts*scale}px ${fontStack}`;
       ctx.fillText(truncateText(ctx, `${b.entry.code||'—'} ${b.entry.section||''}`.trim(), maxTextW), tx, ty);
       ty += (isPillHeader?16:14.5)*ts*scale;
 
-      ctx.font = `${(isPillHeader?10.5:9.5)*ts*scale}px 'Poppins', sans-serif`;
+      ctx.font = `${(isPillHeader?10.5:9.5)*ts*scale}px ${fontStack}`;
       ctx.globalAlpha = opacity*(isPillHeader?0.9:0.85);
       const timeLine = `${minutesToLabel(b.start)} – ${minutesToLabel(b.end)}`;
       if(hh > lineH*1.6){ ctx.fillText(truncateText(ctx, timeLine, maxTextW), tx, ty); ty += lineH; }
@@ -2727,6 +2815,7 @@ function openWallpaperBuilder(groups){
   let sizeHPct = 100;       // table height stretch slider, 60–160%
   let textScale = 1;        // font-size slider, 70–160%, independent of table shape
   let tableColor = '#2A4492'; // header/divider/hour-label ink color, user-customizable
+  let tableFont = state.scheduleFont || DEFAULT_SCHEDULE_FONT; // font used for every label on the exported table
   let daysColor = null;     // per-part text color overrides — null = derive from tableColor/style
   let timesColor = null;
   let classesColor = null;  // null = auto per-block contrast against each class's own color
@@ -2818,6 +2907,11 @@ function openWallpaperBuilder(groups){
           <span class="hint" style="margin:0;">headers, hour labels, and lines — any color/shade</span>
         </div>
 
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;">Table font:</span>
+          <button class="chip" id="tableFontBtn" style="font-family:${fontStackFor(tableFont)};">${tableFont}</button>
+        </div>
+
         <div class="row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
           <span class="hint" style="margin:0;width:100%;">Font colors — override any part individually:</span>
           <span class="hint" style="margin:0;">Days</span>
@@ -2902,7 +2996,7 @@ function openWallpaperBuilder(groups){
       const layout = computeTableLayout(groups, tableW, fontScale, hScale);
       const baseX = (d.w-tableW)/2 + offsetX;
       const baseY = (d.h-layout.tableH)/2 + offsetY;
-      paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval);
+      paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval, tableFont);
     } else {
       // Image mode: canvas is sized to exactly fit the table — no device
       // frame, no background photo, no drag. Width/height stretch sliders
@@ -2914,7 +3008,7 @@ function openWallpaperBuilder(groups){
       canvas.width = tableW + margin*2;
       canvas.height = layout.tableH + margin*2;
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      paintTable(ctx, layout, margin, margin, tableW, groups, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval);
+      paintTable(ctx, layout, margin, margin, tableW, groups, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval, tableFont);
     }
   }
 
@@ -2996,6 +3090,17 @@ function openWallpaperBuilder(groups){
   const bgUploadBtn = backdrop.querySelector('#bgUploadBtn');
   const bgInput = backdrop.querySelector('#bgUploadInput');
   const tableColorInput = backdrop.querySelector('#tableColorInput');
+  const tableFontBtn = backdrop.querySelector('#tableFontBtn');
+  tableFontBtn.onclick = (e)=>{
+    e.stopPropagation();
+    openFontPickerModal('Table font', tableFont, (name)=>{
+      tableFont = name;
+      tableFontBtn.textContent = tableFont;
+      tableFontBtn.style.fontFamily = fontStackFor(tableFont);
+      persistBgPref();
+      draw();
+    });
+  };
   const daysColorInput = backdrop.querySelector('#daysColorInput');
   const timesColorInput = backdrop.querySelector('#timesColorInput');
   const classesColorInput = backdrop.querySelector('#classesColorInput');
@@ -3007,7 +3112,7 @@ function openWallpaperBuilder(groups){
   };
   const WALLPAPER_BG_PRESETS = [{name:'White', hex:'#FFFFFF'}, ...THEME_PRESETS];
 
-  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, tableColor, daysColor, timesColor, classesColor}, false)); }
+  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, tableColor, daysColor, timesColor, classesColor, tableFont}, false)); }
   function renderBgSwatches(){
     bgSwatches.innerHTML = '';
     WALLPAPER_BG_PRESETS.forEach(p=>{
@@ -3040,6 +3145,11 @@ function openWallpaperBuilder(groups){
       if(saved.daysColor && /^#[0-9A-Fa-f]{6}$/.test(saved.daysColor)){ daysColor = saved.daysColor; daysColorInput.value = daysColor; }
       if(saved.timesColor && /^#[0-9A-Fa-f]{6}$/.test(saved.timesColor)){ timesColor = saved.timesColor; timesColorInput.value = timesColor; }
       if(saved.classesColor && /^#[0-9A-Fa-f]{6}$/.test(saved.classesColor)){ classesColor = saved.classesColor; classesColorInput.value = classesColor; }
+      if(saved.tableFont && FONT_OPTIONS.some(f=>f.n===saved.tableFont)){
+        tableFont = saved.tableFont;
+        tableFontBtn.textContent = tableFont;
+        tableFontBtn.style.fontFamily = fontStackFor(tableFont);
+      }
       renderBgSwatches();
       draw();
     }
