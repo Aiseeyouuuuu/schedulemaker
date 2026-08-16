@@ -862,6 +862,51 @@ function openFontSizePicker(anchorEl){
   }, 0);
 }
 
+/* ============================= TIME-LABEL INTERVAL ============================= */
+// How often the left-hand reference column gets a time label — every class
+// block still occupies its exact real start/end time regardless of this
+// setting; it only changes which gridlines get a printed label next to
+// them. Shared between the live board and every wallpaper/image export
+// (the export modal can still override it per-download).
+const LABEL_INTERVAL_STEPS = [
+  {name:'30 min', value:30},
+  {name:'1 hr', value:60},
+  {name:'1 hr 30 min', value:90},
+  {name:'2 hrs', value:120},
+  {name:'2 hrs 30 min', value:150},
+  {name:'3 hrs', value:180},
+];
+async function applyLabelInterval(value, persist){
+  state.labelInterval = value;
+  if(persist) await queueSave(()=> sSet('labelInterval', value, false));
+}
+async function loadLabelInterval(){
+  const saved = await sGet('labelInterval', false);
+  const value = LABEL_INTERVAL_STEPS.some(s=>s.value===saved) ? saved : 60;
+  await applyLabelInterval(value, false);
+}
+function openLabelIntervalPicker(anchorEl){
+  document.querySelectorAll('.swatch-popover').forEach(p=>p.remove());
+  const rect = anchorEl.getBoundingClientRect();
+  const popover = el(`<div class="swatch-popover" style="top:${rect.bottom+4}px;right:${window.innerWidth-rect.right}px;left:auto;grid-template-columns:1fr;width:160px;padding:8px;"></div>`);
+  LABEL_INTERVAL_STEPS.forEach(step=>{
+    const active = (state.labelInterval||60)===step.value;
+    const btn = el(`<button class="chip ${active?'active':''}" style="width:100%;justify-content:center;margin-bottom:4px;">${step.name}</button>`);
+    btn.onclick = async (e)=>{ e.stopPropagation(); popover.remove(); await applyLabelInterval(step.value, true); render(); };
+    popover.appendChild(btn);
+  });
+  document.body.appendChild(popover);
+  setTimeout(()=>{
+    const closeHandler = (ev)=>{
+      if(!popover.contains(ev.target) && ev.target!==anchorEl){
+        popover.remove();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    document.addEventListener('click', closeHandler);
+  }, 0);
+}
+
 function openThemePicker(anchorEl){
   document.querySelectorAll('.swatch-popover').forEach(p=>p.remove());
   const rect = anchorEl.getBoundingClientRect();
@@ -927,6 +972,7 @@ let __forceGateAfterSignOut = false;  // set right before signOut() so boot() sh
 async function boot(){
   await loadTheme();
   await loadFontScale();
+  await loadLabelInterval();
   await loadAll();
   if(__forceGateAfterSignOut){
     __forceGateAfterSignOut = false;
@@ -1463,6 +1509,7 @@ function renderHeader(){
       <div class="row" style="align-items:center;gap:14px;">
         <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:calc(14px * var(--font-scale));">${state.isAdmin?'🔓':'🔒'}</button>
         <button class="edit-name-btn" id="fontBtn" title="Adjust font size" style="font-size:calc(13px * var(--font-scale));font-weight:700;">Aa</button>
+        <button class="edit-name-btn" id="intervalBtn" title="Change time-label interval" style="font-size:calc(14px * var(--font-scale));">⏱</button>
         <button class="swatch-btn" id="themeBtn" title="Change theme color"
           style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
         <button class="edit-name-btn" id="acctBtn" title="${uid?'Your account (synced)':'Sign in to save your schedule anywhere'}" style="font-size:calc(14px * var(--font-scale));">${uid?'☁️':'👤'}</button>
@@ -1473,6 +1520,8 @@ function renderHeader(){
   themeBtn.onclick = (e)=>{ e.stopPropagation(); openThemePicker(themeBtn); };
   const fontBtn = header.querySelector('#fontBtn');
   fontBtn.onclick = (e)=>{ e.stopPropagation(); openFontSizePicker(fontBtn); };
+  const intervalBtn = header.querySelector('#intervalBtn');
+  intervalBtn.onclick = (e)=>{ e.stopPropagation(); openLabelIntervalPicker(intervalBtn); };
   header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
   header.querySelector('#adminBtn').onclick = (e)=>{ e.stopPropagation(); openAdminModal(); };
   header.querySelector('#acctBtn').onclick = (e)=>{ e.stopPropagation(); openAccountModal(); };
@@ -2222,10 +2271,12 @@ function renderBoard(groups, allowDelete){
   // Positioned with the exact same top formula the gridlines below use
   // (r*ROW_H, same r), so a label lines up pixel-for-pixel with its actual
   // gridline instead of drifting from an independent flex-stacked layout.
-  // Labels stay on the :00 marks even though BOARD_START itself is a
-  // half-hour (7:30) — start from the next whole hour, not BOARD_START.
-  const firstLabelT = Math.ceil(BOARD_START/60)*60;
-  for(let t=firstLabelT; t<BOARD_END; t+=60){
+  // Interval is user-adjustable (state.labelInterval, default 60min) —
+  // snapped up from BOARD_START so labels always land on clean multiples
+  // of the chosen interval rather than drifting off BOARD_START's :30.
+  const labelInterval = state.labelInterval || 60;
+  const firstLabelT = Math.ceil(BOARD_START/labelInterval)*labelInterval;
+  for(let t=firstLabelT; t<BOARD_END; t+=labelInterval){
     const topPx = ((t-BOARD_START)/30)*ROW_H;
     timeCol.appendChild(el(`<div class="time-cell" style="top:${topPx}px;">${minutesToLabel(t)}</div>`));
   }
@@ -2429,7 +2480,7 @@ function computeTableLayout(groups, tableW, scale, heightScale=1){
 // FIXED color instead — same rule the on-site Combined tab already follows
 // — and a small legend (dot + name per person) is drawn above the day
 // header so the image is self-explanatory without the site open.
-function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, scale, tableColor, textScale, daysColor, timesColor, classesColor){
+function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, scale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval){
   const {rangeStart, rangeEnd, pad, timeGutterW, contentW, dayColW, headerH, rowH, bodyH, legendH, tableH} = layout;
   const isCombined = groups.length > 1;
   const gridX = baseX+pad+timeGutterW;
@@ -2525,8 +2576,9 @@ function paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, s
   // collides with the day header row above it) — labels start at that
   // first :00 mark, not at rangeStart, so no "7:30"-style label appears.
   ctx.font = `${isPillHeader?'600 ':''}${11*ts*scale}px 'Poppins', sans-serif`;
-  const firstLabelT = Math.ceil(rangeStart/60)*60;
-  for(let t=firstLabelT; t<=rangeEnd; t+=60){
+  const interval = labelInterval || 60;
+  const firstLabelT = Math.ceil(rangeStart/interval)*interval;
+  for(let t=firstLabelT; t<=rangeEnd; t+=interval){
     const y = bodyY + ((t-rangeStart)/30)*rowH;
     const label = style==='editorial' ? abbrevHourLabel(t) : minutesToLabel(t);
     const labelX = gridX-8*scale;
@@ -2640,6 +2692,7 @@ function openWallpaperBuilder(groups){
   let daysColor = null;     // per-part text color overrides — null = derive from tableColor/style
   let timesColor = null;
   let classesColor = null;  // null = auto per-block contrast against each class's own color
+  let labelInterval = state.labelInterval || 60; // defaults to whatever the live site is currently set to
 
   const backdrop = el(`
     <div class="modal-backdrop" style="align-items:flex-start;padding:24px 12px;overflow:auto;">
@@ -2679,9 +2732,6 @@ function openWallpaperBuilder(groups){
           </label>
           <button class="chip" id="bgUploadBtn">Upload a photo…</button>
           <input type="file" id="bgUploadInput" accept="image/*" style="display:none;"/>
-          <label id="bgTransparentWrap" style="display:none;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;">
-            <input type="checkbox" id="bgTransparentToggle"/> Transparent
-          </label>
         </div>
 
         <div id="opacityRow" class="row" style="margin-top:10px;align-items:center;">
@@ -2713,6 +2763,13 @@ function openWallpaperBuilder(groups){
           <button class="chip active" id="styleMinimal">Minimal</button>
           <button class="chip" id="styleBold">Bold</button>
           <button class="chip" id="styleEditorial">Editorial</button>
+        </div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <span class="hint" style="margin:0;">Time labels every:</span>
+          <select id="intervalSelect" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-family:'Poppins',sans-serif;font-size:12.5px;">
+            ${LABEL_INTERVAL_STEPS.map(s=>`<option value="${s.value}">${s.name}</option>`).join('')}
+          </select>
         </div>
 
         <div class="row" style="margin-top:10px;align-items:center;">
@@ -2807,13 +2864,11 @@ function openWallpaperBuilder(groups){
       const layout = computeTableLayout(groups, tableW, fontScale, hScale);
       const baseX = (d.w-tableW)/2 + offsetX;
       const baseY = (d.h-layout.tableH)/2 + offsetY;
-      paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
+      paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval);
     } else {
       // Image mode: canvas is sized to exactly fit the table — no device
-      // frame, no drag. Width/height stretch sliders control the table's
-      // shape; text stays a fixed, crisp size. Background is the same
-      // color/gradient/photo system as wallpaper mode, unless "Transparent"
-      // is checked (then the canvas is left with no fill at all).
+      // frame, no background photo, no drag. Width/height stretch sliders
+      // control the table's shape; text stays a fixed, crisp size.
       const fontScale = 1;
       const margin = 24;
       const tableW = IMAGE_MODE_BASE_W*0.88*wScale;
@@ -2821,22 +2876,7 @@ function openWallpaperBuilder(groups){
       canvas.width = tableW + margin*2;
       canvas.height = layout.tableH + margin*2;
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      if(!bgTransparent){
-        if(bgImage){
-          drawImageCover(ctx, bgImage, 0, 0, canvas.width, canvas.height);
-        } else if(bgGradient){
-          const isLight = getContrastTextColor(bgHex) === '#1C2430';
-          const grad = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
-          grad.addColorStop(0, bgHex);
-          grad.addColorStop(1, isLight ? darkenHex(bgHex,0.22) : lightenHex(bgHex,0.22));
-          ctx.fillStyle = grad;
-          ctx.fillRect(0,0,canvas.width,canvas.height);
-        } else {
-          ctx.fillStyle = bgHex;
-          ctx.fillRect(0,0,canvas.width,canvas.height);
-        }
-      }
-      paintTable(ctx, layout, margin, margin, tableW, groups, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor);
+      paintTable(ctx, layout, margin, margin, tableW, groups, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval);
     }
   }
 
@@ -2850,8 +2890,7 @@ function openWallpaperBuilder(groups){
     modeImageBtn.classList.toggle('active', m==='image');
     const isWallpaper = m==='wallpaper';
     deviceRow.style.display = isWallpaper ? 'flex' : 'none';
-    bgRow.style.display = 'flex'; // background controls now apply to both modes
-    bgTransparentWrap.style.display = isWallpaper ? 'none' : 'flex'; // transparent bg only makes sense for a cropped image, not a screen wallpaper
+    bgRow.style.display = isWallpaper ? 'flex' : 'none';
     opacityRow.style.display = isWallpaper ? 'flex' : 'none';
     dragHint.style.display = isWallpaper ? 'block' : 'none';
     resetBtn.style.display = isWallpaper ? 'inline-flex' : 'none';
@@ -2912,21 +2951,25 @@ function openWallpaperBuilder(groups){
   // Background source — a color/gradient (from a preset swatch or the
   // custom color wheel) or an uploaded photo. White is the default; the
   // old theme-tinted look lives on as the "Pastel Yellow" preset.
-  let bgHex = '#FFFFFF', bgGradient = false, bgTransparent = false;
+  let bgHex = '#FFFFFF', bgGradient = false;
   const bgSwatches = backdrop.querySelector('#bgSwatches');
   const bgGradToggle = backdrop.querySelector('#bgGradToggle');
   const bgCustomInput = backdrop.querySelector('#bgCustomInput');
-  const bgTransparentWrap = backdrop.querySelector('#bgTransparentWrap');
-  const bgTransparentToggle = backdrop.querySelector('#bgTransparentToggle');
   const bgUploadBtn = backdrop.querySelector('#bgUploadBtn');
   const bgInput = backdrop.querySelector('#bgUploadInput');
   const tableColorInput = backdrop.querySelector('#tableColorInput');
   const daysColorInput = backdrop.querySelector('#daysColorInput');
   const timesColorInput = backdrop.querySelector('#timesColorInput');
   const classesColorInput = backdrop.querySelector('#classesColorInput');
+  const intervalSelect = backdrop.querySelector('#intervalSelect');
+  intervalSelect.value = String(labelInterval);
+  intervalSelect.onchange = ()=>{
+    labelInterval = Number(intervalSelect.value);
+    draw();
+  };
   const WALLPAPER_BG_PRESETS = [{name:'White', hex:'#FFFFFF'}, ...THEME_PRESETS];
 
-  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, transparent:bgTransparent, tableColor, daysColor, timesColor, classesColor}, false)); }
+  function persistBgPref(){ queueSave(()=> sSet('wallpaperBg', {hex:bgHex, gradient:bgGradient, tableColor, daysColor, timesColor, classesColor}, false)); }
   function renderBgSwatches(){
     bgSwatches.innerHTML = '';
     WALLPAPER_BG_PRESETS.forEach(p=>{
@@ -2950,9 +2993,7 @@ function openWallpaperBuilder(groups){
     if(saved && /^#[0-9A-Fa-f]{6}$/.test(saved.hex)){
       bgHex = saved.hex;
       bgGradient = !!saved.gradient;
-      bgTransparent = !!saved.transparent;
       bgGradToggle.checked = bgGradient;
-      bgTransparentToggle.checked = bgTransparent;
       bgCustomInput.value = bgHex;
       if(saved.tableColor && /^#[0-9A-Fa-f]{6}$/.test(saved.tableColor)){
         tableColor = saved.tableColor;
@@ -2967,11 +3008,6 @@ function openWallpaperBuilder(groups){
   })();
   bgGradToggle.onchange = ()=>{
     bgGradient = bgGradToggle.checked;
-    persistBgPref();
-    draw();
-  };
-  bgTransparentToggle.onchange = ()=>{
-    bgTransparent = bgTransparentToggle.checked;
     persistBgPref();
     draw();
   };
