@@ -1581,6 +1581,16 @@ function elRow(trHtml){
   t.innerHTML = `<tbody>${trHtml.trim()}</tbody>`;
   return t.querySelector('tr');
 }
+// Same problem as elRow above, one level down: a bare <td> set via a plain
+// div's innerHTML gets silently dropped by the parser too (only its
+// children survive), so building a <td> with el() returns the wrong node
+// entirely. This wraps it in a real <table><tbody><tr> first so the <td>
+// itself actually gets created.
+function elCell(tdHtml){
+  const t = document.createElement('table');
+  t.innerHTML = `<tbody><tr>${tdHtml.trim()}</tr></tbody>`;
+  return t.querySelector('td');
+}
 
 // Native window.confirm()/alert() are disabled in many sandboxed preview
 // iframes (including this one) — they silently no-op instead of throwing,
@@ -2793,11 +2803,11 @@ function renderTasksTab(){
   decorated.forEach(t=>{
     const tr = elRow(`<tr></tr>`);
 
-    const taskTd = el(`<td><input type="text" value="${(t.task||'').replace(/"/g,'&quot;')}" placeholder="Task name" /></td>`);
+    const taskTd = elCell(`<td><input type="text" value="${(t.task||'').replace(/"/g,'&quot;')}" placeholder="Task name" /></td>`);
     taskTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'task', e.target.value);
     tr.appendChild(taskTd);
 
-    const statusTd = el(`<td></td>`);
+    const statusTd = elCell(`<td></td>`);
     const statusSel = el(`<select></select>`);
     TASK_STATUSES.forEach(s=> statusSel.appendChild(el(`<option value="${s}" ${t.status===s?'selected':''}>${s}</option>`)));
     const paintStatus = ()=>{ const c=taskStatusColors(statusSel.value); statusSel.style.background=c.bg; statusSel.style.color=c.fg; };
@@ -2805,7 +2815,7 @@ function renderTasksTab(){
     statusSel.onchange = async ()=>{ await updateTaskField(t.__subjectKey, t.id, 'status', statusSel.value); render(); };
     statusTd.appendChild(statusSel); tr.appendChild(statusTd);
 
-    const subjTd = el(`<td></td>`);
+    const subjTd = elCell(`<td></td>`);
     const subjSel = el(`<select></select>`);
     subjects.forEach(s=> subjSel.appendChild(el(`<option value="${s.key}" ${t.__subjectKey===s.key?'selected':''}>${s.label}</option>`)));
     const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
@@ -2813,30 +2823,30 @@ function renderTasksTab(){
     subjSel.onchange = ()=> moveTaskSubject(t.__subjectKey, t.id, subjSel.value);
     subjTd.appendChild(subjSel); tr.appendChild(subjTd);
 
-    const onsiteTd = el(`<td></td>`);
+    const onsiteTd = elCell(`<td></td>`);
     const onsiteSel = el(`<select></select>`);
     TASK_ONSITE_OPTS.forEach(o=> onsiteSel.appendChild(el(`<option value="${o}" ${t.onsite===o?'selected':''}>${o}</option>`)));
     onsiteSel.style.background = '#D6EAF8'; onsiteSel.style.color = '#274E70';
     onsiteSel.onchange = ()=> updateTaskField(t.__subjectKey, t.id, 'onsite', onsiteSel.value);
     onsiteTd.appendChild(onsiteSel); tr.appendChild(onsiteTd);
 
-    const dueTd = el(`<td><input type="date" value="${t.dueDate||''}" /></td>`);
+    const dueTd = elCell(`<td><input type="date" value="${t.dueDate||''}" /></td>`);
     dueTd.querySelector('input').onchange = async (e)=>{ await updateTaskField(t.__subjectKey, t.id, 'dueDate', e.target.value); render(); };
     tr.appendChild(dueTd);
 
     const uc = taskUrgencyColors(t.urgency);
-    tr.appendChild(el(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
-    tr.appendChild(el(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
 
-    const linkTd = el(`<td><input type="text" value="${(t.link||'').replace(/"/g,'&quot;')}" placeholder="https://…" /></td>`);
+    const linkTd = elCell(`<td><input type="text" value="${(t.link||'').replace(/"/g,'&quot;')}" placeholder="https://…" /></td>`);
     linkTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'link', e.target.value);
     tr.appendChild(linkTd);
 
-    const notesTd = el(`<td><input type="text" value="${(t.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes" /></td>`);
+    const notesTd = elCell(`<td><input type="text" value="${(t.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes" /></td>`);
     notesTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'notes', e.target.value);
     tr.appendChild(notesTd);
 
-    const delTd = el(`<td><button class="task-del" title="Delete task">×</button></td>`);
+    const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
     delTd.querySelector('button').onclick = ()=> deleteTask(t.__subjectKey, t.id);
     tr.appendChild(delTd);
 
