@@ -106,6 +106,17 @@
     white-space:nowrap;
   }
 
+  /* ---- task tracker ---- */
+  table.tasks{width:100%;border-collapse:collapse;font-size:calc(12.5px * var(--font-scale));}
+  table.tasks th{text-align:left;color:var(--muted);font-weight:600;font-size:calc(10.5px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:8px 8px;border-bottom:2px solid var(--navy-text);white-space:nowrap;}
+  table.tasks td{padding:5px 6px;border-bottom:1px solid #F0F1EF;vertical-align:middle;}
+  table.tasks input[type=text], table.tasks input[type=date]{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;}
+  table.tasks input[type=text]:focus, table.tasks input[type=date]:focus{border-color:var(--line);background:var(--surface);}
+  table.tasks select{border:none;border-radius:20px;padding:5px 10px;font-weight:600;font-size:calc(11.5px * var(--font-scale));cursor:pointer;width:100%;}
+  table.tasks tr:hover td{background:var(--line);}
+  .task-badge{display:inline-block;width:100%;text-align:center;border-radius:6px;padding:6px 8px;font-weight:700;font-size:calc(11px * var(--font-scale));letter-spacing:0.3px;white-space:nowrap;}
+  .task-del{background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:calc(15px * var(--font-scale));padding:2px 6px;}
+
   /* ---- staging table ---- */
   table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:calc(12.5px * var(--font-scale));}
   table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:calc(11px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
@@ -1040,6 +1051,8 @@ let state = {
   semesterType: 'first',   // personal — 'intersession' | 'first' | 'second'
   schoolYear: null,        // personal — 'YYYY-YYYY+1', set on load via defaultSchoolYear()
   googleClientId: '',      // personal — OAuth Client ID for direct Google Calendar insert (not a secret)
+  tasks: {},           // cache of shared per-subject task lists: { subjectKey: [task,...] } — loaded for subjects in your own schedule
+  personalTasks: [],   // personal task list for tasks not tied to a shared class subject ("Others")
 };
 
 // ============================= ADMIN GATE =============================
@@ -1075,7 +1088,7 @@ async function loadAll(){
 // Every personal (shared=false) key the app stores — used to copy a
 // guest's local data into their new account right after they sign up, so
 // creating an account doesn't wipe out work they already did as a guest.
-const PERSONAL_KEYS = ['members','schedules','manualEntries','blockColors','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear','googleClientId'];
+const PERSONAL_KEYS = ['members','schedules','manualEntries','blockColors','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear','googleClientId','personalTasks'];
 async function migrateGuestDataToAccount(){
   for(const key of PERSONAL_KEYS){
     let raw;
@@ -2058,6 +2071,7 @@ function render(){
   app.appendChild(renderHeader());
   app.appendChild(renderTabs());
   if(state.activeTab==='mine') app.appendChild(renderMemberEditor(state.meId));
+  else if(state.activeTab==='tasks') app.appendChild(renderTasksTab());
   else if(state.activeTab==='friends') app.appendChild(renderFriendsTab());
   else app.appendChild(renderCombinedTab());
 }
@@ -2098,9 +2112,13 @@ function renderHeader(){
 
 function renderTabs(){
   const wrap = el(`<div class="tabs"></div>`);
-  [['mine','My Schedule'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
+  [['mine','My Schedule'],['tasks','Tasks'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
     const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
-    b.onclick = ()=>{ state.activeTab=key; render(); };
+    b.onclick = async ()=>{
+      state.activeTab=key;
+      if(key==='tasks') await ensureTasksLoaded();
+      render();
+    };
     wrap.appendChild(b);
   });
   return wrap;
@@ -2578,6 +2596,234 @@ function renderGroupsPanel(){
   };
 
   return panel;
+}
+
+/* ============================= TASKS TAB ============================= */
+// Task tracker synced per class: the storage key for a subject's task list
+// is derived from that subject's own code+section (the same catalogKey used
+// for conflict-checking), NOT from any user id. So anyone who has that same
+// class in their own schedule automatically loads and writes to the exact
+// same shared list — no separate "who's in this class together" modeling
+// needed. Tasks not tied to a real class ("Others") stay personal.
+const TASK_STATUSES = ['Not started','In Progress','Did Not Push','Completed'];
+const TASK_ONSITE_OPTS = ['Onsite','Online'];
+function taskStatusColors(status){
+  switch(status){
+    case 'Did Not Push': return {bg:'#F3C6C6', fg:'#7A1E1E'};
+    case 'Completed':    return {bg:'#D9F2D9', fg:'#2E5B22'};
+    case 'In Progress':  return {bg:'#FFE7B0', fg:'#7A5A12'};
+    default:              return {bg:'#D6EAF8', fg:'#274E70'}; // Not started
+  }
+}
+function taskUrgencyColors(urgency){
+  switch(urgency){
+    case 'OVERDUE':       return {bg:'#7A1E1E', fg:'#FFFFFF'};
+    case 'URGENT':        return {bg:'#F6D6D6', fg:'#7A1E1E'};
+    case 'COMPLETED':     return {bg:'#BEEFA9', fg:'#2E5B22'};
+    case 'DID NOT PUSH':  return {bg:'#111111', fg:'#FFFFFF'};
+    default:               return {bg:'transparent', fg:'var(--muted)'};
+  }
+}
+
+// The list of subjects tasks can be filed under: every distinct class in
+// the signed-in person's OWN schedule (this is what makes syncing "you
+// have to actually be in the class" automatic), plus a catch-all "Others".
+function taskSubjectOptions(){
+  const entries = (state.schedules[state.meId]||[]).map(entryFor).filter(Boolean);
+  const seen = new Set();
+  const opts = [];
+  entries.forEach(e=>{
+    const key = catalogKey(e.code, e.section);
+    if(seen.has(key)) return;
+    seen.add(key);
+    const label = `${e.code||''} ${e.section||''}`.trim() || 'Untitled class';
+    opts.push({key, label});
+  });
+  opts.push({key:'others', label:'Others'});
+  return opts;
+}
+function taskSubjectColor(label, allLabelsInOrder){
+  const idx = allLabelsInOrder.indexOf(label);
+  return PASTEL_COLORS[(idx<0?0:idx) % PASTEL_COLORS.length];
+}
+
+async function ensureTasksLoaded(){
+  if(!state.__personalTasksLoaded){
+    state.personalTasks = (await sGet('personalTasks', false)) || [];
+    state.__personalTasksLoaded = true;
+  }
+  const subjects = taskSubjectOptions().filter(s=>s.key!=='others');
+  for(const s of subjects){
+    if(!(s.key in state.tasks)){
+      state.tasks[s.key] = (await sGet(`tasks:${s.key}`, true)) || [];
+    }
+  }
+}
+async function saveSubjectTasks(key){
+  await queueSave(()=> sSet(`tasks:${key}`, state.tasks[key]||[], true));
+}
+async function savePersonalTasks(){
+  await queueSave(()=> sSet('personalTasks', state.personalTasks, false));
+}
+function newTaskObj(){
+  return { id:'t_'+Math.random().toString(36).slice(2,9), task:'', status:'Not started', onsite:'Onsite', dueDate:'', link:'', notes:'' };
+}
+async function addTask(subjectKey){
+  const t = newTaskObj();
+  if(subjectKey==='others'){ state.personalTasks.push(t); await savePersonalTasks(); }
+  else { state.tasks[subjectKey] = state.tasks[subjectKey]||[]; state.tasks[subjectKey].push(t); await saveSubjectTasks(subjectKey); }
+  render();
+}
+async function updateTaskField(subjectKey, taskId, field, value){
+  const list = subjectKey==='others' ? state.personalTasks : (state.tasks[subjectKey]||[]);
+  const t = list.find(x=>x.id===taskId);
+  if(!t) return;
+  t[field] = value;
+  if(subjectKey==='others') await savePersonalTasks(); else await saveSubjectTasks(subjectKey);
+}
+// Moving a task to a different subject means moving it between two
+// different storage locations (possibly two different shared docs).
+async function moveTaskSubject(oldKey, taskId, newKey){
+  const oldList = oldKey==='others' ? state.personalTasks : (state.tasks[oldKey]||[]);
+  const idx = oldList.findIndex(x=>x.id===taskId);
+  if(idx<0) return;
+  const [t] = oldList.splice(idx,1);
+  if(oldKey==='others') await savePersonalTasks(); else await saveSubjectTasks(oldKey);
+  if(newKey==='others'){ state.personalTasks.push(t); await savePersonalTasks(); }
+  else { state.tasks[newKey] = state.tasks[newKey]||[]; state.tasks[newKey].push(t); await saveSubjectTasks(newKey); }
+  render();
+}
+async function deleteTask(subjectKey, taskId){
+  if(subjectKey==='others'){ state.personalTasks = state.personalTasks.filter(x=>x.id!==taskId); await savePersonalTasks(); }
+  else { state.tasks[subjectKey] = (state.tasks[subjectKey]||[]).filter(x=>x.id!==taskId); await saveSubjectTasks(subjectKey); }
+  render();
+}
+
+// Decorates a flat, date-sorted task list with .urgency and (dense,
+// date-grouped) .rank — see the walkthrough in the PR/chat for why this
+// exact scheme reproduces the reference tracker's numbers.
+function computeTaskUrgencyAndRank(tasks){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const sorted = [...tasks].sort((a,b)=>{
+    if(!a.dueDate && !b.dueDate) return 0;
+    if(!a.dueDate) return 1;
+    if(!b.dueDate) return -1;
+    return a.dueDate.localeCompare(b.dueDate);
+  });
+  let rankCounter = 0, lastDate = null;
+  return sorted.map(t=>{
+    let urgency, rank;
+    if(t.status==='Completed'){ urgency='COMPLETED'; rank='COMPLETED'; }
+    else if(t.status==='Did Not Push'){ urgency='DID NOT PUSH'; rank='DID NOT PUSH'; }
+    else if(!t.dueDate){ urgency='—'; rank='—'; }
+    else{
+      const due = new Date(t.dueDate+'T00:00:00');
+      urgency = due < today ? 'OVERDUE' : 'URGENT';
+      if(t.dueDate !== lastDate){ rankCounter++; lastDate = t.dueDate; }
+      rank = rankCounter;
+    }
+    return {...t, urgency, rank};
+  });
+}
+
+function renderTasksTab(){
+  const wrap = el(`<div></div>`);
+  wrap.appendChild(el(`<div class="panel">
+    <h3>Tasks</h3>
+    <p class="hint" style="margin:0;">Tasks for a class you're taking are shared automatically with anyone else who has that exact class (same code + section) in their own schedule — add one here and it shows up on their tracker too. Tasks filed under "Others" stay private to you.</p>
+  </div>`));
+
+  const subjects = taskSubjectOptions();
+  const subjectLabels = subjects.map(s=>s.label);
+
+  const merged = [];
+  subjects.forEach(s=>{
+    const list = s.key==='others' ? state.personalTasks : (state.tasks[s.key]||[]);
+    list.forEach(t=> merged.push({...t, __subjectKey:s.key, __subjectLabel:s.label}));
+  });
+  const decorated = computeTaskUrgencyAndRank(merged);
+
+  const panel = el(`<div class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px;">
+      <div class="row" style="gap:8px;">
+        <select id="newTaskSubject"></select>
+        <button id="addTaskBtn">+ Add task</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tasks">
+        <thead><tr>
+          <th>Task</th><th>Status</th><th>Subject</th><th>Onsite or Online</th><th>Due date</th>
+          <th>Urgency</th><th>Rank</th><th>Link to Task</th><th>Notes</th><th></th>
+        </tr></thead>
+        <tbody id="tasksBody"></tbody>
+      </table>
+    </div>
+  </div>`);
+
+  const subjectSelect = panel.querySelector('#newTaskSubject');
+  subjects.forEach(s=> subjectSelect.appendChild(el(`<option value="${s.key}">${s.label}</option>`)));
+  panel.querySelector('#addTaskBtn').onclick = ()=> addTask(subjectSelect.value);
+
+  const tbody = panel.querySelector('#tasksBody');
+  if(!decorated.length){
+    tbody.appendChild(el(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No tasks yet. Add one above — pick a class subject to share it with classmates, or "Others" to keep it just for you.</td></tr>`));
+  }
+  decorated.forEach(t=>{
+    const tr = el(`<tr></tr>`);
+
+    const taskTd = el(`<td><input type="text" value="${(t.task||'').replace(/"/g,'&quot;')}" placeholder="Task name" /></td>`);
+    taskTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'task', e.target.value);
+    tr.appendChild(taskTd);
+
+    const statusTd = el(`<td></td>`);
+    const statusSel = el(`<select></select>`);
+    TASK_STATUSES.forEach(s=> statusSel.appendChild(el(`<option value="${s}" ${t.status===s?'selected':''}>${s}</option>`)));
+    const paintStatus = ()=>{ const c=taskStatusColors(statusSel.value); statusSel.style.background=c.bg; statusSel.style.color=c.fg; };
+    paintStatus();
+    statusSel.onchange = async ()=>{ await updateTaskField(t.__subjectKey, t.id, 'status', statusSel.value); render(); };
+    statusTd.appendChild(statusSel); tr.appendChild(statusTd);
+
+    const subjTd = el(`<td></td>`);
+    const subjSel = el(`<select></select>`);
+    subjects.forEach(s=> subjSel.appendChild(el(`<option value="${s.key}" ${t.__subjectKey===s.key?'selected':''}>${s.label}</option>`)));
+    const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
+    subjSel.style.background = c; subjSel.style.color = '#2A2E3D';
+    subjSel.onchange = ()=> moveTaskSubject(t.__subjectKey, t.id, subjSel.value);
+    subjTd.appendChild(subjSel); tr.appendChild(subjTd);
+
+    const onsiteTd = el(`<td></td>`);
+    const onsiteSel = el(`<select></select>`);
+    TASK_ONSITE_OPTS.forEach(o=> onsiteSel.appendChild(el(`<option value="${o}" ${t.onsite===o?'selected':''}>${o}</option>`)));
+    onsiteSel.style.background = '#D6EAF8'; onsiteSel.style.color = '#274E70';
+    onsiteSel.onchange = ()=> updateTaskField(t.__subjectKey, t.id, 'onsite', onsiteSel.value);
+    onsiteTd.appendChild(onsiteSel); tr.appendChild(onsiteTd);
+
+    const dueTd = el(`<td><input type="date" value="${t.dueDate||''}" /></td>`);
+    dueTd.querySelector('input').onchange = async (e)=>{ await updateTaskField(t.__subjectKey, t.id, 'dueDate', e.target.value); render(); };
+    tr.appendChild(dueTd);
+
+    const uc = taskUrgencyColors(t.urgency);
+    tr.appendChild(el(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
+    tr.appendChild(el(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
+
+    const linkTd = el(`<td><input type="text" value="${(t.link||'').replace(/"/g,'&quot;')}" placeholder="https://…" /></td>`);
+    linkTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'link', e.target.value);
+    tr.appendChild(linkTd);
+
+    const notesTd = el(`<td><input type="text" value="${(t.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes" /></td>`);
+    notesTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'notes', e.target.value);
+    tr.appendChild(notesTd);
+
+    const delTd = el(`<td><button class="task-del" title="Delete task">×</button></td>`);
+    delTd.querySelector('button').onclick = ()=> deleteTask(t.__subjectKey, t.id);
+    tr.appendChild(delTd);
+
+    tbody.appendChild(tr);
+  });
+
+  wrap.appendChild(panel);
+  return wrap;
 }
 
 /* ============================= FRIENDS TAB ============================= */
