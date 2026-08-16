@@ -123,6 +123,26 @@
   table.tasks td.grow-cell{vertical-align:top;}
   table.tasks select{border:none;border-radius:20px;padding:5px 10px;font-weight:600;font-size:calc(11.5px * var(--font-scale));cursor:pointer;width:100%;}
   table.tasks tr:hover td{background:var(--line);}
+  /* Status/Subject use a custom pill button + popover instead of a native
+     <select> — a real <select>'s closed box always clips its label to one
+     line no matter what CSS is applied, so long text can't be shown in
+     full any other way. */
+  .task-pill-btn{
+    display:block;width:100%;border:none;border-radius:14px;padding:6px 10px;
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11.5px * var(--font-scale));
+    cursor:pointer;white-space:normal;word-break:break-word;text-align:center;line-height:1.35;
+  }
+  .task-pill-btn:hover{filter:brightness(0.96);}
+  .field-popover{
+    position:fixed;background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:5px;display:flex;flex-direction:column;gap:3px;z-index:200;box-shadow:0 6px 16px rgba(0,0,0,0.18);
+    max-height:280px;overflow:auto;
+  }
+  .field-popover-item{
+    padding:8px 12px;border-radius:6px;cursor:pointer;font-family:'Poppins',sans-serif;font-weight:600;
+    font-size:calc(12.5px * var(--font-scale));white-space:normal;word-break:break-word;line-height:1.35;
+  }
+  .field-popover-item:hover{filter:brightness(0.95);}
   .task-badge{display:inline-block;width:100%;text-align:center;border-radius:6px;padding:6px 8px;font-weight:700;font-size:calc(11px * var(--font-scale));letter-spacing:0.3px;white-space:nowrap;}
   .task-del{background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:calc(15px * var(--font-scale));padding:2px 6px;}
 
@@ -1491,6 +1511,31 @@ function openLabelIntervalPicker(anchorEl){
   }, 0);
 }
 
+// Generic "pill button opens a list of colored options" popover, used for
+// table fields (Status, Subject) where a native <select> can't show long
+// text in full. items: [{value, label, bg, fg}]. onSelect gets the chosen
+// value; the popover closes itself first either way.
+function openFieldPicker(anchorEl, items, onSelect){
+  document.querySelectorAll('.field-popover').forEach(p=>p.remove());
+  const rect = anchorEl.getBoundingClientRect();
+  const width = Math.max(rect.width, 160);
+  const left = Math.min(rect.left, window.innerWidth - width - 8);
+  const popover = el(`<div class="field-popover" style="top:${rect.bottom+4}px;left:${Math.max(8,left)}px;width:${width}px;"></div>`);
+  items.forEach(it=>{
+    const item = el(`<div class="field-popover-item" style="background:${it.bg||'transparent'};color:${it.fg||'var(--ink)'};">${it.label}</div>`);
+    item.onclick = (e)=>{ e.stopPropagation(); popover.remove(); document.removeEventListener('click', closeHandler); onSelect(it.value); };
+    popover.appendChild(item);
+  });
+  document.body.appendChild(popover);
+  const closeHandler = (ev)=>{
+    if(!popover.contains(ev.target) && ev.target!==anchorEl){
+      popover.remove();
+      document.removeEventListener('click', closeHandler);
+    }
+  };
+  setTimeout(()=> document.addEventListener('click', closeHandler), 0);
+}
+
 function openThemePicker(anchorEl){
   document.querySelectorAll('.swatch-popover').forEach(p=>p.remove());
   const rect = anchorEl.getBoundingClientRect();
@@ -2855,21 +2900,28 @@ function renderTasksTab(){
     scheduleAutoResize(taskInput);
     tr.appendChild(taskTd);
 
-    const statusTd = elCell(`<td></td>`);
-    const statusSel = el(`<select></select>`);
-    TASK_STATUSES.forEach(s=> statusSel.appendChild(el(`<option value="${s}" ${t.status===s?'selected':''}>${s}</option>`)));
-    const paintStatus = ()=>{ const c=taskStatusColors(statusSel.value); statusSel.style.background=c.bg; statusSel.style.color=c.fg; };
+    const statusTd = elCell(`<td class="grow-cell"></td>`);
+    const statusBtn = el(`<button type="button" class="task-pill-btn"></button>`);
+    const paintStatus = ()=>{ const c=taskStatusColors(t.status); statusBtn.style.background=c.bg; statusBtn.style.color=c.fg; statusBtn.textContent=t.status; };
     paintStatus();
-    statusSel.onchange = async ()=>{ await setTaskStatus(t.__subjectKey, t.id, statusSel.value); render(); };
-    statusTd.appendChild(statusSel); tr.appendChild(statusTd);
+    statusBtn.onclick = (e)=>{
+      e.stopPropagation();
+      const items = TASK_STATUSES.map(s=>{ const c=taskStatusColors(s); return {value:s, label:s, bg:c.bg, fg:c.fg}; });
+      openFieldPicker(statusBtn, items, async (val)=>{ await setTaskStatus(t.__subjectKey, t.id, val); render(); });
+    };
+    statusTd.appendChild(statusBtn); tr.appendChild(statusTd);
 
-    const subjTd = elCell(`<td></td>`);
-    const subjSel = el(`<select></select>`);
-    subjects.forEach(s=> subjSel.appendChild(el(`<option value="${s.key}" ${t.__subjectKey===s.key?'selected':''}>${s.label}</option>`)));
+    const subjTd = elCell(`<td class="grow-cell"></td>`);
+    const subjBtn = el(`<button type="button" class="task-pill-btn"></button>`);
     const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
-    subjSel.style.background = c; subjSel.style.color = '#2A2E3D';
-    subjSel.onchange = ()=> moveTaskSubject(t.__subjectKey, t.id, subjSel.value);
-    subjTd.appendChild(subjSel); tr.appendChild(subjTd);
+    subjBtn.style.background = c; subjBtn.style.color = '#2A2E3D';
+    subjBtn.textContent = t.__subjectLabel;
+    subjBtn.onclick = (e)=>{
+      e.stopPropagation();
+      const items = subjects.map(s=>{ const cc=taskSubjectColor(s.label, subjectLabels); return {value:s.key, label:s.label, bg:cc, fg:'#2A2E3D'}; });
+      openFieldPicker(subjBtn, items, (val)=> moveTaskSubject(t.__subjectKey, t.id, val));
+    };
+    subjTd.appendChild(subjBtn); tr.appendChild(subjTd);
 
     const onsiteTd = elCell(`<td></td>`);
     const onsiteSel = el(`<select></select>`);
