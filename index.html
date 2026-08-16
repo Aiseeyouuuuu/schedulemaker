@@ -112,6 +112,15 @@
   table.tasks td{padding:5px 6px;border-bottom:1px solid #F0F1EF;vertical-align:middle;}
   table.tasks input[type=text], table.tasks input[type=date]{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;}
   table.tasks input[type=text]:focus, table.tasks input[type=date]:focus{border-color:var(--line);background:var(--surface);}
+  /* Free-text fields (task name, link, notes) auto-grow vertically as you
+     type instead of clipping long content — see autoResizeTextarea(). */
+  table.tasks textarea{
+    display:block;width:100%;min-height:28px;border:1px solid transparent;background:transparent;
+    padding:5px 6px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;
+    border-radius:6px;resize:none;overflow:hidden;line-height:1.4;white-space:pre-wrap;word-break:break-word;
+  }
+  table.tasks textarea:focus{border-color:var(--line);background:var(--surface);}
+  table.tasks td.grow-cell{vertical-align:top;}
   table.tasks select{border:none;border-radius:20px;padding:5px 10px;font-weight:600;font-size:calc(11.5px * var(--font-scale));cursor:pointer;width:100%;}
   table.tasks tr:hover td{background:var(--line);}
   .task-badge{display:inline-block;width:100%;text-align:center;border-radius:6px;padding:6px 8px;font-weight:700;font-size:calc(11px * var(--font-scale));letter-spacing:0.3px;white-space:nowrap;}
@@ -1591,6 +1600,19 @@ function elCell(tdHtml){
   t.innerHTML = `<tbody><tr>${tdHtml.trim()}</tr></tbody>`;
   return t.querySelector('td');
 }
+// Grows a <textarea> to fit its content vertically instead of clipping or
+// scrolling. Needs the element to actually be laid out (a real width) to
+// measure scrollHeight correctly, so callers doing this right after
+// insertion should go through scheduleAutoResize below instead.
+function autoResizeTextarea(ta){
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+// Detached/just-inserted nodes can report scrollHeight:0 before the browser
+// has painted them, so the very first sizing pass waits a frame.
+function scheduleAutoResize(ta){
+  requestAnimationFrame(()=> autoResizeTextarea(ta));
+}
 
 // Native window.confirm()/alert() are disabled in many sandboxed preview
 // iframes (including this one) — they silently no-op instead of throwing,
@@ -2803,8 +2825,12 @@ function renderTasksTab(){
   decorated.forEach(t=>{
     const tr = elRow(`<tr></tr>`);
 
-    const taskTd = elCell(`<td><input type="text" value="${(t.task||'').replace(/"/g,'&quot;')}" placeholder="Task name" /></td>`);
-    taskTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'task', e.target.value);
+    const taskTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
+    const taskInput = taskTd.querySelector('textarea');
+    taskInput.value = t.task || '';
+    taskInput.oninput = ()=> autoResizeTextarea(taskInput);
+    taskInput.onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'task', e.target.value);
+    scheduleAutoResize(taskInput);
     tr.appendChild(taskTd);
 
     const statusTd = elCell(`<td></td>`);
@@ -2838,12 +2864,20 @@ function renderTasksTab(){
     tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
     tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
 
-    const linkTd = elCell(`<td><input type="text" value="${(t.link||'').replace(/"/g,'&quot;')}" placeholder="https://…" /></td>`);
-    linkTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'link', e.target.value);
+    const linkTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="https://…"></textarea></td>`);
+    const linkInput = linkTd.querySelector('textarea');
+    linkInput.value = t.link || '';
+    linkInput.oninput = ()=> autoResizeTextarea(linkInput);
+    linkInput.onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'link', e.target.value);
+    scheduleAutoResize(linkInput);
     tr.appendChild(linkTd);
 
-    const notesTd = elCell(`<td><input type="text" value="${(t.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes" /></td>`);
-    notesTd.querySelector('input').onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'notes', e.target.value);
+    const notesTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="Notes"></textarea></td>`);
+    const notesInput = notesTd.querySelector('textarea');
+    notesInput.value = t.notes || '';
+    notesInput.oninput = ()=> autoResizeTextarea(notesInput);
+    notesInput.onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'notes', e.target.value);
+    scheduleAutoResize(notesInput);
     tr.appendChild(notesTd);
 
     const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
