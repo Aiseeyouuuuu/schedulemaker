@@ -151,6 +151,23 @@
   .task-badge{display:inline-block;width:100%;text-align:center;border-radius:6px;padding:6px 8px;font-weight:700;font-size:calc(11px * var(--font-scale));letter-spacing:0.3px;white-space:nowrap;}
   .task-del{background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:calc(15px * var(--font-scale));padding:2px 6px;}
 
+  /* ---- urgent tasks summary (Tasks tab) ---- */
+  table.urgent-tasks{width:100%;border-collapse:collapse;font-size:calc(13px * var(--font-scale));table-layout:fixed;}
+  table.urgent-tasks caption{
+    background:#E6C7C9;color:#2A2E3D;font-family:'Poppins',sans-serif;font-weight:700;
+    font-size:calc(14px * var(--font-scale));padding:10px 14px;text-align:center;caption-side:top;
+    border:1px solid #2A2E3D;border-bottom:none;
+  }
+  table.urgent-tasks th{
+    text-align:left;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(13px * var(--font-scale));
+    padding:9px 12px;border:1px solid #2A2E3D;background:var(--surface);
+  }
+  table.urgent-tasks td{padding:9px 12px;border:1px solid #D9D9D9;border-top:none;}
+  table.urgent-tasks td.ut-rank{text-align:right;font-weight:600;}
+  table.urgent-tasks tr:last-child td{border-bottom:1px solid #2A2E3D;}
+  table.urgent-tasks td:first-child, table.urgent-tasks th:first-child{border-left:1px solid #2A2E3D;}
+  table.urgent-tasks td:last-child, table.urgent-tasks th:last-child{border-right:1px solid #2A2E3D;}
+
   /* ---- staging table ---- */
   table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:calc(12.5px * var(--font-scale));}
   table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:calc(11px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
@@ -2867,6 +2884,33 @@ function renderTasksTab(){
     list.forEach(t=> merged.push({...t, status:getEffectiveStatus(s.key, t), __subjectKey:s.key, __subjectLabel:s.label}));
   });
   const decorated = computeTaskUrgencyAndRank(merged);
+
+  // Urgent-tasks summary: everything due OVERDUE / TODAY / URGENT, ordered
+  // earliest deadline first (decorated is already sorted by dueDate, which
+  // rank tracks 1:1, so no extra sort is needed here).
+  const urgentTasks = decorated.filter(t=> t.urgency==='OVERDUE' || t.urgency==='TODAY' || t.urgency==='URGENT');
+  if(urgentTasks.length){
+    const urgentPanel = el(`<div class="panel">
+      <div style="overflow-x:auto;">
+        <table class="urgent-tasks">
+          <caption>URGENT TASKS</caption>
+          <thead><tr><th>Task</th><th>Subject</th><th>Due date</th><th>Rank</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>`);
+    const utBody = urgentPanel.querySelector('tbody');
+    urgentTasks.forEach(t=>{
+      const tr = document.createElement('tr');
+      const taskTd = document.createElement('td'); taskTd.textContent = t.task || '';
+      const subjTd = document.createElement('td'); subjTd.textContent = t.__subjectLabel || '';
+      const dueTd = document.createElement('td'); dueTd.textContent = t.dueDate || '';
+      const rankTd = document.createElement('td'); rankTd.className = 'ut-rank'; rankTd.textContent = t.rank;
+      tr.appendChild(taskTd); tr.appendChild(subjTd); tr.appendChild(dueTd); tr.appendChild(rankTd);
+      utBody.appendChild(tr);
+    });
+    wrap.appendChild(urgentPanel);
+  }
 
   const panel = el(`<div class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:8px;">
