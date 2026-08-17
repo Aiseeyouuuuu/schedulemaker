@@ -1706,6 +1706,66 @@ function findFreeTimes(boardGroups, filters){
   return results;
 }
 
+// Merged busy intervals for ONE person's own entries on a single day —
+// used to check how far a proposed free slot sits from that person's own
+// neighboring classes (see personWaitForSlot below).
+function personDayIntervals(entries, day){
+  const list = [];
+  (entries||[]).forEach(entry=>{
+    (entry.meetings||[]).forEach(m=>{
+      if(m.days && m.days.includes(day) && m.start!=null && m.end!=null) list.push({start:m.start, end:m.end});
+    });
+  });
+  list.sort((a,b)=>a.start-b.start);
+  const merged = [];
+  list.forEach(iv=>{
+    if(merged.length && iv.start<=merged[merged.length-1].end){
+      merged[merged.length-1].end = Math.max(merged[merged.length-1].end, iv.end);
+    } else merged.push({...iv});
+  });
+  return merged;
+}
+
+// A shared free slot is only actually convenient if nobody has to sit
+// around campus for it. This looks at ONE person's own classes that day
+// and returns the longer of: how long they'd be done-and-waiting before
+// the slot starts (if they have a class right before it), and how long
+// they'd be waiting-before-their-next-class after it ends (if they have
+// one right after). Returns null if neither side applies — meaning they
+// have no class that day bracketing the slot, so there's nothing to wait
+// out; they'd just come for the meeting itself.
+function personWaitForSlot(intervals, slotStart, slotEnd){
+  let prevEnd = null, nextStart = null;
+  intervals.forEach(iv=>{
+    if(iv.end<=slotStart && (prevEnd===null || iv.end>prevEnd)) prevEnd = iv.end;
+    if(iv.start>=slotEnd && (nextStart===null || iv.start<nextStart)) nextStart = iv.start;
+  });
+  const gapBefore = prevEnd!=null ? slotStart-prevEnd : null;
+  const gapAfter = nextStart!=null ? nextStart-slotEnd : null;
+  const candidates = [gapBefore, gapAfter].filter(g=>g!=null);
+  if(!candidates.length) return null;
+  return Math.max(...candidates);
+}
+
+// Who (if anyone) shown in boardGroups would have a 3+ hour dead-time wait
+// around this specific free slot. Returns [{name, waitMinutes}, ...].
+const LONG_WAIT_MINUTES = 180;
+function longWaitersForSlot(boardGroups, slot){
+  const waiters = [];
+  boardGroups.forEach(g=>{
+    const intervals = personDayIntervals(g.entries, slot.day);
+    const wait = personWaitForSlot(intervals, slot.start, slot.end);
+    if(wait!=null && wait > LONG_WAIT_MINUTES) waiters.push({name:g.member.name, waitMinutes:wait});
+  });
+  return waiters;
+}
+function minutesToDuration(mins){
+  const h = Math.floor(mins/60), m = Math.round(mins%60);
+  if(h && m) return `${h}h ${m}m`;
+  if(h) return `${h}h`;
+  return `${m}m`;
+}
+
 // entries carry .meetings[]; conflict if any meeting pair between the two overlaps
 function entriesConflict(entryA, entryB){
   return (entryA.meetings||[]).some(ma=>(entryB.meetings||[]).some(mb=>meetingOverlap(ma,mb)));
@@ -3499,17 +3559,32 @@ function renderCombinedTab(){
     } else if(!state.freeTime.results.length){
       ftResultsEl.appendChild(el(`<p class="hint" style="margin:0;">No shared free time that long was found in that window — try widening the time range, lowering the minimum, or picking fewer people.</p>`));
     } else {
-      const list = el(`<div style="display:flex;flex-direction:column;gap:6px;"></div>`);
+      const list = el(`<div style="display:flex;flex-direction:column;gap:10px;"></div>`);
       state.freeTime.results.forEach(r=>{
-        list.appendChild(el(`<div style="font-size:calc(13.5px * var(--font-scale));color:var(--ink);">
+        const row = el(`<div></div>`);
+        row.appendChild(el(`<div style="font-size:calc(13.5px * var(--font-scale));color:var(--ink);">
           <b>${DAY_FULL[r.day]}</b> — ${minutesToLabel(r.start)} – ${minutesToLabel(r.end)}
         </div>`));
+        const waiters = longWaitersForSlot(boardGroups, r);
+        if(waiters.length){
+          const names = waiters.map(w=>`${w.name} (${minutesToDuration(w.waitMinutes)})`).join(', ');
+          row.appendChild(el(`<div class="hint" style="margin:2px 0 0;color:var(--danger);">
+            ⚠️ ${names} would have a 3+ hour wait on campus around this time — probably not realistic just to meet up.
+          </div>`));
+        }
+        list.appendChild(row);
       });
       ftResultsEl.appendChild(list);
 
-      const best = state.freeTime.results.reduce((b,r)=> (r.end-r.start) > (b ? b.end-b.start : -1) ? r : b, null);
+      // Prefer the longest slot that nobody has a long wait for; only fall
+      // back to the longest slot overall if every option has a long-waiter.
+      const clean = state.freeTime.results.filter(r=> !longWaitersForSlot(boardGroups, r).length);
+      const pool = clean.length ? clean : state.freeTime.results;
+      const best = pool.reduce((b,r)=> (r.end-r.start) > (b ? b.end-b.start : -1) ? r : b, null);
+      const bestWaiters = longWaitersForSlot(boardGroups, best);
       ftResultsEl.appendChild(el(`<div style="margin-top:12px;padding:10px 14px;background:var(--gold);color:var(--gold-ink);border-radius:8px;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(13.5px * var(--font-scale));">
         🏆 Best time: ${DAY_FULL[best.day]}, ${minutesToLabel(best.start)} – ${minutesToLabel(best.end)}
+        ${bestWaiters.length ? `<div style="font-weight:600;font-size:calc(12px * var(--font-scale));margin-top:4px;">⚠️ ${bestWaiters.map(w=>w.name).join(', ')} would still have a long wait for this one.</div>` : ''}
       </div>`));
     }
   }
