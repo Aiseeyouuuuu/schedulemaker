@@ -3218,13 +3218,13 @@ function renderFriendsTab(){
 
   const manage = el(`
     <div class="panel">
-      <h3>Manually-tracked friends</h3>
+      <h3>Your friends</h3>
       <div class="friend-manage" id="chipRow"></div>
       <div class="row">
         <input type="text" id="friendName" placeholder="Friend's name" style="width:200px"/>
         <button id="addFriend">Add friend</button>
       </div>
-      <p class="hint">Type in a friend's classes yourself — saved to your own browser only. Friends connected by account (above) show up automatically instead.</p>
+      <p class="hint">Friends connected by account (🔗, from above) sync automatically. Add someone here to type in their classes yourself instead — saved to your own browser only.</p>
     </div>`);
   const chipRow = manage.querySelector('#chipRow');
   state.members.forEach(m=>{
@@ -3978,30 +3978,34 @@ function openWallpaperBuilder(groups){
   const downloadBtn = backdrop.querySelector('#wpDownload');
   const resetBtn = backdrop.querySelector('#wpReset');
 
+  function paintCanvasBackground(w, h){
+    if(bgImage){
+      drawImageCover(ctx, bgImage, 0, 0, w, h);
+    } else if(bgGradient){
+      // Gradient runs from the exact chosen color to a mild variant of
+      // the SAME color (darker if it's light, lighter if it's dark) —
+      // enough to read as a gradient without washing the color out.
+      const isLight = getContrastTextColor(bgHex) === '#1C2430';
+      const grad = ctx.createLinearGradient(0,0,w,h);
+      grad.addColorStop(0, bgHex);
+      grad.addColorStop(1, isLight ? darkenHex(bgHex,0.22) : lightenHex(bgHex,0.22));
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,w,h);
+    } else {
+      // Exact chosen color/shade, no forced lightening — a user who
+      // picks a deep navy or a bright red gets that color as-is.
+      ctx.fillStyle = bgHex;
+      ctx.fillRect(0,0,w,h);
+    }
+  }
+
   function draw(){
     const wScale = sizeWPct/100, hScale = sizeHPct/100;
     if(mode==='wallpaper'){
       const d = WALLPAPER_DIMS[device];
       canvas.width = d.w; canvas.height = d.h;
       ctx.clearRect(0,0,d.w,d.h);
-      if(bgImage){
-        drawImageCover(ctx, bgImage, 0, 0, d.w, d.h);
-      } else if(bgGradient){
-        // Gradient runs from the exact chosen color to a mild variant of
-        // the SAME color (darker if it's light, lighter if it's dark) —
-        // enough to read as a gradient without washing the color out.
-        const isLight = getContrastTextColor(bgHex) === '#1C2430';
-        const grad = ctx.createLinearGradient(0,0,d.w,d.h);
-        grad.addColorStop(0, bgHex);
-        grad.addColorStop(1, isLight ? darkenHex(bgHex,0.22) : lightenHex(bgHex,0.22));
-        ctx.fillStyle = grad;
-        ctx.fillRect(0,0,d.w,d.h);
-      } else {
-        // Exact chosen color/shade, no forced lightening — a user who
-        // picks a deep navy or a bright red gets that color as-is.
-        ctx.fillStyle = bgHex;
-        ctx.fillRect(0,0,d.w,d.h);
-      }
+      paintCanvasBackground(d.w, d.h);
       // Font/padding scale tracks canvas resolution only, independent of the
       // width/height stretch sliders — so stretching resizes the table's
       // shape without warping its text.
@@ -4013,8 +4017,11 @@ function openWallpaperBuilder(groups){
       paintTable(ctx, layout, baseX, baseY, tableW, groups, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval, tableFont);
     } else {
       // Image mode: canvas is sized to exactly fit the table — no device
-      // frame, no background photo, no drag. Width/height stretch sliders
-      // control the table's shape; text stays a fixed, crisp size.
+      // frame, no drag. Background color/gradient/photo is still
+      // user-choosable (bgRow), it just always fills edge-to-edge since
+      // there's no larger frame to reposition it within. Width/height
+      // stretch sliders control the table's shape; text stays a fixed,
+      // crisp size.
       const fontScale = 1;
       const margin = 24;
       const tableW = IMAGE_MODE_BASE_W*0.88*wScale;
@@ -4022,7 +4029,8 @@ function openWallpaperBuilder(groups){
       canvas.width = tableW + margin*2;
       canvas.height = layout.tableH + margin*2;
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      paintTable(ctx, layout, margin, margin, tableW, groups, 1, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval, tableFont);
+      paintCanvasBackground(canvas.width, canvas.height);
+      paintTable(ctx, layout, margin, margin, tableW, groups, opacity, style, fontScale, tableColor, textScale, daysColor, timesColor, classesColor, labelInterval, tableFont);
     }
   }
 
@@ -4036,8 +4044,8 @@ function openWallpaperBuilder(groups){
     modeImageBtn.classList.toggle('active', m==='image');
     const isWallpaper = m==='wallpaper';
     deviceRow.style.display = isWallpaper ? 'flex' : 'none';
-    bgRow.style.display = isWallpaper ? 'flex' : 'none';
-    opacityRow.style.display = isWallpaper ? 'flex' : 'none';
+    bgRow.style.display = 'flex'; // background color/pastel/wheel picker: available in both modes
+    opacityRow.style.display = 'flex';
     dragHint.style.display = isWallpaper ? 'block' : 'none';
     resetBtn.style.display = isWallpaper ? 'inline-flex' : 'none';
     canvas.style.cursor = isWallpaper ? 'grab' : 'default';
