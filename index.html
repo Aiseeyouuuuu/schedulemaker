@@ -3565,13 +3565,18 @@ function renderCombinedTab(){
         row.appendChild(el(`<div style="font-size:calc(13.5px * var(--font-scale));color:var(--ink);">
           <b>${DAY_FULL[r.day]}</b> — ${minutesToLabel(r.start)} – ${minutesToLabel(r.end)}
         </div>`));
+
         const waiters = longWaitersForSlot(boardGroups, r);
         if(waiters.length){
           const names = waiters.map(w=>`${w.name} (${minutesToDuration(w.waitMinutes)})`).join(', ');
-          row.appendChild(el(`<div class="hint" style="margin:2px 0 0;color:var(--danger);">
-            ⚠️ ${names} would have a 3+ hour wait on campus around this time — probably not realistic just to meet up.
-          </div>`));
+          row.appendChild(el(`<div class="hint" style="margin:2px 0 0;color:var(--danger);">⚠️ Long wait: ${names}</div>`));
         }
+
+        const noClassPeople = boardGroups.filter(g=> !personDayIntervals(g.entries, r.day).length).map(g=>g.member.name);
+        if(noClassPeople.length){
+          row.appendChild(el(`<div class="hint" style="margin:2px 0 0;">📌 No classes ${DAY_FULL[r.day]}: ${noClassPeople.join(', ')} — may not already be on campus.</div>`));
+        }
+
         list.appendChild(row);
       });
       ftResultsEl.appendChild(list);
@@ -3584,7 +3589,7 @@ function renderCombinedTab(){
       const bestWaiters = longWaitersForSlot(boardGroups, best);
       ftResultsEl.appendChild(el(`<div style="margin-top:12px;padding:10px 14px;background:var(--gold);color:var(--gold-ink);border-radius:8px;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(13.5px * var(--font-scale));">
         🏆 Best time: ${DAY_FULL[best.day]}, ${minutesToLabel(best.start)} – ${minutesToLabel(best.end)}
-        ${bestWaiters.length ? `<div style="font-weight:600;font-size:calc(12px * var(--font-scale));margin-top:4px;">⚠️ ${bestWaiters.map(w=>w.name).join(', ')} would still have a long wait for this one.</div>` : ''}
+        ${bestWaiters.length ? `<div style="font-weight:600;font-size:calc(12px * var(--font-scale));margin-top:4px;">⚠️ Long wait: ${bestWaiters.map(w=>w.name).join(', ')}</div>` : ''}
       </div>`));
     }
   }
