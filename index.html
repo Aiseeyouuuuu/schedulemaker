@@ -152,21 +152,32 @@
   .task-del{background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:calc(15px * var(--font-scale));padding:2px 6px;}
 
   /* ---- urgent tasks summary (Tasks tab) ---- */
-  table.urgent-tasks{width:100%;border-collapse:collapse;font-size:calc(13px * var(--font-scale));table-layout:fixed;}
-  table.urgent-tasks caption{
-    background:#E6C7C9;color:#2A2E3D;font-family:'Poppins',sans-serif;font-weight:700;
-    font-size:calc(14px * var(--font-scale));padding:10px 14px;text-align:center;caption-side:top;
-    border:1px solid #2A2E3D;border-bottom:none;
+  .urgent-panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:18px;overflow:hidden;}
+  .urgent-banner{
+    display:flex;align-items:center;gap:8px;padding:12px 20px;
+    background:linear-gradient(135deg, #E7A2AE, #D9748A);
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(14px * var(--font-scale));
+    color:#FFFFFF;letter-spacing:0.3px;
   }
+  .urgent-banner .dot{width:8px;height:8px;border-radius:50%;background:#FFFFFF;opacity:0.85;flex:none;}
+  table.urgent-tasks{width:100%;border-collapse:collapse;font-size:calc(12.5px * var(--font-scale));}
   table.urgent-tasks th{
-    text-align:left;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(13px * var(--font-scale));
-    padding:9px 12px;border:1px solid #2A2E3D;background:var(--surface);
+    text-align:left;color:var(--muted);font-weight:600;font-size:calc(10.5px * var(--font-scale));
+    text-transform:uppercase;letter-spacing:0.4px;padding:10px 20px 8px;border-bottom:1px solid var(--line);
   }
-  table.urgent-tasks td{padding:9px 12px;border:1px solid #D9D9D9;border-top:none;}
-  table.urgent-tasks td.ut-rank{text-align:right;font-weight:600;}
-  table.urgent-tasks tr:last-child td{border-bottom:1px solid #2A2E3D;}
-  table.urgent-tasks td:first-child, table.urgent-tasks th:first-child{border-left:1px solid #2A2E3D;}
-  table.urgent-tasks td:last-child, table.urgent-tasks th:last-child{border-right:1px solid #2A2E3D;}
+  table.urgent-tasks td{padding:9px 20px;border-bottom:1px solid #F0F1EF;vertical-align:middle;}
+  table.urgent-tasks tr:last-child td{border-bottom:none;}
+  table.urgent-tasks tr:hover td{background:var(--line);}
+  table.urgent-tasks td.ut-task{font-weight:500;color:var(--ink);}
+  table.urgent-tasks td.ut-due{color:var(--muted);white-space:nowrap;}
+  .ut-subject-pill{
+    display:inline-block;font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11px * var(--font-scale));
+    padding:3px 10px;border-radius:20px;background:var(--line);color:var(--navy-text);white-space:nowrap;
+  }
+  .ut-rank-badge{
+    display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;
+    border-radius:20px;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(11.5px * var(--font-scale));
+  }
 
   /* ---- staging table ---- */
   table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:calc(12.5px * var(--font-scale));}
@@ -2890,10 +2901,10 @@ function renderTasksTab(){
   // rank tracks 1:1, so no extra sort is needed here).
   const urgentTasks = decorated.filter(t=> t.urgency==='OVERDUE' || t.urgency==='TODAY' || t.urgency==='URGENT');
   if(urgentTasks.length){
-    const urgentPanel = el(`<div class="panel">
+    const urgentPanel = el(`<div class="urgent-panel">
+      <div class="urgent-banner"><span class="dot"></span>Urgent tasks</div>
       <div style="overflow-x:auto;">
         <table class="urgent-tasks">
-          <caption>URGENT TASKS</caption>
           <thead><tr><th>Task</th><th>Subject</th><th>Due date</th><th>Rank</th></tr></thead>
           <tbody></tbody>
         </table>
@@ -2901,11 +2912,22 @@ function renderTasksTab(){
     </div>`);
     const utBody = urgentPanel.querySelector('tbody');
     urgentTasks.forEach(t=>{
+      const uc = taskUrgencyColors(t.urgency);
       const tr = document.createElement('tr');
-      const taskTd = document.createElement('td'); taskTd.textContent = t.task || '';
-      const subjTd = document.createElement('td'); subjTd.textContent = t.__subjectLabel || '';
-      const dueTd = document.createElement('td'); dueTd.textContent = t.dueDate || '';
-      const rankTd = document.createElement('td'); rankTd.className = 'ut-rank'; rankTd.textContent = t.rank;
+
+      const taskTd = document.createElement('td'); taskTd.className = 'ut-task'; taskTd.textContent = t.task || '';
+
+      const subjTd = document.createElement('td');
+      const subjPill = document.createElement('span'); subjPill.className = 'ut-subject-pill';
+      subjPill.textContent = t.__subjectLabel || ''; subjTd.appendChild(subjPill);
+
+      const dueTd = document.createElement('td'); dueTd.className = 'ut-due'; dueTd.textContent = t.dueDate || '';
+
+      const rankTd = document.createElement('td');
+      const rankBadge = document.createElement('span'); rankBadge.className = 'ut-rank-badge';
+      rankBadge.style.background = uc.bg; rankBadge.style.color = uc.fg;
+      rankBadge.textContent = t.rank; rankTd.appendChild(rankBadge);
+
       tr.appendChild(taskTd); tr.appendChild(subjTd); tr.appendChild(dueTd); tr.appendChild(rankTd);
       utBody.appendChild(tr);
     });
