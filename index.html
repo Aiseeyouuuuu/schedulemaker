@@ -2915,8 +2915,9 @@ function renderTasksTab(){
   // earliest deadline first (decorated is already sorted by dueDate, which
   // rank tracks 1:1, so no extra sort is needed here).
   const urgentTasks = decorated.filter(t=> t.urgency==='OVERDUE' || t.urgency==='TODAY' || t.urgency==='URGENT');
+  let urgentPanel = null;
   if(urgentTasks.length){
-    const urgentPanel = el(`<div class="urgent-panel">
+    urgentPanel = el(`<div class="urgent-panel" style="flex:1;min-width:280px;margin-bottom:0;">
       <div class="urgent-banner"><span class="dot"></span>Urgent tasks</div>
       <div style="overflow-x:auto;">
         <table class="urgent-tasks">
@@ -2946,17 +2947,22 @@ function renderTasksTab(){
       tr.appendChild(taskTd); tr.appendChild(subjTd); tr.appendChild(dueTd); tr.appendChild(rankTd);
       utBody.appendChild(tr);
     });
-    wrap.appendChild(urgentPanel);
   }
 
   // Completed-tasks count — small stat card, green to echo the Completed
   // status/urgency color used elsewhere in the tracker.
   const completedCount = decorated.filter(t=> t.urgency==='COMPLETED').length;
-  const statCard = el(`<div class="stat-card">
+  const statCard = el(`<div class="stat-card" style="margin-bottom:0;align-self:flex-start;">
     <div class="stat-card-label">Completed tasks 🎉</div>
     <div class="stat-card-value">${completedCount}</div>
   </div>`);
-  wrap.appendChild(statCard);
+
+  if(urgentPanel || completedCount){
+    const summaryRow = el(`<div class="row" style="align-items:flex-start;gap:16px;margin-bottom:18px;"></div>`);
+    if(urgentPanel) summaryRow.appendChild(urgentPanel);
+    summaryRow.appendChild(statCard);
+    wrap.appendChild(summaryRow);
+  }
 
   const panel = el(`<div class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:8px;">
