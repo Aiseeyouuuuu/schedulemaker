@@ -2569,12 +2569,10 @@ function renderMemberEditor(memberId){
     const wpRow = el(`<div class="row" style="margin-top:14px;align-items:center;">
       <button class="ghost" id="makeWallpaperBtn">⬇️ Download</button>
       <button id="gcalBtn">📅 Add to Google Calendar</button>
-      <button class="ghost small" id="gcalSettingsBtn" title="Change Google Calendar connection">⚙️</button>
       <button class="ghost small" id="gcalIcsBtn" title="Download a .ics file instead (manual import)">.ics instead</button>
     </div>`);
     wpRow.querySelector('#makeWallpaperBtn').onclick = ()=> openWallpaperBuilder([{member, entries}]);
     wpRow.querySelector('#gcalBtn').onclick = ()=> insertScheduleIntoGoogleCalendar(memberId);
-    wpRow.querySelector('#gcalSettingsBtn').onclick = ()=> openGoogleCalendarSetupModal();
     wpRow.querySelector('#gcalIcsBtn').onclick = ()=> exportScheduleToGoogleCalendar(memberId);
     wrap.appendChild(wpRow);
   }
