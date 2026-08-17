@@ -452,6 +452,7 @@ function queueSave(fn){
 /* ============================= TIME / DAY HELPERS ============================= */
 const DAY_ORDER = ['Mon','Tue','Wed','Thu','Fri','Sat'];
 const DAY_LABEL = {Mon:'MON',Tue:'TUE',Wed:'WED',Thu:'THU',Fri:'FRI',Sat:'SAT'};
+const DAY_FULL = {Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday'};
 
 const SINGLE_LETTER_DAY = {M:'Mon', T:'Tue', W:'Wed', H:'Thu', F:'Fri', S:'Sat'};
 const WORD_DAY = {
@@ -517,6 +518,11 @@ function minutesToLabel(mins){
   const ap = h>=12 ? 'PM':'AM';
   let h12 = h%12; if(h12===0) h12=12;
   return `${h12}:${String(m).padStart(2,'0')} ${ap}`;
+}
+// "09:00"-style value for an <input type="time">, from minutes-since-midnight.
+function minutesToHHMM(mins){
+  const h = Math.floor(mins/60), m = mins%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 // Compact hour-only label ("8a", "12p") used by the 'editorial' wallpaper style.
 function abbrevHourLabel(mins){
@@ -1145,6 +1151,7 @@ let state = {
   friendEditingId: null,
   activeGroupId: null, // which group's members are currently shown in Combined view, or null for everyone
   combinedOn: new Set(),
+  freeTime: { days:['Mon','Tue','Wed','Thu','Fri'], startMin:9*60, endMin:18*60, minMinutes:60, results:null }, // ephemeral Find a Free Time filter state, Combined tab only
   staged: [],          // pending parsed rows awaiting confirmation
   isAdmin: false,       // unlocks the catalog-import panel; see ADMIN_PASSCODE below
   incomingRequests: [], // account friend requests sent TO you, awaiting your accept/decline
@@ -1657,6 +1664,46 @@ function meetingOverlap(a,b){
   const shareDay = a.days.some(d=>b.days.includes(d));
   if(!shareDay) return false;
   return a.start < b.end && b.start < a.end;
+}
+
+// "Find a Free Time": given the currently selected members' entries (each
+// {entries:[...]} — same shape as combined-view boardGroups) and a filter
+// {days, startMin, endMin, minMinutes}, returns every open gap on those
+// days, within that time window, at least minMinutes long, that NONE of
+// the selected people have a class during. One pass per day: collect
+// every meeting's busy interval (clamped to the window) from every
+// selected person, merge overlaps, then take what's left over as free.
+function findFreeTimes(boardGroups, filters){
+  const {days, startMin, endMin, minMinutes} = filters;
+  const results = [];
+  days.forEach(day=>{
+    const busy = [];
+    boardGroups.forEach(g=>{
+      (g.entries||[]).forEach(entry=>{
+        (entry.meetings||[]).forEach(m=>{
+          if(!m.days || !m.days.includes(day) || m.start==null || m.end==null) return;
+          const s = Math.max(m.start, startMin), e = Math.min(m.end, endMin);
+          if(e>s) busy.push({start:s, end:e});
+        });
+      });
+    });
+    busy.sort((a,b)=>a.start-b.start);
+    const merged = [];
+    busy.forEach(b=>{
+      if(merged.length && b.start<=merged[merged.length-1].end){
+        merged[merged.length-1].end = Math.max(merged[merged.length-1].end, b.end);
+      } else merged.push({...b});
+    });
+    let cursor = startMin;
+    merged.forEach(b=>{
+      if(b.start-cursor >= minMinutes) results.push({day, start:cursor, end:b.start});
+      cursor = Math.max(cursor, b.end);
+    });
+    if(endMin-cursor >= minMinutes) results.push({day, start:cursor, end:endMin});
+  });
+  // Sort by day-of-week order, then by start time within a day.
+  results.sort((a,b)=> DAY_ORDER.indexOf(a.day)-DAY_ORDER.indexOf(b.day) || a.start-b.start);
+  return results;
 }
 
 // entries carry .meetings[]; conflict if any meeting pair between the two overlaps
@@ -3360,6 +3407,114 @@ function renderCombinedTab(){
   </div>`);
   wpRow.querySelector('#makeCombinedWallpaperBtn').onclick = ()=> openWallpaperBuilder(boardGroups);
   wrap.appendChild(wpRow);
+
+  // ---------- Find a Free Time ----------
+  // Uses exactly the people currently shown above (Everyone / a group /
+  // whichever chips are toggled on) — no separate person picker needed.
+  if(state.freeTime.results){
+    // Keep results in sync with the latest filters/selection on every
+    // re-render, so toggling a person or a filter after already finding a
+    // time updates the list instead of showing a stale answer.
+    state.freeTime.results = findFreeTimes(boardGroups, {
+      days: state.freeTime.days, startMin: state.freeTime.startMin,
+      endMin: state.freeTime.endMin, minMinutes: state.freeTime.minMinutes
+    });
+  }
+
+  const ftPanel = el(`<div class="panel" style="margin-top:18px;">
+    <h3>Find a Free Time</h3>
+    <p class="hint" style="margin:0 0 12px;">Finds gaps where none of the people shown above have a class.</p>
+
+    <div class="row" style="margin-bottom:10px;align-items:center;">
+      <span class="hint" style="margin:0;width:64px;">Days</span>
+      <div class="row" id="ftDaysRow" style="gap:6px;"></div>
+    </div>
+
+    <div class="row" style="margin-bottom:10px;align-items:center;">
+      <span class="hint" style="margin:0;width:64px;">Time</span>
+      <input type="time" id="ftStart" value="${minutesToHHMM(state.freeTime.startMin)}"
+        style="border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:'Poppins',sans-serif;font-size:calc(13px * var(--font-scale));"/>
+      <span class="hint" style="margin:0;">to</span>
+      <input type="time" id="ftEnd" value="${minutesToHHMM(state.freeTime.endMin)}"
+        style="border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:'Poppins',sans-serif;font-size:calc(13px * var(--font-scale));"/>
+    </div>
+
+    <div class="row" style="margin-bottom:14px;align-items:center;">
+      <span class="hint" style="margin:0;width:64px;">Minimum</span>
+      <select id="ftMinDur" style="border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:'Poppins',sans-serif;font-size:calc(13px * var(--font-scale));cursor:pointer;"></select>
+    </div>
+
+    <button id="ftFindBtn">Find free time</button>
+    <div id="ftResults"></div>
+  </div>`);
+
+  const daysRowEl = ftPanel.querySelector('#ftDaysRow');
+  DAY_ORDER.forEach(d=>{
+    const active = state.freeTime.days.includes(d);
+    const chip = el(`<div class="chip ${active?'active':''}">${DAY_LABEL[d]}</div>`);
+    chip.onclick = ()=>{
+      const idx = state.freeTime.days.indexOf(d);
+      if(idx>=0) state.freeTime.days.splice(idx,1); else state.freeTime.days.push(d);
+      render();
+    };
+    daysRowEl.appendChild(chip);
+  });
+
+  ftPanel.querySelector('#ftStart').onchange = (e)=>{
+    if(!e.target.value) return;
+    const [h,m] = e.target.value.split(':').map(Number);
+    state.freeTime.startMin = h*60+m;
+    render();
+  };
+  ftPanel.querySelector('#ftEnd').onchange = (e)=>{
+    if(!e.target.value) return;
+    const [h,m] = e.target.value.split(':').map(Number);
+    state.freeTime.endMin = h*60+m;
+    render();
+  };
+
+  const MIN_DUR_OPTS = [
+    {value:15, label:'15 minutes'}, {value:30, label:'30 minutes'}, {value:45, label:'45 minutes'},
+    {value:60, label:'1 hour'}, {value:90, label:'1.5 hours'}, {value:120, label:'2 hours'}, {value:180, label:'3 hours'}
+  ];
+  const minDurSelect = ftPanel.querySelector('#ftMinDur');
+  MIN_DUR_OPTS.forEach(o=> minDurSelect.appendChild(el(`<option value="${o.value}" ${state.freeTime.minMinutes===o.value?'selected':''}>${o.label}</option>`)));
+  minDurSelect.onchange = ()=>{ state.freeTime.minMinutes = Number(minDurSelect.value); render(); };
+
+  ftPanel.querySelector('#ftFindBtn').onclick = ()=>{
+    state.freeTime.results = findFreeTimes(boardGroups, {
+      days: state.freeTime.days, startMin: state.freeTime.startMin,
+      endMin: state.freeTime.endMin, minMinutes: state.freeTime.minMinutes
+    });
+    render();
+  };
+
+  const ftResultsEl = ftPanel.querySelector('#ftResults');
+  if(state.freeTime.results){
+    ftResultsEl.style.marginTop = '14px';
+    if(!state.freeTime.days.length){
+      ftResultsEl.appendChild(el(`<p class="hint" style="margin:0;">Pick at least one day above.</p>`));
+    } else if(state.freeTime.startMin >= state.freeTime.endMin){
+      ftResultsEl.appendChild(el(`<p class="hint" style="margin:0;">The start time needs to be before the end time.</p>`));
+    } else if(!state.freeTime.results.length){
+      ftResultsEl.appendChild(el(`<p class="hint" style="margin:0;">No shared free time that long was found in that window — try widening the time range, lowering the minimum, or picking fewer people.</p>`));
+    } else {
+      const list = el(`<div style="display:flex;flex-direction:column;gap:6px;"></div>`);
+      state.freeTime.results.forEach(r=>{
+        list.appendChild(el(`<div style="font-size:calc(13.5px * var(--font-scale));color:var(--ink);">
+          <b>${DAY_FULL[r.day]}</b> — ${minutesToLabel(r.start)} – ${minutesToLabel(r.end)}
+        </div>`));
+      });
+      ftResultsEl.appendChild(list);
+
+      const best = state.freeTime.results.reduce((b,r)=> (r.end-r.start) > (b ? b.end-b.start : -1) ? r : b, null);
+      ftResultsEl.appendChild(el(`<div style="margin-top:12px;padding:10px 14px;background:var(--gold);color:var(--gold-ink);border-radius:8px;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(13.5px * var(--font-scale));">
+        🏆 Best time: ${DAY_FULL[best.day]}, ${minutesToLabel(best.start)} – ${minutesToLabel(best.end)}
+      </div>`));
+    }
+  }
+
+  wrap.appendChild(ftPanel);
   return wrap;
 }
 
