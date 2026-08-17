@@ -276,6 +276,31 @@
 
   .friend-manage{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
 
+  /* ---- incoming/outgoing friend requests (Friends tab) ---- */
+  .fr-list{display:flex;flex-direction:column;gap:14px;}
+  .fr-card{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid #F0F1EF;}
+  .fr-card:last-child{border-bottom:none;padding-bottom:0;}
+  .fr-avatar{
+    width:42px;height:42px;border-radius:50%;flex:none;background:var(--navy);color:var(--navy-ink);
+    display:flex;align-items:center;justify-content:center;font-family:'Poppins',sans-serif;
+    font-weight:700;font-size:calc(15px * var(--font-scale));
+  }
+  .fr-info{flex:1;min-width:140px;}
+  .fr-name{font-family:'Poppins',sans-serif;font-weight:700;color:var(--ink);font-size:calc(14px * var(--font-scale));}
+  .fr-sub{color:var(--muted);font-size:calc(12px * var(--font-scale));margin-top:1px;}
+  .fr-actions{display:flex;gap:10px;flex:none;}
+  .fr-btn{
+    border-radius:20px;padding:8px 20px;font-family:'Poppins',sans-serif;font-weight:700;
+    font-size:calc(12.5px * var(--font-scale));border:1.5px solid;background:transparent;cursor:pointer;
+    transition:background .15s;
+  }
+  .fr-btn.fr-decline{color:var(--danger);border-color:var(--danger);}
+  .fr-btn.fr-decline:hover{background:rgba(194,79,106,0.08);}
+  .fr-btn.fr-accept{color:var(--navy-text);border-color:var(--navy-2);}
+  .fr-btn.fr-accept:hover{background:rgba(var(--navy-rgb),0.08);}
+  .fr-btn.fr-cancel{color:var(--muted);border-color:var(--line);padding:6px 16px;}
+  .fr-btn.fr-cancel:hover{background:var(--line);}
+
   .modal-backdrop{position:fixed;inset:0;background:rgba(107,92,160,0.45);display:flex;align-items:center;justify-content:center;z-index:100;}
   .modal{background:var(--surface);border-radius:12px;padding:26px;width:340px;text-align:center;color:var(--ink);}
   .modal h2{font-family:'Poppins',sans-serif;color:var(--navy-text);margin-top:0;}
@@ -3128,28 +3153,44 @@ function renderAccountFriendsPanel(){
 
   const reqSections = panel.querySelector('#friendReqSections');
   if(state.incomingRequests.length){
-    const sec = el(`<div style="margin-top:12px;"><p class="hint" style="margin:0 0 6px;">Friend requests</p><div class="row" style="flex-wrap:wrap;"></div></div>`);
-    const row = sec.querySelector('.row');
+    const sec = el(`<div style="margin-top:16px;"><h3 style="margin-bottom:10px;">Friend requests</h3><div class="fr-list"></div></div>`);
+    const list = sec.querySelector('.fr-list');
     state.incomingRequests.forEach(r=>{
-      const item = el(`<div class="chip" style="cursor:default;"><span>${r.fromName}</span></div>`);
-      const accept = el(`<button style="padding:4px 10px;font-size:11.5px;margin-left:6px;">Accept</button>`);
-      const decline = el(`<button class="ghost" style="padding:4px 10px;font-size:11.5px;margin-left:4px;">Decline</button>`);
-      accept.onclick = ()=> acceptFriendRequest(r);
-      decline.onclick = ()=> declineFriendRequest(r);
-      item.appendChild(accept); item.appendChild(decline);
-      row.appendChild(item);
+      const initials = (r.fromName||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+      const card = el(`<div class="fr-card">
+        <div class="fr-avatar">${initials}</div>
+        <div class="fr-info">
+          <div class="fr-name">${r.fromName}</div>
+          <div class="fr-sub">Sent you a friend request</div>
+        </div>
+        <div class="fr-actions">
+          <button class="fr-btn fr-decline">Decline</button>
+          <button class="fr-btn fr-accept">Accept</button>
+        </div>
+      </div>`);
+      card.querySelector('.fr-accept').onclick = ()=> acceptFriendRequest(r);
+      card.querySelector('.fr-decline').onclick = ()=> declineFriendRequest(r);
+      list.appendChild(card);
     });
     reqSections.appendChild(sec);
   }
   if(state.outgoingRequests.length){
-    const sec = el(`<div style="margin-top:12px;"><p class="hint" style="margin:0 0 6px;">Sent requests</p><div class="row" style="flex-wrap:wrap;"></div></div>`);
-    const row = sec.querySelector('.row');
+    const sec = el(`<div style="margin-top:16px;"><h3 style="margin-bottom:10px;">Sent requests</h3><div class="fr-list"></div></div>`);
+    const list = sec.querySelector('.fr-list');
     state.outgoingRequests.forEach(r=>{
-      const item = el(`<div class="chip" style="cursor:default;"><span>${r.toName}</span></div>`);
-      const cancel = el(`<button class="ghost" style="padding:4px 10px;font-size:11.5px;margin-left:6px;">Cancel</button>`);
-      cancel.onclick = ()=> cancelOutgoingRequest(r);
-      item.appendChild(cancel);
-      row.appendChild(item);
+      const initials = (r.toName||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+      const card = el(`<div class="fr-card">
+        <div class="fr-avatar" style="background:var(--gold);color:var(--gold-ink);">${initials}</div>
+        <div class="fr-info">
+          <div class="fr-name">${r.toName}</div>
+          <div class="fr-sub">Waiting for them to accept</div>
+        </div>
+        <div class="fr-actions">
+          <button class="fr-btn fr-cancel">Cancel</button>
+        </div>
+      </div>`);
+      card.querySelector('.fr-cancel').onclick = ()=> cancelOutgoingRequest(r);
+      list.appendChild(card);
     });
     reqSections.appendChild(sec);
   }
