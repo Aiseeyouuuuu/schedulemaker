@@ -3574,7 +3574,7 @@ function renderCombinedTab(){
 
         const noClassPeople = boardGroups.filter(g=> !personDayIntervals(g.entries, r.day).length).map(g=>g.member.name);
         if(noClassPeople.length){
-          row.appendChild(el(`<div class="hint" style="margin:2px 0 0;">📌 No classes ${DAY_FULL[r.day]}: ${noClassPeople.join(', ')} — may not already be on campus.</div>`));
+          row.appendChild(el(`<div class="hint" style="margin:2px 0 0;">📌 No classes ${DAY_FULL[r.day]}: ${noClassPeople.join(', ')}</div>`));
         }
 
         list.appendChild(row);
