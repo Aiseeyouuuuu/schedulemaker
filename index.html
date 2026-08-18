@@ -4421,7 +4421,7 @@ function renderFriendsTab(){
         <input type="text" id="friendName" placeholder="Friend's name" style="width:200px"/>
         <button id="addFriend">Add friend</button>
       </div>
-      <p class="hint">Friends connected by account (🔗, from above) sync automatically. Add someone here to type in their classes yourself instead — saved to your own browser only.</p>
+      <p class="hint">Friends connected by account (👥, from above) sync automatically. Add someone here to type in their classes yourself instead — saved to your own browser only.</p>
     </div>`);
   const chipRow = manage.querySelector('#chipRow');
   state.members.forEach(m=>{
@@ -4430,7 +4430,7 @@ function renderFriendsTab(){
     const removeTitle = m.isAccountFriend ? `Unfriend ${m.name}` : `Remove ${m.name}`;
     const chip = el(`<div class="chip ${!isMe && state.friendEditingId===m.id?'active':''}">
       <button class="chip-dot" style="background:${m.color}" title="Change ${colorLabel} color"></button>
-      <span class="chip-label" style="${isMe?'cursor:default;':''}">${m.name}${isMe?' (you)':''}${m.isAccountFriend?' 🔗':''}</span>
+      <span class="chip-label" style="${isMe?'cursor:default;':''}">${m.name}${isMe?' (you)':''}${m.isAccountFriend?' 👥':''}</span>
       ${isMe?'':`<span class="x" title="${removeTitle}">×</span>`}
     </div>`);
     if(!isMe){
