@@ -70,11 +70,11 @@
 
   textarea{
     width:100%;min-height:90px;font-family:'Poppins',sans-serif;font-size:calc(12.5px * var(--font-scale));
-    border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical;background:var(--surface);
+    border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical;background:var(--surface);color:var(--ink);
   }
-  input[type=text], input[type=time], input[type=password], select{
+  input[type=text], input[type=time], input[type=password], input[type=email], input[type=number], select{
     font-family:'Poppins',sans-serif;font-size:calc(13.5px * var(--font-scale));border:1px solid var(--line);
-    border-radius:8px;padding:8px 10px;background:var(--surface);
+    border-radius:8px;padding:8px 10px;background:var(--surface);color:var(--ink);
   }
   button{
     font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(13px * var(--font-scale));
@@ -112,7 +112,7 @@
   table.tasks{width:100%;min-width:840px;border-collapse:collapse;font-size:calc(12.5px * var(--font-scale));}
   table.tasks th{text-align:left;color:var(--muted);font-weight:600;font-size:calc(10.5px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:8px 8px;border-bottom:2px solid var(--navy-text);white-space:nowrap;}
   table.tasks td{padding:5px 6px;border-bottom:1px solid #F0F1EF;vertical-align:middle;}
-  table.tasks input[type=text], table.tasks input[type=date]{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;}
+  table.tasks input[type=text], table.tasks input[type=date]{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;color:var(--ink);}
   table.tasks input[type=text]:focus, table.tasks input[type=date]:focus{border-color:var(--line);background:var(--surface);}
   /* Due-date cell: a typable text field + calendar button, see
      createDueDateCell(). The real <input type="date"> that powers the
@@ -152,7 +152,7 @@
   table.tasks textarea{
     display:block;width:100%;min-height:28px;border:1px solid transparent;background:transparent;
     padding:5px 6px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;
-    border-radius:6px;resize:none;overflow:hidden;line-height:1.4;white-space:pre-wrap;word-break:break-word;
+    border-radius:6px;resize:none;overflow:hidden;line-height:1.4;white-space:pre-wrap;word-break:break-word;color:var(--ink);
   }
   table.tasks textarea:focus{border-color:var(--line);background:var(--surface);}
   table.tasks td.grow-cell{vertical-align:top;min-width:160px;}
@@ -252,7 +252,7 @@
   table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:calc(12.5px * var(--font-scale));}
   table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:calc(11px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
   table.stage td{padding:4px 6px;border-bottom:1px solid #F0F1EF;}
-  table.stage input{width:100%;border:1px solid transparent;background:transparent;padding:4px 5px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;}
+  table.stage input{width:100%;border:1px solid transparent;background:transparent;padding:4px 5px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;color:var(--ink);}
   table.stage input:focus{border-color:var(--line);background:var(--surface);}
   table.stage tr:hover td{background:var(--line);}
 
