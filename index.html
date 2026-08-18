@@ -144,6 +144,7 @@
   .cal-chip-event-private{background:#D6EAF8;color:#274E70;}
   .cal-chip-event-shared{background:#D9F2D9;color:#2E5B22;}
   .cal-chip-more{background:transparent;color:var(--muted);font-weight:600;}
+  .cal-chip-completed{text-decoration:line-through;opacity:0.55;}
   .agenda-row{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid #F0F1EF;font-size:calc(13px * var(--font-scale));}
   .agenda-row:last-child{border-bottom:none;}
   .agenda-row .cal-chip{padding:3px 8px;}
@@ -3960,10 +3961,10 @@ function calendarTaskItems(){
   const subjects = taskSubjectOptions();
   subjects.forEach(s=>{
     const list = isPersonalSubject(s.key) ? state.personalTasks.filter(t=>(t.category||'')===s.key) : (state.tasks[s.key]||[]);
-    list.forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:s.label, kind:'task'}); });
+    list.forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:s.label, kind:'task', completed:t.status==='Completed'}); });
   });
-  state.personalTasks.filter(t=>!t.category && t.dueDate).forEach(t=> items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:'', kind:'task'}));
-  (state.sidequests||[]).forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled sidequest', date:t.dueDate, label:'Sidequest', kind:'sidequest'}); });
+  state.personalTasks.filter(t=>!t.category && t.dueDate).forEach(t=> items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:'', kind:'task', completed:t.status==='Completed'}));
+  (state.sidequests||[]).forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled sidequest', date:t.dueDate, label:sidequestCategoryLabel(t.category), kind:'sidequest', completed:t.status==='Completed'}); });
   return items;
 }
 function calendarEventItems(){
@@ -4045,7 +4046,7 @@ function renderCalendarTab(){
     const chipsWrap = cell.querySelector('.cal-chips');
     const allChips = [];
     dayClasses.forEach(({entry})=> allChips.push({text:`${entry.code||''} ${entry.section||''}`.trim()||'Class', cls:'cal-chip-class'}));
-    dayTasks.forEach(t=> allChips.push({text:t.title, cls: t.kind==='sidequest'?'cal-chip-sidequest':'cal-chip-task'}));
+    dayTasks.forEach(t=> allChips.push({text:t.title, cls: (t.kind==='sidequest'?'cal-chip-sidequest':'cal-chip-task')+(t.completed?' cal-chip-completed':'')}));
     dayEvents.forEach(ev=> allChips.push({text:ev.title, cls: ev.private?'cal-chip-event-private':'cal-chip-event-shared'}));
     const maxShown = 3;
     allChips.slice(0,maxShown).forEach(c=> chipsWrap.appendChild(el(`<div class="cal-chip ${c.cls}">${(c.text||'').replace(/</g,'&lt;')}</div>`)));
@@ -4086,7 +4087,7 @@ function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
   dayTasks.forEach(t=>{
     list.appendChild(el(`<div class="agenda-row">
       <span class="cal-chip ${t.kind==='sidequest'?'cal-chip-sidequest':'cal-chip-task'}" style="flex:none;">${t.kind==='sidequest'?'Sidequest':'Task'}</span>
-      <div><b>${(t.title||'').replace(/</g,'&lt;')}</b>${t.label?'<br/><span class="hint" style="margin:0;">'+t.label+'</span>':''}</div>
+      <div><b${t.completed?' style="text-decoration:line-through;opacity:0.55;"':''}>${(t.title||'').replace(/</g,'&lt;')}</b>${t.completed?' <span class="hint" style="margin:0;">✓ Completed</span>':''}${t.label?'<br/><span class="hint" style="margin:0;">'+t.label.replace(/</g,'&lt;')+'</span>':''}</div>
     </div>`));
   });
   dayEvents.forEach(ev=>{
