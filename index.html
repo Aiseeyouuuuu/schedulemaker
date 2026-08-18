@@ -1228,7 +1228,7 @@ let state = {
   sidequestCategories: [], // personal — [{id, label}] — categories for Sidequests; starts empty, user adds their own
   calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
   receivedEvents: [],   // ephemeral cache of events other account friends invited you to (loaded from Firestore when signed in)
-  holidays: [],          // SHARED across all users — [ 'YYYY-MM-DD', ... ] — dates anyone has marked as no-class; hides class chips on that date for everyone's Calendar tab
+  holidays: [],          // SHARED across all users — [ {date:'YYYY-MM-DD', label:''}, ... ] — dates anyone has marked as no-class (with an optional name like "Typhoon suspension"); hides class chips on that date for everyone's Calendar tab
 };
 
 // ============================= ADMIN GATE =============================
@@ -3907,15 +3907,59 @@ async function saveCalendarEvents(){
 async function saveHolidays(){
   await queueSave(()=> sSet('holidays', state.holidays, true));
 }
-function isHoliday(dateStr){
-  return (state.holidays||[]).includes(dateStr);
+function getHoliday(dateStr){
+  return (state.holidays||[]).find(h=>h.date===dateStr) || null;
 }
-async function toggleHoliday(dateStr){
-  state.holidays = state.holidays || [];
-  if(state.holidays.includes(dateStr)) state.holidays = state.holidays.filter(d=>d!==dateStr);
-  else state.holidays.push(dateStr);
+function isHoliday(dateStr){
+  return !!getHoliday(dateStr);
+}
+async function removeHoliday(dateStr){
+  state.holidays = (state.holidays||[]).filter(h=>h.date!==dateStr);
   await saveHolidays();
   render();
+}
+async function setHoliday(dateStr, label){
+  state.holidays = state.holidays || [];
+  const existing = state.holidays.find(h=>h.date===dateStr);
+  if(existing) existing.label = label;
+  else state.holidays.push({date:dateStr, label});
+  await saveHolidays();
+  render();
+}
+// Small modal for naming a holiday (or renaming/removing one already set).
+// Shared across all users, so whatever's typed here becomes visible to everyone.
+function openHolidayModal(dateStr){
+  const existing = getHoliday(dateStr);
+  const niceDate = new Date(dateStr+'T00:00:00').toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>${existing?'Edit holiday':'Mark as holiday'}</h2>
+        <p class="hint">${niceDate} — visible to everyone, classes will be hidden on this date.</p>
+        <input id="holidayLabelInput" type="text" placeholder="e.g. Typhoon suspension, Semestral break" />
+        <div class="row" style="justify-content:center;margin-top:6px;">
+          ${existing?'<button class="danger" id="holidayRemove">Remove holiday</button>':''}
+          <button class="ghost" id="holidayCancel">Cancel</button>
+          <button id="holidaySave">Save</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#holidayLabelInput');
+  input.value = existing?existing.label||'':'';
+  input.focus();
+  backdrop.querySelector('#holidayCancel').onclick = ()=> backdrop.remove();
+  backdrop.onclick = (e)=>{ if(e.target===backdrop) backdrop.remove(); };
+  if(existing){
+    backdrop.querySelector('#holidayRemove').onclick = async ()=>{ backdrop.remove(); await removeHoliday(dateStr); };
+  }
+  const save = async ()=>{
+    const label = input.value.trim();
+    backdrop.remove();
+    await setHoliday(dateStr, label);
+  };
+  backdrop.querySelector('#holidaySave').onclick = save;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') save(); });
 }
 // Events other account friends invited you to. Two separate queries
 // (owner vs invitee) because Firestore compat can't OR across fields, so
@@ -4042,7 +4086,8 @@ function renderCalendarTab(){
   for(let d=1; d<=daysInMonth; d++){
     const dateStr = isoDate(year, month, d);
     const dow = JS_DAY_TO_ABBR[new Date(year, month, d).getDay()];
-    const holiday = isHoliday(dateStr);
+    const holidayInfo = getHoliday(dateStr);
+    const holiday = !!holidayInfo;
     const dayClasses = [];
     if(isDateInActiveSemester(dateStr) && !holiday){
       classEntries.forEach(e=>{
@@ -4057,7 +4102,7 @@ function renderCalendarTab(){
     const cell = el(`<div class="cal-cell ${dateStr===today?'cal-cell-today':''} ${holiday?'cal-cell-holiday':''}"><div class="cal-daynum">${d}</div><div class="cal-chips"></div></div>`);
     const chipsWrap = cell.querySelector('.cal-chips');
     const allChips = [];
-    if(holiday) allChips.push({text:'Holiday', cls:'cal-chip-holiday'});
+    if(holiday) allChips.push({text:holidayInfo.label||'Holiday', cls:'cal-chip-holiday'});
     dayClasses.forEach(({entry})=> allChips.push({text:`${entry.code||''} ${entry.section||''}`.trim()||'Class', cls:'cal-chip-class'}));
     dayTasks.forEach(t=> allChips.push({text:t.title, cls: (t.kind==='sidequest'?'cal-chip-sidequest':'cal-chip-task')+(t.completed?' cal-chip-completed':'')}));
     dayEvents.forEach(ev=> allChips.push({text:ev.title, cls: ev.private?'cal-chip-event-private':'cal-chip-event-shared'}));
@@ -4075,15 +4120,16 @@ function renderCalendarTab(){
 
 function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
   const niceDate = new Date(dateStr+'T00:00:00').toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
-  const holiday = isHoliday(dateStr);
+  const holidayInfo = getHoliday(dateStr);
+  const holiday = !!holidayInfo;
   const backdrop = el(`<div class="modal-backdrop">
     <div class="modal" style="width:380px;text-align:left;max-height:80vh;overflow:auto;">
       <h2 style="text-align:center;">${niceDate}</h2>
-      ${holiday?'<p class="hint" style="text-align:center;color:#7A2020;font-weight:600;margin-top:-8px;">🚫 Marked as a holiday — classes hidden for everyone</p>':''}
+      ${holiday?'<p class="hint" style="text-align:center;color:#7A2020;font-weight:600;margin-top:-8px;">🚫 '+((holidayInfo.label||'Holiday').replace(/</g,'&lt;'))+' — classes hidden for everyone</p>':''}
       <div id="agendaList"></div>
       <div class="row" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
         <button class="ghost" id="agendaClose">Close</button>
-        <button class="ghost" id="agendaHoliday">${holiday?'Unmark holiday':'Mark as holiday'}</button>
+        <button class="ghost" id="agendaHoliday">${holiday?'Edit holiday':'Mark as holiday'}</button>
         <button id="agendaNew">+ New event this day</button>
       </div>
     </div>
@@ -4123,7 +4169,7 @@ function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
 
   backdrop.querySelector('#agendaClose').onclick = ()=> backdrop.remove();
   backdrop.querySelector('#agendaNew').onclick = ()=>{ backdrop.remove(); openNewEventModal(dateStr); };
-  backdrop.querySelector('#agendaHoliday').onclick = async ()=>{ backdrop.remove(); await toggleHoliday(dateStr); };
+  backdrop.querySelector('#agendaHoliday').onclick = ()=>{ backdrop.remove(); openHolidayModal(dateStr); };
   backdrop.onclick = (e)=>{ if(e.target===backdrop) backdrop.remove(); };
   document.body.appendChild(backdrop);
 }
