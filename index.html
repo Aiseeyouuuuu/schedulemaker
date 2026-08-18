@@ -4136,8 +4136,8 @@ function openNewEventModal(prefillDate){
       <div style="margin-top:14px;">
         <label class="hint" style="display:block;margin-bottom:6px;">Who can see this?</label>
         <div class="row" style="gap:16px;">
-          <label class="row" style="gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="evVis" value="private" checked/> Only me</label>
-          <label class="row" style="gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="evVis" value="shared"/> Invite friends</label>
+          <label class="row" style="gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="evVis" value="private" checked style="width:auto;margin:0;flex:none;"/> Only me</label>
+          <label class="row" style="gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="evVis" value="shared" style="width:auto;margin:0;flex:none;"/> Invite friends</label>
         </div>
       </div>
       <div id="evFriendsWrap" style="display:none;margin-top:10px;max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px;"></div>
@@ -4159,7 +4159,7 @@ function openNewEventModal(prefillDate){
   if(friends.length){
     friends.forEach(f=>{
       const row = el(`<label class="row" style="gap:8px;align-items:center;padding:5px 4px;cursor:pointer;">
-        <input type="checkbox" value="${f.id}"/> <span>${f.name}</span>
+        <input type="checkbox" value="${f.id}" style="width:auto;margin:0;flex:none;"/> <span>${f.name}</span>
       </label>`);
       friendsWrap.appendChild(row);
     });
