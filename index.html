@@ -112,6 +112,17 @@
   table.tasks td{padding:5px 6px;border-bottom:1px solid #F0F1EF;vertical-align:middle;}
   table.tasks input[type=text], table.tasks input[type=date]{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;}
   table.tasks input[type=text]:focus, table.tasks input[type=date]:focus{border-color:var(--line);background:var(--surface);}
+  /* Due-date cell: a typable text field + calendar button, see
+     createDueDateCell(). The real <input type="date"> that powers the
+     calendar button stays present (for showPicker()/keyboard access) but
+     visually hidden — clipped to 0 size rather than display:none, since
+     some browsers refuse to open a picker on a display:none element. */
+  .due-date-field{display:flex;align-items:center;gap:2px;position:relative;width:100%;}
+  .due-date-field .due-date-text{flex:1;min-width:0;width:100%;border:1px solid transparent;background:transparent;padding:5px 4px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;color:var(--ink);}
+  .due-date-field .due-date-text:focus{border-color:var(--line);background:var(--surface);}
+  .due-date-field .due-date-cal{flex:none;background:transparent;border:none;padding:2px 3px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--font-scale));line-height:1;opacity:0.7;}
+  .due-date-field .due-date-cal:hover{opacity:1;background:var(--line);}
+  .due-date-field .due-date-native{position:absolute;width:1px;height:1px;padding:0;margin:0;border:none;opacity:0;overflow:hidden;pointer-events:none;}
   /* Free-text fields (task name, link, notes) auto-grow vertically as you
      type instead of clipping long content — see autoResizeTextarea(). */
   table.tasks textarea{
@@ -1865,6 +1876,84 @@ function scheduleAutoResize(ta){
   requestAnimationFrame(()=> autoResizeTextarea(ta));
 }
 
+// ---- Task-tracker due-date cell ----
+// A native <input type="date"> makes typing awkward: it splits into
+// month/day/year segments and each one intercepts keystrokes on its own,
+// so digits easily land in the wrong segment (e.g. typing "09082026"
+// leaves "0020" sitting in the year). This pairs a plain, freely-typable
+// text field (MM/DD/YYYY, slashes auto-inserted) with a small calendar
+// button that opens the browser's native date picker via a hidden
+// <input type="date"> — so both typing and pick-from-calendar work. The
+// value going in and coming out via onCommit is always the ISO
+// "YYYY-MM-DD" string the rest of the app stores and sorts by.
+function isoToTyped(iso){
+  if(!iso) return '';
+  const parts = iso.split('-');
+  if(parts.length!==3) return '';
+  const [y,m,d] = parts;
+  if(!y||!m||!d) return '';
+  return `${m}/${d}/${y}`;
+}
+function typedToIso(str){
+  const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(!m) return null;
+  const mm = m[1].padStart(2,'0'), dd = m[2].padStart(2,'0'), yyyy = m[3];
+  const dt = new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+  if(dt.getFullYear()!==Number(yyyy) || dt.getMonth()+1!==Number(mm) || dt.getDate()!==Number(dd)) return null;
+  return `${yyyy}-${mm}-${dd}`;
+}
+function createDueDateCell(value, onCommit){
+  const td = elCell(`<td><div class="due-date-field">
+    <input type="text" class="due-date-text" inputmode="numeric" autocomplete="off" placeholder="MM/DD/YYYY" maxlength="10" value="${isoToTyped(value)}" />
+    <button type="button" class="due-date-cal" title="Pick a date from calendar" aria-label="Pick a date from calendar">📅</button>
+    <input type="date" class="due-date-native" value="${value||''}" tabindex="-1" aria-hidden="true" />
+  </div></td>`);
+  const textInput = td.querySelector('.due-date-text');
+  const calBtn = td.querySelector('.due-date-cal');
+  const nativeInput = td.querySelector('.due-date-native');
+
+  // Auto-insert slashes as digits are typed, so "09082026" becomes
+  // "09/08/2026" without the person having to type the separators.
+  textInput.oninput = ()=>{
+    const digits = textInput.value.replace(/\D/g,'').slice(0,8);
+    let out = digits;
+    if(digits.length>4) out = digits.slice(0,2)+'/'+digits.slice(2,4)+'/'+digits.slice(4);
+    else if(digits.length>2) out = digits.slice(0,2)+'/'+digits.slice(2);
+    textInput.value = out;
+  };
+  const commitText = ()=>{
+    const raw = textInput.value.trim();
+    if(!raw){ if(value){ value=''; nativeInput.value=''; onCommit(''); } return; }
+    const iso = typedToIso(raw);
+    if(iso===null){
+      showToast('Enter a valid date as MM/DD/YYYY.');
+      textInput.value = isoToTyped(value);
+      return;
+    }
+    if(iso===value) return;
+    value = iso;
+    nativeInput.value = iso;
+    onCommit(iso);
+  };
+  textInput.onchange = commitText;
+  textInput.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); textInput.blur(); } };
+
+  calBtn.onclick = (e)=>{
+    e.stopPropagation();
+    if(typeof nativeInput.showPicker === 'function'){
+      try{ nativeInput.showPicker(); return; }catch(err){}
+    }
+    nativeInput.focus();
+  };
+  nativeInput.onchange = ()=>{
+    value = nativeInput.value;
+    textInput.value = isoToTyped(value);
+    onCommit(value);
+  };
+
+  return td;
+}
+
 // Native window.confirm()/alert() are disabled in many sandboxed preview
 // iframes (including this one) — they silently no-op instead of throwing,
 // which looks exactly like "the button did nothing." This is a real modal
@@ -3359,8 +3448,7 @@ function renderTasksTab(){
     onsiteSel.onchange = ()=>{ paintOnsite(); updateTaskField(t.__subjectKey, t.id, 'onsite', onsiteSel.value); };
     onsiteTd.appendChild(onsiteSel); tr.appendChild(onsiteTd);
 
-    const dueTd = elCell(`<td><input type="date" value="${t.dueDate||''}" /></td>`);
-    dueTd.querySelector('input').onchange = async (e)=>{ await updateTaskField(t.__subjectKey, t.id, 'dueDate', e.target.value); render(); };
+    const dueTd = createDueDateCell(t.dueDate, async (val)=>{ await updateTaskField(t.__subjectKey, t.id, 'dueDate', val); render(); });
     tr.appendChild(dueTd);
 
     const uc = taskUrgencyColors(t.urgency);
@@ -3658,8 +3746,7 @@ function renderSidequestsTab(){
     onsiteSel.onchange = ()=>{ paintOnsite(); updateSidequestField(t.id, 'onsite', onsiteSel.value); };
     onsiteTd.appendChild(onsiteSel); tr.appendChild(onsiteTd);
 
-    const dueTd = elCell(`<td><input type="date" value="${t.dueDate||''}" /></td>`);
-    dueTd.querySelector('input').onchange = async (e)=>{ await updateSidequestField(t.id, 'dueDate', e.target.value); render(); };
+    const dueTd = createDueDateCell(t.dueDate, async (val)=>{ await updateSidequestField(t.id, 'dueDate', val); render(); });
     tr.appendChild(dueTd);
 
     const uc = taskUrgencyColors(t.urgency);
