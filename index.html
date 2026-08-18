@@ -3246,7 +3246,7 @@ function newTaskObj(category){
 // custom category, or Others).
 async function addTask(){
   const t = newTaskObj('');
-  state.personalTasks.push(t);
+  state.personalTasks.unshift(t);
   await savePersonalTasks();
   render();
 }
@@ -3410,8 +3410,8 @@ function computeTaskUrgencyAndRank(tasks){
 
   return decorated.sort((a,b)=>{
     if(!a.dueDate && !b.dueDate) return 0;
-    if(!a.dueDate) return 1;
-    if(!b.dueDate) return -1;
+    if(!a.dueDate) return -1;
+    if(!b.dueDate) return 1;
     return a.dueDate.localeCompare(b.dueDate);
   });
 }
@@ -3423,14 +3423,15 @@ function renderTasksTab(){
   const subjectLabels = subjects.map(s=>s.label);
 
   const merged = [];
+  // Freshly added tasks start with no category at all — not yet filed
+  // under any of the options above — so they need to show up too, with a
+  // blank subject pill prompting the user to pick one. Pushed first so a
+  // brand-new blank task lands at the very top of the table.
+  state.personalTasks.filter(t=>!t.category).forEach(t=> merged.push({...t, status:getEffectiveStatus('', t), __subjectKey:'', __subjectLabel:''}));
   subjects.forEach(s=>{
     const list = isPersonalSubject(s.key) ? state.personalTasks.filter(t=>(t.category||'')===s.key) : (state.tasks[s.key]||[]);
     list.forEach(t=> merged.push({...t, status:getEffectiveStatus(s.key, t), __subjectKey:s.key, __subjectLabel:s.label}));
   });
-  // Freshly added tasks start with no category at all — not yet filed
-  // under any of the options above — so they need to show up too, with a
-  // blank subject pill prompting the user to pick one.
-  state.personalTasks.filter(t=>!t.category).forEach(t=> merged.push({...t, status:getEffectiveStatus('', t), __subjectKey:'', __subjectLabel:''}));
   const decorated = computeTaskUrgencyAndRank(merged);
 
   // Urgent-tasks summary: everything due OVERDUE / TODAY / URGENT, ordered
@@ -3619,7 +3620,7 @@ function newSidequestObj(){
   return { id:'sq_'+Math.random().toString(36).slice(2,9), task:'', status:'Not Started', onsite:'Onsite', dueDate:'', link:'', notes:'', category:'' };
 }
 async function addSidequest(){
-  state.sidequests.push(newSidequestObj());
+  state.sidequests.unshift(newSidequestObj());
   await saveSidequests();
   render();
 }
