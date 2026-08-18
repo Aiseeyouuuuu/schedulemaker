@@ -1183,6 +1183,8 @@ let state = {
   personalTasks: [],   // personal task list for tasks not tied to a shared class subject — each carries a .category ('', 'others', or 'custom:{id}') that is never synced to anyone else
   personalStatuses: {}, // personal — { taskId: status } — your own progress on a SHARED class task, kept separate from the shared task list so marking something Completed doesn't change what classmates see
   customCategories: [], // personal — [{id, label}] — user-defined task categories that don't belong to any class; never synced to other students
+  sidequests: [],       // personal — [task,...] for the Sidequests tab; fully personal, never synced to anyone
+  sidequestCategories: [], // personal — [{id, label}] — categories for Sidequests; starts empty, user adds their own
 };
 
 // ============================= ADMIN GATE =============================
@@ -2357,6 +2359,7 @@ function render(){
   app.appendChild(renderTabs());
   if(state.activeTab==='mine') app.appendChild(renderMemberEditor(state.meId));
   else if(state.activeTab==='tasks') app.appendChild(renderTasksTab());
+  else if(state.activeTab==='sidequests') app.appendChild(renderSidequestsTab());
   else if(state.activeTab==='friends') app.appendChild(renderFriendsTab());
   else app.appendChild(renderCombinedTab());
 }
@@ -2429,11 +2432,12 @@ function openSettingsMenu(anchorEl){
 
 function renderTabs(){
   const wrap = el(`<div class="tabs"></div>`);
-  [['mine','My Schedule'],['tasks','Tasks'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
+  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
     const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
     b.onclick = async ()=>{
       state.activeTab=key;
       if(key==='tasks') await ensureTasksLoaded();
+      if(key==='sidequests') await ensureSidequestsLoaded();
       render();
     };
     wrap.appendChild(b);
@@ -3378,6 +3382,305 @@ function renderTasksTab(){
 
     const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
     delTd.querySelector('button').onclick = ()=> deleteTask(t.__subjectKey, t.id);
+    tr.appendChild(delTd);
+
+    tbody.appendChild(tr);
+  });
+
+  wrap.appendChild(panel);
+  return wrap;
+}
+
+/* ============================= SIDEQUESTS TAB ============================= */
+// A second, fully personal tracker — same shape as Tasks, but nothing here
+// is ever synced to classmates and there's no starting category list (no
+// classes, no "University Wide", no "Others"). The user builds their own
+// categories from scratch via "+ New category".
+function sidequestCategoryOptions(){
+  return (state.sidequestCategories||[]).map(c=>({key:'custom:'+c.id, label:c.label}));
+}
+function sidequestCategoryLabel(key){
+  if(!key) return '';
+  const opt = sidequestCategoryOptions().find(o=>o.key===key);
+  return opt ? opt.label : '';
+}
+async function ensureSidequestsLoaded(){
+  if(state.__sidequestsLoaded) return;
+  state.sidequests = (await sGet('sidequests', false)) || [];
+  state.sidequestCategories = (await sGet('sidequestCategories', false)) || [];
+  state.__sidequestsLoaded = true;
+}
+async function saveSidequests(){
+  await queueSave(()=> sSet('sidequests', state.sidequests, false));
+}
+async function saveSidequestCategories(){
+  await queueSave(()=> sSet('sidequestCategories', state.sidequestCategories, false));
+}
+function newSidequestObj(){
+  return { id:'sq_'+Math.random().toString(36).slice(2,9), task:'', status:'Not Started', onsite:'Onsite', dueDate:'', link:'', notes:'', category:'' };
+}
+async function addSidequest(){
+  state.sidequests.push(newSidequestObj());
+  await saveSidequests();
+  render();
+}
+async function updateSidequestField(taskId, field, value){
+  const t = state.sidequests.find(x=>x.id===taskId);
+  if(!t) return;
+  t[field] = value;
+  await saveSidequests();
+}
+async function moveSidequestCategory(taskId, newKey){
+  const t = state.sidequests.find(x=>x.id===taskId);
+  if(!t) return;
+  t.category = newKey;
+  await saveSidequests();
+  render();
+}
+async function deleteSidequest(taskId){
+  state.sidequests = state.sidequests.filter(x=>x.id!==taskId);
+  await saveSidequests();
+  render();
+}
+function openNewSidequestCategoryModal(){
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>New category</h2>
+        <p class="hint">Personal to you — Sidequests are never shared with anyone else.</p>
+        <input id="newSqCategoryInput" type="text" placeholder="e.g. Errands, Side project" />
+        <div class="row" style="justify-content:center;margin-top:6px;">
+          <button class="ghost" id="newSqCategoryCancel">Cancel</button>
+          <button id="newSqCategorySave">Save</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#newSqCategoryInput');
+  input.focus();
+  backdrop.querySelector('#newSqCategoryCancel').onclick = ()=> backdrop.remove();
+  const save = async ()=>{
+    const val = input.value.trim();
+    if(!val){ backdrop.remove(); return; }
+    state.sidequestCategories = state.sidequestCategories || [];
+    state.sidequestCategories.push({id:'sqc_'+Math.random().toString(36).slice(2,9), label:val});
+    await saveSidequestCategories();
+    backdrop.remove();
+    render();
+  };
+  backdrop.querySelector('#newSqCategorySave').onclick = save;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') save(); });
+}
+async function deleteSidequestCategory(id){
+  const cat = (state.sidequestCategories||[]).find(c=>c.id===id);
+  if(!cat) return;
+  const ok = await customConfirm(`Delete the category "${cat.label}"?\n\nTasks filed under it will go back to unassigned.`);
+  if(!ok) return;
+  const key = 'custom:'+id;
+  state.sidequests.forEach(t=>{ if(t.category===key) t.category = ''; });
+  state.sidequestCategories = state.sidequestCategories.filter(c=>c.id!==id);
+  await saveSidequests();
+  await saveSidequestCategories();
+  render();
+}
+// Same picker pattern as Subject on Tasks: every option can be deleted
+// (there's no built-in "Others"/class option here to fall back to as
+// permanent), plus "+ New category" at the bottom.
+function openSidequestCategoryPicker(anchorEl, onSelect){
+  document.querySelectorAll('.field-popover').forEach(p=>p.remove());
+  const categories = sidequestCategoryOptions();
+  const labels = categories.map(c=>c.label);
+  const rect = anchorEl.getBoundingClientRect();
+  const width = Math.max(rect.width, 180);
+  const left = Math.min(rect.left, window.innerWidth - width - 8);
+  const popover = el(`<div class="field-popover" style="top:${rect.bottom+4}px;left:${Math.max(8,left)}px;width:${width}px;"></div>`);
+  const closeHandler = (ev)=>{
+    if(!popover.contains(ev.target) && ev.target!==anchorEl){
+      popover.remove();
+      document.removeEventListener('click', closeHandler);
+    }
+  };
+  categories.forEach(c=>{
+    const cc = taskSubjectColor(c.label, labels);
+    const item = el(`<div class="field-popover-item with-del" style="background:${cc};color:#2A2E3D;"><span>${c.label}</span></div>`);
+    item.onclick = (e)=>{ e.stopPropagation(); popover.remove(); document.removeEventListener('click', closeHandler); onSelect(c.key); };
+    const del = el(`<button type="button" class="field-popover-item-del" title="Delete category">×</button>`);
+    del.onclick = async (e)=>{
+      e.stopPropagation();
+      popover.remove();
+      document.removeEventListener('click', closeHandler);
+      await deleteSidequestCategory(c.key.slice(7));
+    };
+    item.appendChild(del);
+    popover.appendChild(item);
+  });
+  if(!categories.length){
+    popover.appendChild(el(`<div class="hint" style="margin:2px 4px 4px;">No categories yet.</div>`));
+  }
+  const addItem = el(`<div class="field-popover-item field-popover-add">+ New category</div>`);
+  addItem.onclick = (e)=>{ e.stopPropagation(); popover.remove(); document.removeEventListener('click', closeHandler); openNewSidequestCategoryModal(); };
+  popover.appendChild(addItem);
+  document.body.appendChild(popover);
+  setTimeout(()=> document.addEventListener('click', closeHandler), 0);
+}
+
+function renderSidequestsTab(){
+  const wrap = el(`<div></div>`);
+  wrap.appendChild(el(`<div class="panel">
+    <h3>Sidequests</h3>
+    <p class="hint" style="margin:0;">A personal tracker, same shape as Tasks — nothing here is shared with anyone. Start typing a task, then use the Category pill to file it under whatever you like.</p>
+  </div>`));
+
+  const categories = sidequestCategoryOptions();
+  const categoryLabels = categories.map(c=>c.label);
+
+  const decorated = computeTaskUrgencyAndRank(state.sidequests.map(t=>({...t})));
+
+  const urgentTasks = decorated.filter(t=> t.urgency==='OVERDUE' || t.urgency==='TODAY' || t.urgency==='URGENT');
+  let urgentPanel = null;
+  if(urgentTasks.length){
+    urgentPanel = el(`<div class="urgent-panel" style="flex:1;min-width:280px;margin-bottom:0;">
+      <div class="urgent-banner"><span class="dot"></span>Urgent sidequests</div>
+      <div style="overflow-x:auto;">
+        <table class="urgent-tasks">
+          <thead><tr><th>Task</th><th>Category</th><th>Due date</th><th>Rank</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>`);
+    const utBody = urgentPanel.querySelector('tbody');
+    urgentTasks.forEach(t=>{
+      const uc = taskUrgencyColors(t.urgency);
+      const tr = document.createElement('tr');
+
+      const taskTd = document.createElement('td'); taskTd.className = 'ut-task'; taskTd.textContent = t.task || '';
+
+      const catTd = document.createElement('td');
+      const catPill = document.createElement('span'); catPill.className = 'ut-subject-pill';
+      catPill.textContent = sidequestCategoryLabel(t.category); catTd.appendChild(catPill);
+
+      const dueTd = document.createElement('td'); dueTd.className = 'ut-due'; dueTd.textContent = t.dueDate || '';
+
+      const rankTd = document.createElement('td');
+      const rankBadge = document.createElement('span'); rankBadge.className = 'ut-rank-badge';
+      rankBadge.style.background = uc.bg; rankBadge.style.color = uc.fg;
+      rankBadge.textContent = t.rank; rankTd.appendChild(rankBadge);
+
+      tr.appendChild(taskTd); tr.appendChild(catTd); tr.appendChild(dueTd); tr.appendChild(rankTd);
+      utBody.appendChild(tr);
+    });
+  }
+
+  const completedCount = decorated.filter(t=> t.urgency==='COMPLETED').length;
+  const statCard = el(`<div class="stat-card" style="margin-bottom:0;align-self:flex-start;">
+    <div class="stat-card-label">Completed sidequests 🎉</div>
+    <div class="stat-card-value">${completedCount}</div>
+  </div>`);
+
+  if(urgentPanel || completedCount){
+    const summaryRow = el(`<div class="row" style="align-items:flex-start;gap:16px;margin-bottom:18px;"></div>`);
+    if(urgentPanel) summaryRow.appendChild(urgentPanel);
+    summaryRow.appendChild(statCard);
+    wrap.appendChild(summaryRow);
+  }
+
+  const panel = el(`<div class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px;">
+      <div class="row" style="gap:8px;">
+        <button id="addSidequestBtn">+ Add task</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tasks">
+        <thead><tr>
+          <th>Task</th><th>Status</th><th>Category</th><th>Onsite or Online</th><th>Due date</th>
+          <th>Urgency</th><th>Rank</th><th>Link to Task</th><th>Notes</th><th></th>
+        </tr></thead>
+        <tbody id="sidequestsBody"></tbody>
+      </table>
+    </div>
+  </div>`);
+
+  panel.querySelector('#addSidequestBtn').onclick = ()=> addSidequest();
+
+  const tbody = panel.querySelector('#sidequestsBody');
+  if(!decorated.length){
+    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No sidequests yet. Add one above, then use the Category pill on the row to file it — there's nothing preset, so start with "+ New category".</td></tr>`));
+  }
+  decorated.forEach(t=>{
+    const tr = elRow(`<tr></tr>`);
+
+    const taskTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
+    const taskInput = taskTd.querySelector('textarea');
+    taskInput.value = t.task || '';
+    taskInput.oninput = ()=> autoResizeTextarea(taskInput);
+    taskInput.onchange = (e)=> updateSidequestField(t.id, 'task', e.target.value);
+    scheduleAutoResize(taskInput);
+    tr.appendChild(taskTd);
+
+    const statusTd = elCell(`<td></td>`);
+    const statusBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
+    const statusLabel = statusBtn.querySelector('.pill-label');
+    const paintStatus = ()=>{ const c=taskStatusColors(t.status); statusBtn.style.background=c.bg; statusBtn.style.color=c.fg; statusLabel.textContent=t.status; };
+    paintStatus();
+    statusBtn.onclick = (e)=>{
+      e.stopPropagation();
+      const items = TASK_STATUSES.map(s=>{ const c=taskStatusColors(s); return {value:s, label:s, bg:c.bg, fg:c.fg}; });
+      openFieldPicker(statusBtn, items, async (val)=>{ await updateSidequestField(t.id, 'status', val); render(); });
+    };
+    statusTd.appendChild(statusBtn); tr.appendChild(statusTd);
+
+    const catTd = elCell(`<td></td>`);
+    const catBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
+    const catLabel = sidequestCategoryLabel(t.category);
+    if(catLabel){
+      const c = taskSubjectColor(catLabel, categoryLabels);
+      catBtn.style.background = c; catBtn.style.color = '#2A2E3D';
+      catBtn.querySelector('.pill-label').textContent = catLabel;
+    } else {
+      catBtn.style.background = 'transparent'; catBtn.style.color = 'var(--muted)'; catBtn.style.border = '1px dashed var(--muted)';
+      catBtn.querySelector('.pill-label').textContent = 'Choose category';
+    }
+    catBtn.onclick = (e)=>{
+      e.stopPropagation();
+      openSidequestCategoryPicker(catBtn, (val)=> moveSidequestCategory(t.id, val));
+    };
+    catTd.appendChild(catBtn); tr.appendChild(catTd);
+
+    const onsiteTd = elCell(`<td></td>`);
+    const onsiteSel = el(`<select></select>`);
+    TASK_ONSITE_OPTS.forEach(o=> onsiteSel.appendChild(el(`<option value="${o}" ${t.onsite===o?'selected':''}>${o}</option>`)));
+    const paintOnsite = ()=>{ const c=taskOnsiteColors(onsiteSel.value); onsiteSel.style.background=c.bg; onsiteSel.style.color=c.fg; };
+    paintOnsite();
+    onsiteSel.onchange = ()=>{ paintOnsite(); updateSidequestField(t.id, 'onsite', onsiteSel.value); };
+    onsiteTd.appendChild(onsiteSel); tr.appendChild(onsiteTd);
+
+    const dueTd = elCell(`<td><input type="date" value="${t.dueDate||''}" /></td>`);
+    dueTd.querySelector('input').onchange = async (e)=>{ await updateSidequestField(t.id, 'dueDate', e.target.value); render(); };
+    tr.appendChild(dueTd);
+
+    const uc = taskUrgencyColors(t.urgency);
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
+
+    const linkTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="https://…"></textarea></td>`);
+    const linkInput = linkTd.querySelector('textarea');
+    linkInput.value = t.link || '';
+    linkInput.oninput = ()=> autoResizeTextarea(linkInput);
+    linkInput.onchange = (e)=> updateSidequestField(t.id, 'link', e.target.value);
+    scheduleAutoResize(linkInput);
+    tr.appendChild(linkTd);
+
+    const notesTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="Notes"></textarea></td>`);
+    const notesInput = notesTd.querySelector('textarea');
+    notesInput.value = t.notes || '';
+    notesInput.oninput = ()=> autoResizeTextarea(notesInput);
+    notesInput.onchange = (e)=> updateSidequestField(t.id, 'notes', e.target.value);
+    scheduleAutoResize(notesInput);
+    tr.appendChild(notesTd);
+
+    const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
+    delTd.querySelector('button').onclick = ()=> deleteSidequest(t.id);
     tr.appendChild(delTd);
 
     tbody.appendChild(tr);
