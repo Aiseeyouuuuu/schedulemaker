@@ -677,6 +677,26 @@ function firstOccurrenceOnOrAfter(rangeStart, days){
   });
   return best;
 }
+// Holiday dates (as local Date objects, midnight) that fall within [start, end] inclusive.
+function holidayDatesInRange(range){
+  return (state.holidays||[])
+    .map(h=>{
+      const [y,m,d] = (h.date||'').split('-').map(Number);
+      if(!y||!m||!d) return null;
+      return new Date(y, m-1, d);
+    })
+    .filter(d=> d && d >= range.start && d <= range.end);
+}
+// For a given weekly meeting (days=['Mon',...], start=minutes), which of the
+// shared holiday dates fall on one of those weekdays — so they can be carved
+// out of the RRULE as EXDATE entries and that class won't show on Google
+// Calendar for that date.
+function holidayExceptionsForMeeting(range, days, startMinutes){
+  const abbrevForDate = (d)=> JS_DAY_TO_ABBR[d.getDay()];
+  return holidayDatesInRange(range)
+    .filter(d=> (days||[]).includes(abbrevForDate(d)))
+    .map(d=> new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(startMinutes/60), startMinutes%60));
+}
 function buildIcsForEntries(entries, range){
   const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Schedule Maker//EN','CALSCALE:GREGORIAN'];
   const stamp = icsDateTime(new Date())+'Z';
@@ -698,6 +718,8 @@ function buildIcsForEntries(entries, range){
       lines.push(`DTSTART:${icsDateTime(dtStart)}`);
       lines.push(`DTEND:${icsDateTime(dtEnd)}`);
       lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${byday};UNTIL=${icsDateTime(untilBase)}`);
+      const exceptions = holidayExceptionsForMeeting(range, m.days, m.start);
+      if(exceptions.length) lines.push(`EXDATE:${exceptions.map(icsDateTime).join(',')}`);
       lines.push(`SUMMARY:${icsEscape((entry.code||'Class')+(entry.section?' '+entry.section:''))}`);
       const desc = [entry.title, entry.instructor?('Instructor: '+entry.instructor):''].filter(Boolean).join('\\n');
       if(desc) lines.push(`DESCRIPTION:${icsEscape(desc)}`);
@@ -792,13 +814,18 @@ function buildGoogleCalendarEventBodies(entries, range, termLabel){
       const startDate = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate(), Math.floor(m.start/60), m.start%60);
       const endDate = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate(), Math.floor(m.end/60), m.end%60);
       const description = [entry.title, entry.instructor?('Instructor: '+entry.instructor):'', termLabel].filter(Boolean).join('\n');
+      const recurrence = [`RRULE:FREQ=WEEKLY;BYDAY=${byday};UNTIL=${untilUtc}`];
+      const exceptions = holidayExceptionsForMeeting(range, m.days, m.start);
+      // Google's EXDATE for a timed recurring event must match DTSTART's format:
+      // local wall-clock time tagged with the same TZID (no trailing Z).
+      if(exceptions.length) recurrence.push(`EXDATE;TZID=${tz}:${exceptions.map(toGcalDateTime).map(s=>s.replace(/[-:]/g,'')).join(',')}`);
       events.push({
         summary: (entry.code||'Class') + (entry.section ? ' '+entry.section : ''),
         location: m.room || undefined,
         description: description || undefined,
         start: { dateTime: toGcalDateTime(startDate), timeZone: tz },
         end:   { dateTime: toGcalDateTime(endDate),   timeZone: tz },
-        recurrence: [`RRULE:FREQ=WEEKLY;BYDAY=${byday};UNTIL=${untilUtc}`],
+        recurrence,
       });
     });
   });
@@ -1258,6 +1285,7 @@ async function loadAll(){
   state.semesterType = (await sGet('semesterType', false)) || 'first';
   state.schoolYear = (await sGet('schoolYear', false)) || defaultSchoolYear();
   state.googleClientId = (await sGet('googleClientId', true)) || '';
+  state.holidays = (await sGet('holidays', true)) || [];
   loadAdminFlag();
 }
 
