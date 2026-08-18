@@ -3985,14 +3985,17 @@ function renderCalendarTab(){
     ? `${termRange.start.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${termRange.end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`
     : '';
   const header = el(`<div class="panel">
-    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div class="row" style="align-items:center;gap:10px;">
+    <div class="row" style="align-items:center;flex-wrap:wrap;gap:10px;">
+      <div style="flex:1 1 0;min-width:10px;"></div>
+      <div class="row" style="align-items:center;justify-content:center;gap:10px;">
         <button class="ghost small" id="calPrev" title="Previous month">‹</button>
-        <h3 style="margin:0;min-width:170px;">${monthName}</h3>
+        <h3 style="margin:0;min-width:170px;text-align:center;">${monthName}</h3>
         <button class="ghost small" id="calNext" title="Next month">›</button>
         <button class="ghost small" id="calToday">Today</button>
       </div>
-      <button id="calNewEvent">+ New event</button>
+      <div style="flex:1 1 0;min-width:10px;display:flex;justify-content:flex-end;">
+        <button id="calNewEvent">+ New event</button>
+      </div>
     </div>
   </div>`);
   header.querySelector('#calPrev').onclick = ()=>{
