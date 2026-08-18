@@ -4153,7 +4153,7 @@ function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
   const backdrop = el(`<div class="modal-backdrop">
     <div class="modal" style="width:380px;text-align:left;max-height:80vh;overflow:auto;">
       <h2 style="text-align:center;">${niceDate}</h2>
-      ${holiday?'<p class="hint" style="text-align:center;color:#7A2020;font-weight:600;margin-top:-8px;">🚫 '+((holidayInfo.label||'Holiday').replace(/</g,'&lt;'))+' — classes hidden for everyone</p>':''}
+      ${holiday?'<p class="hint" style="text-align:center;color:#7A2020;font-weight:600;margin-top:-8px;">🚫 '+((holidayInfo.label||'Holiday').replace(/</g,'&lt;'))+'</p>':''}
       <div id="agendaList"></div>
       <div class="row" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
         <button class="ghost" id="agendaClose">Close</button>
