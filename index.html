@@ -894,12 +894,12 @@ function openGoogleCalendarSetupModal(){
         <p class="hint" style="margin:0 0 10px;">
           Paste the OAuth Client ID from a Google Cloud project below. This is
           shared with everyone using this app — set it up once and no one else
-          will need to. Don't have one yet? Click "Setup steps" for a
+          will need to. Don't have one yet? Click "Setup Steps" for a
           walkthrough — it takes a few minutes and is free.
         </p>
         <input id="gcalClientIdInput" type="text" placeholder="xxxxxxxx.apps.googleusercontent.com" style="width:100%;" value="${(state.googleClientId||'').replace(/"/g,'&quot;')}"/>
         <div class="row" style="justify-content:space-between;margin-top:12px;">
-          <button class="ghost" id="gcalSetupSteps">Setup steps</button>
+          <button class="ghost" id="gcalSetupSteps">Setup Steps</button>
           <div class="row" style="gap:8px;">
             <button class="ghost" id="gcalCancel">Cancel</button>
             <button id="gcalSave">Save & connect</button>
@@ -2171,7 +2171,7 @@ function renderGateForm(mode){ // mode: 'signup' | 'signin'
         <input id="gateEmail" type="email" placeholder="Email" autocomplete="email" />
         <input id="gatePassword" type="password" placeholder="Password" autocomplete="${mode==='signup'?'new-password':'current-password'}" />
         <p class="hint" id="gateError" style="color:var(--danger);display:none;"></p>
-        <button id="gateSubmit">${mode==='signup' ? 'Create account' : 'Sign in'}</button>
+        <button id="gateSubmit">${mode==='signup' ? 'Create Account' : 'Sign in'}</button>
         <p class="hint" style="margin-top:14px;"><a href="#" id="gateBack">Back</a></p>
         ${mode==='signin' ? `<p class="hint"><a href="#" id="gateForgot">Forgot password?</a></p>` : ''}
         <p class="hint" style="margin-top:${mode==='signin'?'0':'14px'};"><a href="#" id="gateSkip">Continue without an account</a></p>
@@ -2320,7 +2320,7 @@ function openRenameGroupModal(g){
   const backdrop = el(`
     <div class="modal-backdrop">
       <div class="modal">
-        <h2>Rename group</h2>
+        <h2>Rename Group</h2>
         <input id="renameGroupInput" type="text" value="${g.name.replace(/"/g,'&quot;')}" />
         <div class="row" style="justify-content:center;margin-top:6px;">
           <button class="ghost" id="renameGroupCancel">Cancel</button>
@@ -2354,7 +2354,7 @@ function openAdminModal(){
     const backdrop = el(`
       <div class="modal-backdrop">
         <div class="modal">
-          <h2>Admin mode</h2>
+          <h2>Admin Mode</h2>
           <p class="hint">You're currently in admin mode on this browser — the catalog-import panel is visible to you.</p>
           <div class="row" style="justify-content:center;margin-top:6px;">
             <button class="ghost" id="adminClose">Close</button>
@@ -2370,7 +2370,7 @@ function openAdminModal(){
   const backdrop = el(`
     <div class="modal-backdrop">
       <div class="modal">
-        <h2>Admin passcode</h2>
+        <h2>Admin Passcode</h2>
         <p class="hint">Unlocks the catalog-import panel on this browser only.</p>
         <input id="adminInput" type="password" placeholder="Passcode" />
         <p class="hint" id="adminError" style="color:var(--danger);display:none;">Incorrect passcode.</p>
@@ -2439,7 +2439,7 @@ function openAccountModal(){
     const backdrop = el(`
       <div class="modal-backdrop">
         <div class="modal">
-          <h2>Your account</h2>
+          <h2>Your Account</h2>
           <p class="hint">Signed in as<br/><b>${(user.email||'').replace(/</g,'&lt;')}</b></p>
           <p class="hint">Your schedule, friends, and colors are synced to this account — sign in with it on any device to pick up right where you left off.</p>
           <div class="row" style="justify-content:center;margin-top:6px;">
@@ -2490,11 +2490,11 @@ function openAccountModal(){
 
   function setMode(m){
     mode = m;
-    title.textContent = mode==='signin' ? 'Sign in' : 'Create account';
+    title.textContent = mode==='signin' ? 'Sign in' : 'Create Account';
     hint.textContent = mode==='signin'
       ? 'Sign in to save your schedule and pick it up on any device.'
       : 'Creating an account moves this browser\'s schedule to your new account, so nothing you\'ve already made gets lost.';
-    submitBtn.textContent = mode==='signin' ? 'Sign in' : 'Create account';
+    submitBtn.textContent = mode==='signin' ? 'Sign in' : 'Create Account';
     toggleLink.textContent = mode==='signin' ? 'Need an account? Create one' : 'Already have an account? Sign in';
     errorP.style.display = 'none';
   }
@@ -2659,7 +2659,7 @@ function renderImportPanel(){
       <div class="row" style="margin-top:10px;">
         <button id="parseBtn">Parse pasted content</button>
         <button class="ghost" id="sampleBtn">Load sample data</button>
-        <button class="ghost" id="clearCatalogBtn" style="margin-left:auto;border-color:var(--danger);color:var(--danger);">Clear catalog</button>
+        <button class="ghost" id="clearCatalogBtn" style="margin-left:auto;border-color:var(--danger);color:var(--danger);">Clear Catalog</button>
       </div>
       <div id="stageArea"></div>
     </div>`);
@@ -2810,7 +2810,7 @@ function renderAddClassBar(memberId, boardEl){
           <input type="text" id="searchInput" placeholder="Search by code, section, or professor, e.g. CSCI 30 or Dela Cruz..." autocomplete="off" />
           <div class="combo-list" id="comboList"></div>
         </div>
-        <button class="ghost" id="manualToggle">+ Add manually</button>
+        <button class="ghost" id="manualToggle">+ Add Manually</button>
       </div>
       <div id="manualForm" style="display:none;margin-top:12px;"></div>
     </div>`);
@@ -3026,7 +3026,7 @@ function renderGroupsPanel(){
       <div class="friend-manage" id="groupChipRow"></div>
       <div class="row" style="margin-top:8px;">
         <input type="text" id="newGroupName" placeholder="Group name — e.g. Blocktimers" style="width:220px"/>
-        <button id="startGroupBtn">Create group</button>
+        <button id="startGroupBtn">Create Group</button>
       </div>
       <div id="groupPicker" style="display:none;"></div>
       <p class="hint">Group people into custom sets — by block, org, or barkada — so Combined view can show just one set at a time instead of toggling everyone.</p>
@@ -3088,7 +3088,7 @@ function renderGroupsPanel(){
   state.groups.forEach(g=>{
     const chip = el(`<div class="chip">
       <span class="chip-label" title="Edit ${g.name}'s members">${g.name} <span style="opacity:.65;">(${g.memberIds.length})</span></span>
-      <span class="rename-group" title="Rename group">✎</span>
+      <span class="rename-group" title="Rename Group">✎</span>
       <span class="x" title="Delete group">×</span>
     </div>`);
     chip.querySelector('.chip-label').onclick = ()=> openPicker(g);
@@ -3333,7 +3333,7 @@ async function deleteCustomCategory(id){
   render();
 }
 // Dedicated popover for the Subject pill: like openFieldPicker, but custom
-// categories get an inline delete "×", and a "+ New category" row sits at
+// categories get an inline delete "×", and a "+ New Category" row sits at
 // the bottom so adding one is right where you'd reach for it.
 function openSubjectPicker(anchorEl, subjects, subjectLabels, onSelect){
   document.querySelectorAll('.field-popover').forEach(p=>p.remove());
@@ -3364,7 +3364,7 @@ function openSubjectPicker(anchorEl, subjects, subjectLabels, onSelect){
     }
     popover.appendChild(item);
   });
-  const addItem = el(`<div class="field-popover-item field-popover-add">+ New category</div>`);
+  const addItem = el(`<div class="field-popover-item field-popover-add">+ New Category</div>`);
   addItem.onclick = (e)=>{ e.stopPropagation(); popover.remove(); document.removeEventListener('click', closeHandler); openNewCategoryModal(); };
   popover.appendChild(addItem);
   document.body.appendChild(popover);
@@ -3440,7 +3440,7 @@ function renderTasksTab(){
   let urgentPanel = null;
   if(urgentTasks.length){
     urgentPanel = el(`<div class="urgent-panel" style="flex:1;min-width:280px;margin-bottom:0;">
-      <div class="urgent-banner"><span class="dot"></span>Urgent tasks</div>
+      <div class="urgent-banner"><span class="dot"></span>Urgent Tasks</div>
       <div style="overflow-x:auto;">
         <table class="urgent-tasks">
           <thead><tr><th>Task</th><th>Subject</th><th>Due date</th><th>Rank</th></tr></thead>
@@ -3475,7 +3475,7 @@ function renderTasksTab(){
   // status/urgency color used elsewhere in the tracker.
   const completedCount = decorated.filter(t=> t.urgency==='COMPLETED').length;
   const statCard = el(`<div class="stat-card" style="margin-bottom:0;align-self:flex-start;">
-    <div class="stat-card-label">Completed tasks 🎉</div>
+    <div class="stat-card-label">Completed Tasks 🎉</div>
     <div class="stat-card-value">${completedCount}</div>
   </div>`);
 
@@ -3489,7 +3489,7 @@ function renderTasksTab(){
   const panel = el(`<div class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:8px;">
       <div class="row" style="gap:8px;">
-        <button id="addTaskBtn">+ Add task</button>
+        <button id="addTaskBtn">+ Add Task</button>
       </div>
     </div>
     <div style="overflow-x:auto;">
@@ -3594,7 +3594,7 @@ function renderTasksTab(){
 // A second, fully personal tracker — same shape as Tasks, but nothing here
 // is ever synced to classmates and there's no starting category list (no
 // classes, no "University Wide", no "Others"). The user builds their own
-// categories from scratch via "+ New category".
+// categories from scratch via "+ New Category".
 function sidequestCategoryOptions(){
   return (state.sidequestCategories||[]).map(c=>({key:'custom:'+c.id, label:c.label}));
 }
@@ -3645,7 +3645,7 @@ function openNewSidequestCategoryModal(){
   const backdrop = el(`
     <div class="modal-backdrop">
       <div class="modal">
-        <h2>New category</h2>
+        <h2>New Category</h2>
         <p class="hint">Personal to you — Sidequests are never shared with anyone else.</p>
         <input id="newSqCategoryInput" type="text" placeholder="e.g. Errands, Side project" />
         <div class="row" style="justify-content:center;margin-top:6px;">
@@ -3684,7 +3684,7 @@ async function deleteSidequestCategory(id){
 }
 // Same picker pattern as Subject on Tasks: every option can be deleted
 // (there's no built-in "Others"/class option here to fall back to as
-// permanent), plus "+ New category" at the bottom.
+// permanent), plus "+ New Category" at the bottom.
 function openSidequestCategoryPicker(anchorEl, onSelect){
   document.querySelectorAll('.field-popover').forEach(p=>p.remove());
   const categories = sidequestCategoryOptions();
@@ -3716,7 +3716,7 @@ function openSidequestCategoryPicker(anchorEl, onSelect){
   if(!categories.length){
     popover.appendChild(el(`<div class="hint" style="margin:2px 4px 4px;">No categories yet.</div>`));
   }
-  const addItem = el(`<div class="field-popover-item field-popover-add">+ New category</div>`);
+  const addItem = el(`<div class="field-popover-item field-popover-add">+ New Category</div>`);
   addItem.onclick = (e)=>{ e.stopPropagation(); popover.remove(); document.removeEventListener('click', closeHandler); openNewSidequestCategoryModal(); };
   popover.appendChild(addItem);
   document.body.appendChild(popover);
@@ -3735,7 +3735,7 @@ function renderSidequestsTab(){
   let urgentPanel = null;
   if(urgentTasks.length){
     urgentPanel = el(`<div class="urgent-panel" style="flex:1;min-width:280px;margin-bottom:0;">
-      <div class="urgent-banner"><span class="dot"></span>Urgent sidequests</div>
+      <div class="urgent-banner"><span class="dot"></span>Urgent Sidequests</div>
       <div style="overflow-x:auto;">
         <table class="urgent-tasks">
           <thead><tr><th>Task</th><th>Category</th><th>Due date</th><th>Rank</th></tr></thead>
@@ -3768,7 +3768,7 @@ function renderSidequestsTab(){
 
   const completedCount = decorated.filter(t=> t.urgency==='COMPLETED').length;
   const statCard = el(`<div class="stat-card" style="margin-bottom:0;align-self:flex-start;">
-    <div class="stat-card-label">Completed sidequests 🎉</div>
+    <div class="stat-card-label">Completed Sidequests 🎉</div>
     <div class="stat-card-value">${completedCount}</div>
   </div>`);
 
@@ -3782,7 +3782,7 @@ function renderSidequestsTab(){
   const panel = el(`<div class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:8px;">
       <div class="row" style="gap:8px;">
-        <button id="addSidequestBtn">+ Add task</button>
+        <button id="addSidequestBtn">+ Add Task</button>
       </div>
     </div>
     <div style="overflow-x:auto;">
@@ -3800,7 +3800,7 @@ function renderSidequestsTab(){
 
   const tbody = panel.querySelector('#sidequestsBody');
   if(!decorated.length){
-    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No sidequests yet. Add one above, then use the Category pill on the row to file it — there's nothing preset, so start with "+ New category".</td></tr>`));
+    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No sidequests yet. Add one above, then use the Category pill on the row to file it — there's nothing preset, so start with "+ New Category".</td></tr>`));
   }
   decorated.forEach(t=>{
     const tr = elRow(`<tr></tr>`);
@@ -3966,7 +3966,7 @@ function openHolidayModal(dateStr){
         <p class="hint">${niceDate} — visible to everyone, classes will be hidden on this date.</p>
         <input id="holidayLabelInput" type="text" placeholder="e.g. Typhoon suspension, Semestral break" />
         <div class="row" style="justify-content:center;margin-top:6px;">
-          ${existing?'<button class="danger" id="holidayRemove">Remove holiday</button>':''}
+          ${existing?'<button class="danger" id="holidayRemove">Remove Holiday</button>':''}
           <button class="ghost" id="holidayCancel">Cancel</button>
           <button id="holidaySave">Save</button>
         </div>
@@ -4078,7 +4078,7 @@ function renderCalendarTab(){
         <button class="ghost small" id="calToday">Today</button>
       </div>
       <div style="flex:1 1 0;min-width:10px;display:flex;justify-content:flex-end;">
-        <button id="calNewEvent">+ New event</button>
+        <button id="calNewEvent">+ New Event</button>
       </div>
     </div>
   </div>`);
@@ -4158,7 +4158,7 @@ function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
       <div class="row" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
         <button class="ghost" id="agendaClose">Close</button>
         <button class="ghost" id="agendaHoliday">${holiday?'Edit holiday':'Mark as holiday'}</button>
-        <button id="agendaNew">+ New event this day</button>
+        <button id="agendaNew">+ New Event This Day</button>
       </div>
     </div>
   </div>`);
@@ -4211,7 +4211,7 @@ function invitableFriends(){
 function openNewEventModal(prefillDate){
   const backdrop = el(`<div class="modal-backdrop">
     <div class="modal" style="width:420px;text-align:left;">
-      <h2 style="text-align:center;">New event</h2>
+      <h2 style="text-align:center;">New Event</h2>
       <label class="hint" style="display:block;margin-bottom:4px;">Title</label>
       <input type="text" id="evTitle" placeholder="e.g. Study session" style="margin:0 0 12px;" />
       <div class="row" style="gap:10px;align-items:flex-start;">
@@ -4238,7 +4238,7 @@ function openNewEventModal(prefillDate){
 
       <div class="row" style="justify-content:center;margin-top:18px;">
         <button class="ghost" id="evCancel">Cancel</button>
-        <button id="evSave">Create event</button>
+        <button id="evSave">Create Event</button>
       </div>
     </div>
   </div>`);
@@ -4294,12 +4294,12 @@ function openNewEventModal(prefillDate){
 function renderAccountFriendsPanel(){
   if(!__auth){ return el(`<div></div>`); } // accounts not configured for this deployment at all
   if(!currentUid()){
-    return el(`<div class="panel"><h3>Add friends by account</h3><p class="hint">Sign in (👤 in the header) to search for friends by name — once you're both signed in and connected, you'll automatically see each other's schedule here.</p></div>`);
+    return el(`<div class="panel"><h3>Add Friends by Account</h3><p class="hint">Sign in (👤 in the header) to search for friends by name — once you're both signed in and connected, you'll automatically see each other's schedule here.</p></div>`);
   }
 
   const panel = el(`
     <div class="panel">
-      <h3>Add friends by account</h3>
+      <h3>Add Friends by Account</h3>
       <div class="row">
         <input type="text" id="friendSearchInput" placeholder="Search by name…" style="width:200px"/>
         <button id="friendSearchBtn">Search</button>
@@ -4415,11 +4415,11 @@ function renderFriendsTab(){
 
   const manage = el(`
     <div class="panel">
-      <h3>Your friends</h3>
+      <h3>Your Friends</h3>
       <div class="friend-manage" id="chipRow"></div>
       <div class="row">
         <input type="text" id="friendName" placeholder="Friend's name" style="width:200px"/>
-        <button id="addFriend">Add friend</button>
+        <button id="addFriend">Add Friend</button>
       </div>
       <p class="hint">Friends connected by account (👥, from above) sync automatically. Add someone here to type in their classes yourself instead — saved to your own browser only.</p>
     </div>`);
@@ -5176,7 +5176,7 @@ function openWallpaperBuilder(groups){
         <div id="deviceRow" class="row" style="margin-top:10px;">
           <button class="chip active" id="devPhone">${WALLPAPER_DIMS.phone.label}</button>
           <button class="chip" id="devLaptop">${WALLPAPER_DIMS.laptop.label}</button>
-          <button class="chip" id="devCustom">Custom size</button>
+          <button class="chip" id="devCustom">Custom Size</button>
         </div>
 
         <div id="customSizeRow" class="row" style="margin-top:10px;align-items:center;display:none;">
@@ -5286,7 +5286,7 @@ function openWallpaperBuilder(groups){
         <div id="wpColorList" class="row" style="flex-wrap:wrap;"></div>
 
         <div class="row" style="margin-top:16px;justify-content:flex-end;">
-          <button class="ghost" id="wpReset">Reset position</button>
+          <button class="ghost" id="wpReset">Reset Position</button>
           <button class="gold" id="wpDownload">Download</button>
         </div>
       </div>
