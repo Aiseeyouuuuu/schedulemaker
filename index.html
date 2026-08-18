@@ -145,6 +145,8 @@
   .cal-chip-event-shared{background:#D9F2D9;color:#2E5B22;}
   .cal-chip-more{background:transparent;color:var(--muted);font-weight:600;}
   .cal-chip-completed{text-decoration:line-through;opacity:0.55;}
+  .cal-chip-holiday{background:#F5C6C6;color:#7A2020;}
+  .cal-cell-holiday{background:rgba(245,198,198,0.18);}
   .agenda-row{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid #F0F1EF;font-size:calc(13px * var(--font-scale));}
   .agenda-row:last-child{border-bottom:none;}
   .agenda-row .cal-chip{padding:3px 8px;}
@@ -1226,6 +1228,7 @@ let state = {
   sidequestCategories: [], // personal — [{id, label}] — categories for Sidequests; starts empty, user adds their own
   calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
   receivedEvents: [],   // ephemeral cache of events other account friends invited you to (loaded from Firestore when signed in)
+  holidays: [],          // SHARED across all users — [ 'YYYY-MM-DD', ... ] — dates anyone has marked as no-class; hides class chips on that date for everyone's Calendar tab
 };
 
 // ============================= ADMIN GATE =============================
@@ -3895,10 +3898,24 @@ async function ensureCalendarLoaded(){
     state.calendarEvents = (await sGet('calendarEvents', false)) || [];
     state.__calendarLoaded = true;
   }
+  state.holidays = (await sGet('holidays', true)) || [];
   await loadReceivedEvents();
 }
 async function saveCalendarEvents(){
   await queueSave(()=> sSet('calendarEvents', state.calendarEvents, false));
+}
+async function saveHolidays(){
+  await queueSave(()=> sSet('holidays', state.holidays, true));
+}
+function isHoliday(dateStr){
+  return (state.holidays||[]).includes(dateStr);
+}
+async function toggleHoliday(dateStr){
+  state.holidays = state.holidays || [];
+  if(state.holidays.includes(dateStr)) state.holidays = state.holidays.filter(d=>d!==dateStr);
+  else state.holidays.push(dateStr);
+  await saveHolidays();
+  render();
 }
 // Events other account friends invited you to. Two separate queries
 // (owner vs invitee) because Firestore compat can't OR across fields, so
@@ -4025,8 +4042,9 @@ function renderCalendarTab(){
   for(let d=1; d<=daysInMonth; d++){
     const dateStr = isoDate(year, month, d);
     const dow = JS_DAY_TO_ABBR[new Date(year, month, d).getDay()];
+    const holiday = isHoliday(dateStr);
     const dayClasses = [];
-    if(isDateInActiveSemester(dateStr)){
+    if(isDateInActiveSemester(dateStr) && !holiday){
       classEntries.forEach(e=>{
         (e.meetings||[]).forEach(m=>{
           if((m.days||[]).includes(dow)) dayClasses.push({entry:e, meeting:m});
@@ -4036,9 +4054,10 @@ function renderCalendarTab(){
     const dayTasks = taskItems.filter(t=>t.date===dateStr);
     const dayEvents = eventItems.filter(ev=>ev.date===dateStr);
 
-    const cell = el(`<div class="cal-cell ${dateStr===today?'cal-cell-today':''}"><div class="cal-daynum">${d}</div><div class="cal-chips"></div></div>`);
+    const cell = el(`<div class="cal-cell ${dateStr===today?'cal-cell-today':''} ${holiday?'cal-cell-holiday':''}"><div class="cal-daynum">${d}</div><div class="cal-chips"></div></div>`);
     const chipsWrap = cell.querySelector('.cal-chips');
     const allChips = [];
+    if(holiday) allChips.push({text:'Holiday', cls:'cal-chip-holiday'});
     dayClasses.forEach(({entry})=> allChips.push({text:`${entry.code||''} ${entry.section||''}`.trim()||'Class', cls:'cal-chip-class'}));
     dayTasks.forEach(t=> allChips.push({text:t.title, cls: (t.kind==='sidequest'?'cal-chip-sidequest':'cal-chip-task')+(t.completed?' cal-chip-completed':'')}));
     dayEvents.forEach(ev=> allChips.push({text:ev.title, cls: ev.private?'cal-chip-event-private':'cal-chip-event-shared'}));
@@ -4056,12 +4075,15 @@ function renderCalendarTab(){
 
 function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
   const niceDate = new Date(dateStr+'T00:00:00').toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  const holiday = isHoliday(dateStr);
   const backdrop = el(`<div class="modal-backdrop">
     <div class="modal" style="width:380px;text-align:left;max-height:80vh;overflow:auto;">
       <h2 style="text-align:center;">${niceDate}</h2>
+      ${holiday?'<p class="hint" style="text-align:center;color:#7A2020;font-weight:600;margin-top:-8px;">🚫 Marked as a holiday — classes hidden for everyone</p>':''}
       <div id="agendaList"></div>
-      <div class="row" style="justify-content:center;margin-top:16px;">
+      <div class="row" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
         <button class="ghost" id="agendaClose">Close</button>
+        <button class="ghost" id="agendaHoliday">${holiday?'Unmark holiday':'Mark as holiday'}</button>
         <button id="agendaNew">+ New event this day</button>
       </div>
     </div>
@@ -4101,6 +4123,7 @@ function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
 
   backdrop.querySelector('#agendaClose').onclick = ()=> backdrop.remove();
   backdrop.querySelector('#agendaNew').onclick = ()=>{ backdrop.remove(); openNewEventModal(dateStr); };
+  backdrop.querySelector('#agendaHoliday').onclick = async ()=>{ backdrop.remove(); await toggleHoliday(dateStr); };
   backdrop.onclick = (e)=>{ if(e.target===backdrop) backdrop.remove(); };
   document.body.appendChild(backdrop);
 }
