@@ -109,7 +109,7 @@
   }
 
   /* ---- task tracker ---- */
-  table.tasks{width:100%;min-width:760px;border-collapse:collapse;font-size:calc(12.5px * var(--font-scale));}
+  table.tasks{width:100%;min-width:840px;border-collapse:collapse;font-size:calc(12.5px * var(--font-scale));}
   table.tasks th{text-align:left;color:var(--muted);font-weight:600;font-size:calc(10.5px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:8px 8px;border-bottom:2px solid var(--navy-text);white-space:nowrap;}
   table.tasks td{padding:5px 6px;border-bottom:1px solid #F0F1EF;vertical-align:middle;}
   table.tasks input[type=text], table.tasks input[type=date]{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;}
@@ -119,8 +119,8 @@
      calendar button stays present (for showPicker()/keyboard access) but
      visually hidden — clipped to 0 size rather than display:none, since
      some browsers refuse to open a picker on a display:none element. */
-  .due-date-field{display:flex;align-items:center;gap:2px;position:relative;width:100%;}
-  .due-date-field .due-date-text{flex:1;min-width:0;width:100%;border:1px solid transparent;background:transparent;padding:5px 4px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;color:var(--ink);}
+  .due-date-field{display:flex;align-items:center;gap:2px;position:relative;width:100%;min-width:118px;}
+  .due-date-field .due-date-text{flex:1;min-width:88px;width:100%;border:1px solid transparent;background:transparent;padding:5px 4px;font-size:calc(12.5px * var(--font-scale));font-family:'Poppins',sans-serif;border-radius:6px;color:var(--ink);}
   .due-date-field .due-date-text:focus{border-color:var(--line);background:var(--surface);}
   .due-date-field .due-date-cal{flex:none;background:transparent;border:none;padding:2px 3px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--font-scale));line-height:1;opacity:0.7;}
   .due-date-field .due-date-cal:hover{opacity:1;background:var(--line);}
