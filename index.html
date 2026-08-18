@@ -148,6 +148,25 @@
     font-size:calc(12.5px * var(--font-scale));white-space:normal;word-break:normal;overflow-wrap:normal;line-height:1.35;
   }
   .field-popover-item:hover{filter:brightness(0.95);}
+  .field-popover-item.with-del{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .field-popover-item-del{background:transparent;border:none;color:inherit;opacity:0.6;cursor:pointer;font-size:calc(14px * var(--font-scale));line-height:1;padding:0 2px;flex:none;}
+  .field-popover-item-del:hover{opacity:1;}
+  .field-popover-add{border-top:1px solid var(--line);margin-top:2px;padding-top:10px;text-align:center;background:transparent;color:var(--ink);}
+  .settings-menu{
+    position:fixed;background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:6px;display:flex;flex-direction:column;gap:2px;z-index:200;box-shadow:0 6px 16px rgba(0,0,0,0.18);
+  }
+  .settings-menu-item{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;
+    background:transparent;border:none;text-align:left;font-family:'Poppins',sans-serif;font-weight:600;
+    font-size:calc(13px * var(--font-scale));color:var(--ink);width:100%;
+  }
+  .settings-menu-item:hover{background:var(--line);}
+  .settings-menu-item .smi-icon{flex:none;width:20px;text-align:center;font-size:calc(14px * var(--font-scale));}
+  .settings-menu-item .smi-label{flex:1;}
+  .settings-menu-item.danger{color:var(--danger);}
+  .settings-menu-divider{height:1px;background:var(--line);margin:5px 4px;}
+  .settings-menu-account{padding:4px 10px 4px;font-size:calc(11.5px * var(--font-scale));color:var(--muted);line-height:1.4;}
   .task-badge{display:inline-block;width:100%;text-align:center;border-radius:6px;padding:6px 8px;font-weight:700;font-size:calc(11px * var(--font-scale));letter-spacing:0.3px;white-space:nowrap;}
   .task-del{background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:calc(15px * var(--font-scale));padding:2px 6px;}
 
@@ -2191,6 +2210,16 @@ function authErrorMessage(e){
   return map[e && e.code] || (e && e.message) || 'Something went wrong. Please try again.';
 }
 
+// Shared sign-out path: the account modal's Sign out button and the
+// settings-menu Sign out item both call this so the "fresh start" gate
+// logic only lives in one place.
+async function signOutNow(){
+  if(!__auth) return;
+  __forceGateAfterSignOut = true;
+  __guestChosenThisSession = false; // sign-out is a fresh start — don't silently skip the gate from an earlier guest choice
+  await __auth.signOut();
+  // onAuthStateChanged picks this up; boot() sees __forceGateAfterSignOut and shows the landing gate (Create account / Sign in) instead of resuming old local data.
+}
 // Sign in / sign up / sign out for a real cloud account. Signed-in users'
 // personal data (schedule, friends, colors, etc.) syncs to Firestore under
 // their own uid — see sGet/sSet — so it follows them to any device.
@@ -2218,11 +2247,8 @@ function openAccountModal(){
     document.body.appendChild(backdrop);
     backdrop.querySelector('#acctClose').onclick = ()=> backdrop.remove();
     backdrop.querySelector('#acctSignOut').onclick = async ()=>{
-      __forceGateAfterSignOut = true;
-      __guestChosenThisSession = false; // sign-out is a fresh start — don't silently skip the gate from an earlier guest choice
-      await __auth.signOut();
+      await signOutNow();
       backdrop.remove();
-      // onAuthStateChanged picks this up; boot() sees __forceGateAfterSignOut and shows the landing gate (Create account / Sign in) instead of resuming old local data.
     };
     return;
   }
@@ -2337,36 +2363,68 @@ function render(){
 
 function renderHeader(){
   const me = getMember(state.meId);
-  const uid = currentUid();
   const header = el(`
     <div class="app-header">
       <div>
         <div class="wordmark">Schedule Maker</div>
       </div>
       <div class="row" style="align-items:center;gap:14px;">
-        <button class="edit-name-btn" id="adminBtn" title="Admin" style="font-size:calc(14px * var(--font-scale));">${state.isAdmin?'🔓':'🔒'}</button>
-        <button class="edit-name-btn" id="darkModeBtn" title="${state.darkMode?'Switch to light mode':'Switch to dark mode'}" style="font-size:calc(14px * var(--font-scale));">${state.darkMode?'☀️':'🌙'}</button>
-        <button class="edit-name-btn" id="fontBtn" title="Adjust font size" style="font-size:calc(13px * var(--font-scale));font-weight:700;">Aa</button>
-        <button class="edit-name-btn" id="scheduleFontBtn" title="Choose schedule font" style="font-size:calc(14px * var(--font-scale));">🔤</button>
-        <button class="edit-name-btn" id="intervalBtn" title="Change time-label interval" style="font-size:calc(14px * var(--font-scale));">⏱</button>
-        <button class="swatch-btn" id="themeBtn" title="Change theme color"
-          style="position:static;width:22px;height:22px;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></button>
-        <button class="edit-name-btn" id="acctBtn" title="${uid?'Your account (synced)':'Sign in to save your schedule anywhere'}" style="font-size:calc(14px * var(--font-scale));">${uid?'🪪':'👤'}</button>
+        <button class="edit-name-btn" id="settingsBtn" title="Settings" style="font-size:calc(15px * var(--font-scale));">⚙️</button>
         <div class="whoami">you're known as<br/><b>${me?me.name:''}</b> <button id="editNameBtn" class="edit-name-btn" title="Edit your name">✎</button></div>
       </div>
     </div>`);
-  const themeBtn = header.querySelector('#themeBtn');
-  themeBtn.onclick = (e)=>{ e.stopPropagation(); openThemePicker(themeBtn); };
-  const fontBtn = header.querySelector('#fontBtn');
-  fontBtn.onclick = (e)=>{ e.stopPropagation(); openFontSizePicker(fontBtn); };
-  header.querySelector('#scheduleFontBtn').onclick = (e)=>{ e.stopPropagation(); openScheduleFontPicker(); };
-  const intervalBtn = header.querySelector('#intervalBtn');
-  intervalBtn.onclick = (e)=>{ e.stopPropagation(); openLabelIntervalPicker(intervalBtn); };
   header.querySelector('#editNameBtn').onclick = (e)=>{ e.stopPropagation(); openEditNameModal(); };
-  header.querySelector('#adminBtn').onclick = (e)=>{ e.stopPropagation(); openAdminModal(); };
-  header.querySelector('#darkModeBtn').onclick = async (e)=>{ e.stopPropagation(); await applyDarkMode(!state.darkMode, true); render(); };
-  header.querySelector('#acctBtn').onclick = (e)=>{ e.stopPropagation(); openAccountModal(); };
+  const settingsBtn = header.querySelector('#settingsBtn');
+  settingsBtn.onclick = (e)=>{ e.stopPropagation(); openSettingsMenu(settingsBtn); };
   return header;
+}
+
+// Single dropdown for everything that used to be its own small header icon
+// (theme, dark mode, font size, schedule font, time-label interval, admin)
+// plus account/sign-out at the bottom, so signing out doesn't require
+// opening the account modal first.
+function openSettingsMenu(anchorEl){
+  document.querySelectorAll('.settings-menu').forEach(p=>p.remove());
+  const uid = currentUid();
+  const user = __auth ? __auth.currentUser : null;
+  const rect = anchorEl.getBoundingClientRect();
+  const width = 220;
+  const right = Math.max(8, window.innerWidth - rect.right);
+  const menu = el(`<div class="settings-menu" style="top:${rect.bottom+6}px;right:${right}px;width:${width}px;"></div>`);
+
+  const closeHandler = (ev)=>{
+    if(!menu.contains(ev.target) && ev.target!==anchorEl){
+      menu.remove();
+      document.removeEventListener('click', closeHandler);
+    }
+  };
+  const close = ()=>{ menu.remove(); document.removeEventListener('click', closeHandler); };
+
+  const item = (iconHtml, label, onClick, extraClass)=>{
+    const btn = el(`<button type="button" class="settings-menu-item${extraClass?' '+extraClass:''}"><span class="smi-icon">${iconHtml}</span><span class="smi-label">${label}</span></button>`);
+    btn.onclick = (e)=>{ e.stopPropagation(); close(); onClick(); };
+    menu.appendChild(btn);
+    return btn;
+  };
+
+  item(`<span style="display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:middle;background:conic-gradient(#FADADD,#FFE5B4,#FFFACD,#D9F2D9,#D6EAF8,#E0D6F5,#FADADD);"></span>`, 'Theme color', ()=> openThemePicker(anchorEl));
+  item(state.darkMode?'☀️':'🌙', state.darkMode?'Light mode':'Dark mode', async ()=>{ await applyDarkMode(!state.darkMode, true); render(); });
+  item('Aa', 'Font size', ()=> openFontSizePicker(anchorEl));
+  item('🔤', 'Schedule font', ()=> openScheduleFontPicker());
+  item('⏱', 'Time-label interval', ()=> openLabelIntervalPicker(anchorEl));
+  item(state.isAdmin?'🔓':'🔒', 'Admin', ()=> openAdminModal());
+
+  menu.appendChild(el(`<div class="settings-menu-divider"></div>`));
+
+  if(uid){
+    menu.appendChild(el(`<div class="settings-menu-account">Signed in as<br/><b style="color:var(--ink);">${(user&&user.email||'').replace(/</g,'&lt;')}</b></div>`));
+    item('🚪', 'Sign out', async ()=>{ await signOutNow(); }, 'danger');
+  } else {
+    item('👤', 'Sign in', ()=> openAccountModal());
+  }
+
+  document.body.appendChild(menu);
+  setTimeout(()=> document.addEventListener('click', closeHandler), 0);
 }
 
 function renderTabs(){
@@ -2872,6 +2930,13 @@ function taskStatusColors(status){
     default:              return {bg:'#D6EAF8', fg:'#274E70'}; // Not Started
   }
 }
+function taskOnsiteColors(onsite){
+  switch(onsite){
+    case 'Online': return {bg:'#E0D6F5', fg:'#4A2E7A'};
+    case 'Both':   return {bg:'#FFD9A8', fg:'#7A4A12'};
+    default:       return {bg:'#D9F2D9', fg:'#2E5B22'}; // Onsite
+  }
+}
 function taskUrgencyColors(urgency){
   switch(urgency){
     case 'OVERDUE':       return {bg:'#7A1E1E', fg:'#FFFFFF'};
@@ -3045,6 +3110,58 @@ function openNewCategoryModal(){
   backdrop.querySelector('#newCategorySave').onclick = save;
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') save(); });
 }
+// Removing a custom category doesn't delete its tasks — they fall back to
+// "Others" so nothing gets silently lost.
+async function deleteCustomCategory(id){
+  const cat = (state.customCategories||[]).find(c=>c.id===id);
+  if(!cat) return;
+  const ok = await customConfirm(`Delete the category "${cat.label}"?\n\nTasks filed under it will move to Others.`);
+  if(!ok) return;
+  const key = 'custom:'+id;
+  state.personalTasks.forEach(t=>{ if(t.category===key) t.category = 'others'; });
+  state.customCategories = state.customCategories.filter(c=>c.id!==id);
+  await savePersonalTasks();
+  await saveCustomCategories();
+  render();
+}
+// Dedicated popover for the Subject pill: like openFieldPicker, but custom
+// categories get an inline delete "×", and a "+ New category" row sits at
+// the bottom so adding one is right where you'd reach for it.
+function openSubjectPicker(anchorEl, subjects, subjectLabels, onSelect){
+  document.querySelectorAll('.field-popover').forEach(p=>p.remove());
+  const rect = anchorEl.getBoundingClientRect();
+  const width = Math.max(rect.width, 180);
+  const left = Math.min(rect.left, window.innerWidth - width - 8);
+  const popover = el(`<div class="field-popover" style="top:${rect.bottom+4}px;left:${Math.max(8,left)}px;width:${width}px;"></div>`);
+  const closeHandler = (ev)=>{
+    if(!popover.contains(ev.target) && ev.target!==anchorEl){
+      popover.remove();
+      document.removeEventListener('click', closeHandler);
+    }
+  };
+  subjects.forEach(s=>{
+    const isCustom = s.key.startsWith('custom:');
+    const cc = taskSubjectColor(s.label, subjectLabels);
+    const item = el(`<div class="field-popover-item${isCustom?' with-del':''}" style="background:${cc};color:#2A2E3D;"><span>${s.label}</span></div>`);
+    item.onclick = (e)=>{ e.stopPropagation(); popover.remove(); document.removeEventListener('click', closeHandler); onSelect(s.key); };
+    if(isCustom){
+      const del = el(`<button type="button" class="field-popover-item-del" title="Delete category">×</button>`);
+      del.onclick = async (e)=>{
+        e.stopPropagation();
+        popover.remove();
+        document.removeEventListener('click', closeHandler);
+        await deleteCustomCategory(s.key.slice(7));
+      };
+      item.appendChild(del);
+    }
+    popover.appendChild(item);
+  });
+  const addItem = el(`<div class="field-popover-item field-popover-add">+ New category</div>`);
+  addItem.onclick = (e)=>{ e.stopPropagation(); popover.remove(); document.removeEventListener('click', closeHandler); openNewCategoryModal(); };
+  popover.appendChild(addItem);
+  document.body.appendChild(popover);
+  setTimeout(()=> document.addEventListener('click', closeHandler), 0);
+}
 
 // Mirrors the Excel formulas exactly:
 //   Urgency: COMPLETED / DID NOT PUSH / blank / OVERDUE / TODAY / URGENT (≤5 days) / MID (≤7 days) / RELAXED
@@ -3169,7 +3286,6 @@ function renderTasksTab(){
     <div class="row" style="justify-content:space-between;margin-bottom:8px;">
       <div class="row" style="gap:8px;">
         <button id="addTaskBtn">+ Add task</button>
-        <button id="addCategoryBtn" class="ghost">+ New category</button>
       </div>
     </div>
     <div style="overflow-x:auto;">
@@ -3184,7 +3300,6 @@ function renderTasksTab(){
   </div>`);
 
   panel.querySelector('#addTaskBtn').onclick = ()=> addTask();
-  panel.querySelector('#addCategoryBtn').onclick = ()=> openNewCategoryModal();
 
   const tbody = panel.querySelector('#tasksBody');
   if(!decorated.length){
@@ -3225,16 +3340,16 @@ function renderTasksTab(){
     }
     subjBtn.onclick = (e)=>{
       e.stopPropagation();
-      const items = subjects.map(s=>{ const cc=taskSubjectColor(s.label, subjectLabels); return {value:s.key, label:s.label, bg:cc, fg:'#2A2E3D'}; });
-      openFieldPicker(subjBtn, items, (val)=> moveTaskSubject(t.__subjectKey, t.id, val));
+      openSubjectPicker(subjBtn, subjects, subjectLabels, (val)=> moveTaskSubject(t.__subjectKey, t.id, val));
     };
     subjTd.appendChild(subjBtn); tr.appendChild(subjTd);
 
     const onsiteTd = elCell(`<td></td>`);
     const onsiteSel = el(`<select></select>`);
     TASK_ONSITE_OPTS.forEach(o=> onsiteSel.appendChild(el(`<option value="${o}" ${t.onsite===o?'selected':''}>${o}</option>`)));
-    onsiteSel.style.background = '#D6EAF8'; onsiteSel.style.color = '#274E70';
-    onsiteSel.onchange = ()=> updateTaskField(t.__subjectKey, t.id, 'onsite', onsiteSel.value);
+    const paintOnsite = ()=>{ const c=taskOnsiteColors(onsiteSel.value); onsiteSel.style.background=c.bg; onsiteSel.style.color=c.fg; };
+    paintOnsite();
+    onsiteSel.onchange = ()=>{ paintOnsite(); updateTaskField(t.__subjectKey, t.id, 'onsite', onsiteSel.value); };
     onsiteTd.appendChild(onsiteSel); tr.appendChild(onsiteTd);
 
     const dueTd = elCell(`<td><input type="date" value="${t.dueDate||''}" /></td>`);
