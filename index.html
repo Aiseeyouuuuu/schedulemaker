@@ -3387,9 +3387,6 @@ function computeTaskUrgencyAndRank(tasks){
 
 function renderTasksTab(){
   const wrap = el(`<div></div>`);
-  wrap.appendChild(el(`<div class="panel">
-    <h3>Tasks</h3>
-  </div>`));
 
   const subjects = taskSubjectOptions();
   const subjectLabels = subjects.map(s=>s.label);
@@ -3697,9 +3694,6 @@ function openSidequestCategoryPicker(anchorEl, onSelect){
 
 function renderSidequestsTab(){
   const wrap = el(`<div></div>`);
-  wrap.appendChild(el(`<div class="panel">
-    <h3>Sidequests</h3>
-  </div>`));
 
   const categories = sidequestCategoryOptions();
   const categoryLabels = categories.map(c=>c.label);
