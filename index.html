@@ -3961,7 +3961,7 @@ function calendarTaskItems(){
   const subjects = taskSubjectOptions();
   subjects.forEach(s=>{
     const list = isPersonalSubject(s.key) ? state.personalTasks.filter(t=>(t.category||'')===s.key) : (state.tasks[s.key]||[]);
-    list.forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:s.label, kind:'task', completed:t.status==='Completed'}); });
+    list.forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:s.label, kind:'task', completed:getEffectiveStatus(s.key, t)==='Completed'}); });
   });
   state.personalTasks.filter(t=>!t.category && t.dueDate).forEach(t=> items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:'', kind:'task', completed:t.status==='Completed'}));
   (state.sidequests||[]).forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled sidequest', date:t.dueDate, label:sidequestCategoryLabel(t.category), kind:'sidequest', completed:t.status==='Completed'}); });
