@@ -123,20 +123,20 @@
   table.tasks td.grow-cell{vertical-align:top;min-width:160px;}
   table.tasks select{border:none;border-radius:20px;padding:5px 10px;font-weight:600;font-size:calc(11.5px * var(--font-scale));cursor:pointer;width:100%;}
   table.tasks tr:hover td{background:var(--line);}
-  /* Status/Subject use a custom pill button + popover instead of a native
-     <select> — a real <select>'s closed box always clips its label to one
-     line no matter what CSS is applied, so long text can't be shown in
-     full any other way. Wraps only at whole-word boundaries (never mid-word)
-     so text stays on one line whenever it fits, and only drops a full word
-     to the next line when it doesn't. */
+  /* Status/Subject/Category use a custom pill button + popover instead of
+     a native <select> — a real <select>'s closed box always clips its
+     label no matter what CSS is applied. The pill sizes to its own text
+     and never wraps; the table has no fixed layout, so the column just
+     grows to fit the longest pill instead of forcing the label onto two
+     lines. */
   .task-pill-btn{
-    display:flex;align-items:center;justify-content:center;gap:5px;width:100%;
-    border:none;border-radius:14px;padding:6px 10px;
+    display:inline-flex;align-items:center;justify-content:center;gap:5px;width:auto;max-width:none;
+    border:none;border-radius:14px;padding:6px 12px;
     font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11.5px * var(--font-scale));
-    cursor:pointer;line-height:1.35;
+    cursor:pointer;line-height:1.35;white-space:nowrap;
   }
   .task-pill-btn:hover{filter:brightness(0.96);}
-  .task-pill-btn .pill-label{flex:1 1 auto;white-space:normal;word-break:normal;overflow-wrap:normal;text-align:center;}
+  .task-pill-btn .pill-label{flex:none;white-space:nowrap;word-break:normal;overflow-wrap:normal;text-align:center;}
   .task-pill-btn .pill-caret{flex:none;font-size:calc(9px * var(--font-scale));line-height:1;opacity:0.65;transform:scaleY(0.85);}
   .field-popover{
     position:fixed;background:var(--surface);border:1px solid var(--line);border-radius:8px;
@@ -689,8 +689,9 @@ function exportScheduleToGoogleCalendar(memberId){
 // Real, no-import-step insertion via the Calendar API, using a
 // per-person Google Cloud OAuth Client ID (see openGoogleCalendarSetupModal
 // for the walkthrough). The Client ID is a public identifier — not a
-// secret — so it's fine to keep it in browser storage the same way the
-// other personal prefs are stored.
+// secret — so it's stored SHARED (shared=true), just like the class
+// catalog: whoever sets it up once, everyone else automatically uses the
+// same value and never sees the setup modal.
 let __gisTokenClient = null;
 let __gisAccessToken = null;
 let __gisTokenExpiry = 0;
@@ -818,16 +819,18 @@ async function insertScheduleIntoGoogleCalendar(memberId){
 
 // Lets the person paste in their own OAuth Client ID (from Google Cloud
 // Console) so "Add to Google Calendar" can insert events directly instead
-// of falling back to the .ics download. Saved as a personal pref.
+// of falling back to the .ics download. Saved SHARED — one Client ID for
+// the whole group, same as the catalog, so it only needs setting up once.
 function openGoogleCalendarSetupModal(){
   const backdrop = el(`
     <div class="modal-backdrop">
       <div class="modal" style="width:min(94vw,460px);max-width:460px;text-align:left;">
         <h2 style="margin-top:0;">Connect Google Calendar</h2>
         <p class="hint" style="margin:0 0 10px;">
-          Paste the OAuth Client ID from your Google Cloud project below.
-          Don't have one yet? Click "Setup steps" for a walkthrough — it
-          takes a few minutes and is free.
+          Paste the OAuth Client ID from a Google Cloud project below. This is
+          shared with everyone using this app — set it up once and no one else
+          will need to. Don't have one yet? Click "Setup steps" for a
+          walkthrough — it takes a few minutes and is free.
         </p>
         <input id="gcalClientIdInput" type="text" placeholder="xxxxxxxx.apps.googleusercontent.com" style="width:100%;" value="${(state.googleClientId||'').replace(/"/g,'&quot;')}"/>
         <div class="row" style="justify-content:space-between;margin-top:12px;">
@@ -861,7 +864,7 @@ function openGoogleCalendarSetupModal(){
     const val = input.value.trim();
     if(!val){ backdrop.remove(); return; }
     state.googleClientId = val;
-    await queueSave(()=> sSet('googleClientId', val, false));
+    await queueSave(()=> sSet('googleClientId', val, true));
     __gisTokenClient = null; __gisAccessToken = null; // force a fresh client for the new ID
     backdrop.remove();
     insertScheduleIntoGoogleCalendar(state.meId);
@@ -1213,14 +1216,14 @@ async function loadAll(){
   state.meId = await sGet('me-id', false);
   state.semesterType = (await sGet('semesterType', false)) || 'first';
   state.schoolYear = (await sGet('schoolYear', false)) || defaultSchoolYear();
-  state.googleClientId = (await sGet('googleClientId', false)) || '';
+  state.googleClientId = (await sGet('googleClientId', true)) || '';
   loadAdminFlag();
 }
 
 // Every personal (shared=false) key the app stores — used to copy a
 // guest's local data into their new account right after they sign up, so
 // creating an account doesn't wipe out work they already did as a guest.
-const PERSONAL_KEYS = ['members','schedules','manualEntries','blockColors','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear','googleClientId','personalTasks'];
+const PERSONAL_KEYS = ['members','schedules','manualEntries','blockColors','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear','personalTasks'];
 async function migrateGuestDataToAccount(){
   for(const key of PERSONAL_KEYS){
     let raw;
