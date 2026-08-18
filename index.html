@@ -1160,9 +1160,10 @@ let state = {
   semesterType: 'first',   // personal — 'intersession' | 'first' | 'second'
   schoolYear: null,        // personal — 'YYYY-YYYY+1', set on load via defaultSchoolYear()
   googleClientId: '',      // personal — OAuth Client ID for direct Google Calendar insert (not a secret)
-  tasks: {},           // cache of shared per-subject task lists: { subjectKey: [task,...] } — loaded for subjects in your own schedule
-  personalTasks: [],   // personal task list for tasks not tied to a shared class subject ("Others")
+  tasks: {},           // cache of shared per-subject task lists: { subjectKey: [task,...] } — loaded for subjects in your own schedule, plus the synced "university-wide" list
+  personalTasks: [],   // personal task list for tasks not tied to a shared class subject — each carries a .category ('', 'others', or 'custom:{id}') that is never synced to anyone else
   personalStatuses: {}, // personal — { taskId: status } — your own progress on a SHARED class task, kept separate from the shared task list so marking something Completed doesn't change what classmates see
+  customCategories: [], // personal — [{id, label}] — user-defined task categories that don't belong to any class; never synced to other students
 };
 
 // ============================= ADMIN GATE =============================
@@ -2886,7 +2887,10 @@ function taskUrgencyColors(urgency){
 
 // The list of subjects tasks can be filed under: every distinct class in
 // the signed-in person's OWN schedule (this is what makes syncing "you
-// have to actually be in the class" automatic), plus a catch-all "Others".
+// have to actually be in the class" automatic), a synced "University Wide"
+// bucket everyone shares regardless of schedule, any custom categories the
+// user made for themselves, and a catch-all "Others".
+const UNIVERSITY_WIDE_KEY = 'university-wide';
 function taskSubjectOptions(){
   const entries = (state.schedules[state.meId]||[]).map(entryFor).filter(Boolean);
   const seen = new Set();
@@ -2898,8 +2902,18 @@ function taskSubjectOptions(){
     const label = `${e.code||''} ${e.section||''}`.trim() || 'Untitled class';
     opts.push({key, label});
   });
+  opts.push({key:UNIVERSITY_WIDE_KEY, label:'University Wide'});
+  (state.customCategories||[]).forEach(c=> opts.push({key:'custom:'+c.id, label:c.label}));
   opts.push({key:'others', label:'Others'});
   return opts;
+}
+// A "personal" subject key lives only in state.personalTasks and is never
+// written to shared storage: the blank/unassigned bucket a brand-new task
+// starts in, the "Others" catch-all, and any custom category the user made
+// for themselves. Everything else (a real class, or University Wide) is a
+// shared, synced list in state.tasks.
+function isPersonalSubject(key){
+  return key==='' || key==='others' || (typeof key==='string' && key.startsWith('custom:'));
 }
 function taskSubjectColor(label, allLabelsInOrder){
   const idx = allLabelsInOrder.indexOf(label);
@@ -2910,14 +2924,18 @@ async function ensureTasksLoaded(){
   if(!state.__personalTasksLoaded){
     state.personalTasks = (await sGet('personalTasks', false)) || [];
     state.personalStatuses = (await sGet('taskStatuses', false)) || {};
+    state.customCategories = (await sGet('customCategories', false)) || [];
     state.__personalTasksLoaded = true;
   }
-  const subjects = taskSubjectOptions().filter(s=>s.key!=='others');
+  const subjects = taskSubjectOptions().filter(s=>!isPersonalSubject(s.key));
   for(const s of subjects){
     if(!(s.key in state.tasks)){
       state.tasks[s.key] = (await sGet(`tasks:${s.key}`, true)) || [];
     }
   }
+}
+async function saveCustomCategories(){
+  await queueSave(()=> sSet('customCategories', state.customCategories, false));
 }
 async function saveSubjectTasks(key){
   await queueSave(()=> sSet(`tasks:${key}`, state.tasks[key]||[], true));
@@ -2936,47 +2954,96 @@ async function saveTaskStatuses(){
 // fully personal (never synced to classmates), so their status just stays
 // on the task like before.
 function getEffectiveStatus(subjectKey, t){
-  if(subjectKey==='others') return t.status || 'Not Started';
+  if(isPersonalSubject(subjectKey)) return t.status || 'Not Started';
   return state.personalStatuses[t.id] || t.status || 'Not Started';
 }
 async function setTaskStatus(subjectKey, taskId, status){
-  if(subjectKey==='others'){ await updateTaskField(subjectKey, taskId, 'status', status); return; }
+  if(isPersonalSubject(subjectKey)){ await updateTaskField(subjectKey, taskId, 'status', status); return; }
   state.personalStatuses[taskId] = status;
   await saveTaskStatuses();
 }
-function newTaskObj(){
-  return { id:'t_'+Math.random().toString(36).slice(2,9), task:'', status:'Not Started', onsite:'Onsite', dueDate:'', link:'', notes:'' };
+// category is only meaningful for personal tasks: '' (not yet assigned a
+// subject), 'others', or 'custom:{id}'. Shared class / University Wide
+// tasks live in state.tasks[key] instead and don't need it.
+function newTaskObj(category){
+  return { id:'t_'+Math.random().toString(36).slice(2,9), task:'', status:'Not Started', onsite:'Onsite', dueDate:'', link:'', notes:'', category: category!==undefined?category:'' };
 }
-async function addTask(subjectKey){
-  const t = newTaskObj();
-  if(subjectKey==='others'){ state.personalTasks.push(t); await savePersonalTasks(); }
-  else { state.tasks[subjectKey] = state.tasks[subjectKey]||[]; state.tasks[subjectKey].push(t); await saveSubjectTasks(subjectKey); }
+// New tasks always start personal and unassigned — the user picks a
+// subject afterward from the pill in the row (a class, University Wide, a
+// custom category, or Others).
+async function addTask(){
+  const t = newTaskObj('');
+  state.personalTasks.push(t);
+  await savePersonalTasks();
   render();
 }
 async function updateTaskField(subjectKey, taskId, field, value){
-  const list = subjectKey==='others' ? state.personalTasks : (state.tasks[subjectKey]||[]);
+  const list = isPersonalSubject(subjectKey) ? state.personalTasks : (state.tasks[subjectKey]||[]);
   const t = list.find(x=>x.id===taskId);
   if(!t) return;
   t[field] = value;
-  if(subjectKey==='others') await savePersonalTasks(); else await saveSubjectTasks(subjectKey);
+  if(isPersonalSubject(subjectKey)) await savePersonalTasks(); else await saveSubjectTasks(subjectKey);
 }
 // Moving a task to a different subject means moving it between two
-// different storage locations (possibly two different shared docs).
+// different storage locations (possibly two different shared docs) —
+// unless it's staying personal, in which case it's just a category swap
+// within the same list.
 async function moveTaskSubject(oldKey, taskId, newKey){
-  const oldList = oldKey==='others' ? state.personalTasks : (state.tasks[oldKey]||[]);
+  const oldPersonal = isPersonalSubject(oldKey);
+  const newPersonal = isPersonalSubject(newKey);
+  if(oldPersonal && newPersonal){
+    const t = state.personalTasks.find(x=>x.id===taskId);
+    if(!t) return;
+    t.category = newKey;
+    await savePersonalTasks();
+    render();
+    return;
+  }
+  const oldList = oldPersonal ? state.personalTasks : (state.tasks[oldKey]||[]);
   const idx = oldList.findIndex(x=>x.id===taskId);
   if(idx<0) return;
   const [t] = oldList.splice(idx,1);
-  if(oldKey==='others') await savePersonalTasks(); else await saveSubjectTasks(oldKey);
-  if(newKey==='others'){ state.personalTasks.push(t); await savePersonalTasks(); }
+  if(oldPersonal) await savePersonalTasks(); else await saveSubjectTasks(oldKey);
+  if(newPersonal){ t.category = newKey; state.personalTasks.push(t); await savePersonalTasks(); }
   else { state.tasks[newKey] = state.tasks[newKey]||[]; state.tasks[newKey].push(t); await saveSubjectTasks(newKey); }
   render();
 }
 async function deleteTask(subjectKey, taskId){
-  if(subjectKey==='others'){ state.personalTasks = state.personalTasks.filter(x=>x.id!==taskId); await savePersonalTasks(); }
+  if(isPersonalSubject(subjectKey)){ state.personalTasks = state.personalTasks.filter(x=>x.id!==taskId); await savePersonalTasks(); }
   else { state.tasks[subjectKey] = (state.tasks[subjectKey]||[]).filter(x=>x.id!==taskId); await saveSubjectTasks(subjectKey); }
   if(taskId in state.personalStatuses){ delete state.personalStatuses[taskId]; await saveTaskStatuses(); }
   render();
+}
+// Prompts for a name and adds a new personal, unsynced category that tasks
+// can be filed under — for things that don't belong to any class.
+function openNewCategoryModal(){
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>New task category</h2>
+        <p class="hint">Personal to you — not shared with classmates, unlike a class or University Wide.</p>
+        <input id="newCategoryInput" type="text" placeholder="e.g. Org, Job hunt" />
+        <div class="row" style="justify-content:center;margin-top:6px;">
+          <button class="ghost" id="newCategoryCancel">Cancel</button>
+          <button id="newCategorySave">Save</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#newCategoryInput');
+  input.focus();
+  backdrop.querySelector('#newCategoryCancel').onclick = ()=> backdrop.remove();
+  const save = async ()=>{
+    const val = input.value.trim();
+    if(!val){ backdrop.remove(); return; }
+    state.customCategories = state.customCategories || [];
+    state.customCategories.push({id:'c_'+Math.random().toString(36).slice(2,9), label:val});
+    await saveCustomCategories();
+    backdrop.remove();
+    render();
+  };
+  backdrop.querySelector('#newCategorySave').onclick = save;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') save(); });
 }
 
 // Mirrors the Excel formulas exactly:
@@ -3036,9 +3103,13 @@ function renderTasksTab(){
 
   const merged = [];
   subjects.forEach(s=>{
-    const list = s.key==='others' ? state.personalTasks : (state.tasks[s.key]||[]);
+    const list = isPersonalSubject(s.key) ? state.personalTasks.filter(t=>(t.category||'')===s.key) : (state.tasks[s.key]||[]);
     list.forEach(t=> merged.push({...t, status:getEffectiveStatus(s.key, t), __subjectKey:s.key, __subjectLabel:s.label}));
   });
+  // Freshly added tasks start with no category at all — not yet filed
+  // under any of the options above — so they need to show up too, with a
+  // blank subject pill prompting the user to pick one.
+  state.personalTasks.filter(t=>!t.category).forEach(t=> merged.push({...t, status:getEffectiveStatus('', t), __subjectKey:'', __subjectLabel:''}));
   const decorated = computeTaskUrgencyAndRank(merged);
 
   // Urgent-tasks summary: everything due OVERDUE / TODAY / URGENT, ordered
@@ -3097,8 +3168,8 @@ function renderTasksTab(){
   const panel = el(`<div class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:8px;">
       <div class="row" style="gap:8px;">
-        <select id="newTaskSubject"></select>
         <button id="addTaskBtn">+ Add task</button>
+        <button id="addCategoryBtn" class="ghost">+ New category</button>
       </div>
     </div>
     <div style="overflow-x:auto;">
@@ -3112,13 +3183,12 @@ function renderTasksTab(){
     </div>
   </div>`);
 
-  const subjectSelect = panel.querySelector('#newTaskSubject');
-  subjects.forEach(s=> subjectSelect.appendChild(el(`<option value="${s.key}">${s.label}</option>`)));
-  panel.querySelector('#addTaskBtn').onclick = ()=> addTask(subjectSelect.value);
+  panel.querySelector('#addTaskBtn').onclick = ()=> addTask();
+  panel.querySelector('#addCategoryBtn').onclick = ()=> openNewCategoryModal();
 
   const tbody = panel.querySelector('#tasksBody');
   if(!decorated.length){
-    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No tasks yet. Add one above — pick a class subject to share it with classmates, or "Others" to keep it just for you.</td></tr>`));
+    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No tasks yet. Add one above, then use the Subject pill on the row to file it under a class (shared with classmates), University Wide (shared with everyone), a category of your own, or Others — the last two stay private to you.</td></tr>`));
   }
   decorated.forEach(t=>{
     const tr = elRow(`<tr></tr>`);
@@ -3145,9 +3215,14 @@ function renderTasksTab(){
 
     const subjTd = elCell(`<td></td>`);
     const subjBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
-    const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
-    subjBtn.style.background = c; subjBtn.style.color = '#2A2E3D';
-    subjBtn.querySelector('.pill-label').textContent = t.__subjectLabel;
+    if(t.__subjectLabel){
+      const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
+      subjBtn.style.background = c; subjBtn.style.color = '#2A2E3D';
+      subjBtn.querySelector('.pill-label').textContent = t.__subjectLabel;
+    } else {
+      subjBtn.style.background = 'transparent'; subjBtn.style.color = 'var(--muted)'; subjBtn.style.border = '1px dashed var(--muted)';
+      subjBtn.querySelector('.pill-label').textContent = 'Choose subject';
+    }
     subjBtn.onclick = (e)=>{
       e.stopPropagation();
       const items = subjects.map(s=>{ const cc=taskSubjectColor(s.label, subjectLabels); return {value:s.key, label:s.label, bg:cc, fg:'#2A2E3D'}; });
