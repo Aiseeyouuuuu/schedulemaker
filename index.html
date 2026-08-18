@@ -123,6 +123,28 @@
   .due-date-field .due-date-cal{flex:none;background:transparent;border:none;padding:2px 3px;border-radius:6px;cursor:pointer;font-size:calc(12px * var(--font-scale));line-height:1;opacity:0.7;}
   .due-date-field .due-date-cal:hover{opacity:1;background:var(--line);}
   .due-date-field .due-date-native{position:absolute;width:1px;height:1px;padding:0;margin:0;border:none;opacity:0;overflow:hidden;pointer-events:none;}
+
+  /* ---- calendar tab ---- */
+  .cal-panel{padding:12px;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .cal-dow{font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11px * var(--font-scale));color:var(--muted);text-align:center;text-transform:uppercase;letter-spacing:0.4px;padding:4px 0;}
+  .cal-cell{min-height:88px;border:1px solid var(--line);border-radius:8px;padding:6px;cursor:pointer;background:var(--surface);transition:background .15s;overflow:hidden;}
+  .cal-cell:hover{background:var(--line);}
+  .cal-cell-empty{border:none;background:transparent;cursor:default;}
+  .cal-cell-empty:hover{background:transparent;}
+  .cal-cell-today{border:2px solid var(--navy);}
+  .cal-daynum{font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(12px * var(--font-scale));color:var(--navy-text);margin-bottom:4px;}
+  .cal-chips{display:flex;flex-direction:column;gap:3px;}
+  .cal-chip{font-size:calc(10.5px * var(--font-scale));font-weight:600;border-radius:5px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Poppins',sans-serif;}
+  .cal-chip-class{background:var(--navy-2);color:#FFFFFF;}
+  .cal-chip-task{background:#FFE7B0;color:#7A5A12;}
+  .cal-chip-sidequest{background:#E0D6F5;color:#4A2E7A;}
+  .cal-chip-event-private{background:#D6EAF8;color:#274E70;}
+  .cal-chip-event-shared{background:#D9F2D9;color:#2E5B22;}
+  .cal-chip-more{background:transparent;color:var(--muted);font-weight:600;}
+  .agenda-row{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid #F0F1EF;font-size:calc(13px * var(--font-scale));}
+  .agenda-row:last-child{border-bottom:none;}
+  .agenda-row .cal-chip{padding:3px 8px;}
   /* Free-text fields (task name, link, notes) auto-grow vertically as you
      type instead of clipping long content — see autoResizeTextarea(). */
   table.tasks textarea{
@@ -1199,6 +1221,8 @@ let state = {
   customCategories: [], // personal — [{id, label}] — user-defined task categories that don't belong to any class; never synced to other students
   sidequests: [],       // personal — [task,...] for the Sidequests tab; fully personal, never synced to anyone
   sidequestCategories: [], // personal — [{id, label}] — categories for Sidequests; starts empty, user adds their own
+  calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
+  receivedEvents: [],   // ephemeral cache of events other account friends invited you to (loaded from Firestore when signed in)
 };
 
 // ============================= ADMIN GATE =============================
@@ -1953,6 +1977,58 @@ function createDueDateCell(value, onCommit){
 
   return td;
 }
+// Same typable-text + calendar-button field as createDueDateCell above, but
+// returned as a plain <div> instead of a <td> — for use in modals/forms
+// outside a table (e.g. the New Event date field).
+function createDueDateField(value, onCommit){
+  const wrap = el(`<div class="due-date-field">
+    <input type="text" class="due-date-text" inputmode="numeric" autocomplete="off" placeholder="MM/DD/YYYY" maxlength="10" value="${isoToTyped(value)}" />
+    <button type="button" class="due-date-cal" title="Pick a date from calendar" aria-label="Pick a date from calendar">📅</button>
+    <input type="date" class="due-date-native" value="${value||''}" tabindex="-1" aria-hidden="true" />
+  </div>`);
+  const textInput = wrap.querySelector('.due-date-text');
+  const calBtn = wrap.querySelector('.due-date-cal');
+  const nativeInput = wrap.querySelector('.due-date-native');
+
+  textInput.oninput = ()=>{
+    const digits = textInput.value.replace(/\D/g,'').slice(0,8);
+    let out = digits;
+    if(digits.length>4) out = digits.slice(0,2)+'/'+digits.slice(2,4)+'/'+digits.slice(4);
+    else if(digits.length>2) out = digits.slice(0,2)+'/'+digits.slice(2);
+    textInput.value = out;
+  };
+  const commitText = ()=>{
+    const raw = textInput.value.trim();
+    if(!raw) return;
+    const iso = typedToIso(raw);
+    if(iso===null){
+      showToast('Enter a valid date as MM/DD/YYYY.');
+      textInput.value = isoToTyped(value);
+      return;
+    }
+    if(iso===value) return;
+    value = iso;
+    nativeInput.value = iso;
+    onCommit(iso);
+  };
+  textInput.onchange = commitText;
+  textInput.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); textInput.blur(); } };
+
+  calBtn.onclick = (e)=>{
+    e.stopPropagation();
+    if(typeof nativeInput.showPicker === 'function'){
+      try{ nativeInput.showPicker(); return; }catch(err){}
+    }
+    nativeInput.focus();
+  };
+  nativeInput.onchange = ()=>{
+    value = nativeInput.value;
+    textInput.value = isoToTyped(value);
+    onCommit(value);
+  };
+
+  return wrap;
+}
 
 // Native window.confirm()/alert() are disabled in many sandboxed preview
 // iframes (including this one) — they silently no-op instead of throwing,
@@ -2452,6 +2528,7 @@ function render(){
   if(state.activeTab==='mine') app.appendChild(renderMemberEditor(state.meId));
   else if(state.activeTab==='tasks') app.appendChild(renderTasksTab());
   else if(state.activeTab==='sidequests') app.appendChild(renderSidequestsTab());
+  else if(state.activeTab==='calendar') app.appendChild(renderCalendarTab());
   else if(state.activeTab==='friends') app.appendChild(renderFriendsTab());
   else app.appendChild(renderCombinedTab());
 }
@@ -2524,12 +2601,13 @@ function openSettingsMenu(anchorEl){
 
 function renderTabs(){
   const wrap = el(`<div class="tabs"></div>`);
-  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
+  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['calendar','Calendar'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
     const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
     b.onclick = async ()=>{
       state.activeTab=key;
       if(key==='tasks') await ensureTasksLoaded();
       if(key==='sidequests') await ensureSidequestsLoaded();
+      if(key==='calendar'){ await ensureTasksLoaded(); await ensureSidequestsLoaded(); await ensureCalendarLoaded(); }
       render();
     };
     wrap.appendChild(b);
@@ -3778,6 +3856,341 @@ function renderSidequestsTab(){
 
   wrap.appendChild(panel);
   return wrap;
+}
+
+/* ============================= CALENDAR TAB ============================= */
+// A real month calendar that layers three kinds of things onto each date:
+//   - your OWN classes, recurring on their weekday from state.schedules[meId]
+//     (there's no stored semester date range anywhere in this app, so a
+//     class just shows on every matching weekday of whatever month is on
+//     screen — see the comment on state.catalog for why)
+//   - tasks/sidequests with a due date that falls in the shown month
+//   - personal calendar events: either private (only sSet under your own
+//     personal key, never leaves your account/browser) or shared, in which
+//     case a copy is also written to the 'calendar_events' Firestore
+//     collection with an invitedUids list so each invited account friend's
+//     own Calendar tab can query and show it too. Sharing therefore only
+//     works between signed-in accounts that are already account friends
+//     (manual, non-account friends have no uid to invite).
+function isoDate(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+// Bounds class chips to the actual semester date range (from the existing
+// semesterDateRange() used for .ics export) instead of showing a class on
+// every matching weekday forever — see state.semesterType/schoolYear.
+function isDateInActiveSemester(dateStr){
+  const range = semesterDateRange(state.semesterType, state.schoolYear);
+  if(!range) return true;
+  const d = new Date(dateStr+'T00:00:00');
+  return d >= range.start && d <= range.end;
+}
+// Unlike timeToMinutes() above (which guesses AM/PM for messy pasted class
+// times), an <input type="time"> value is always unambiguous 24-hour
+// "HH:MM" — so this parses it directly instead of reusing that heuristic,
+// which would wrongly flip an early-morning event (e.g. "06:30") to PM.
+function hhmmToMinutes(str){
+  if(!str) return null;
+  const m = str.match(/^(\d{1,2}):(\d{2})$/);
+  if(!m) return null;
+  return parseInt(m[1],10)*60 + parseInt(m[2],10);
+}
+const JS_DAY_TO_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function todayIso(){ const t=new Date(); return isoDate(t.getFullYear(), t.getMonth(), t.getDate()); }
+
+async function ensureCalendarLoaded(){
+  if(!state.__calendarLoaded){
+    state.calendarEvents = (await sGet('calendarEvents', false)) || [];
+    state.__calendarLoaded = true;
+  }
+  await loadReceivedEvents();
+}
+async function saveCalendarEvents(){
+  await queueSave(()=> sSet('calendarEvents', state.calendarEvents, false));
+}
+// Events other account friends invited you to. Two separate queries
+// (owner vs invitee) because Firestore compat can't OR across fields, so
+// there's nothing to merge here — this is invitee-only.
+async function loadReceivedEvents(){
+  const uid = currentUid();
+  if(!__db || !uid){ state.receivedEvents = []; return; }
+  try{
+    const snap = await __db.collection('calendar_events').where('invitedUids','array-contains',uid).get();
+    state.receivedEvents = snap.docs.map(d=>({...d.data(), id:d.id, __remote:true}));
+  }catch(e){ console.error('loadReceivedEvents failed', e); }
+}
+async function createCalendarEvent({title, date, time, notes, isPrivate, invitedMembers}){
+  const uid = currentUid();
+  const me = getMember(state.meId);
+  const id = 'ev_'+Math.random().toString(36).slice(2,9);
+  const invitedUids = isPrivate ? [] : (invitedMembers||[]).map(m=>m.remoteUid).filter(Boolean);
+  const invitedNames = isPrivate ? [] : (invitedMembers||[]).map(m=>m.name);
+  const event = { id, title, date, time:time||'', notes:notes||'', private:!!isPrivate, invitedUids, invitedNames, ownerUid: uid||null, ownerName: me?me.name:'' };
+  state.calendarEvents.push(event);
+  await saveCalendarEvents();
+  if(!isPrivate && invitedUids.length){
+    if(__db && uid){
+      try{
+        await __db.collection('calendar_events').doc(id).set({
+          ownerUid: uid, ownerName: me?me.name:'', title, date, time: time||'', notes: notes||'',
+          invitedUids, invitedNames, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }catch(e){ console.error('share event failed', e); showToast("Saved to your calendar, but couldn't share it — check your connection."); }
+    } else {
+      showToast('Saved to your calendar, but sharing needs you to be signed in.');
+    }
+  }
+  render();
+}
+async function deleteCalendarEvent(ev){
+  state.calendarEvents = state.calendarEvents.filter(x=>x.id!==ev.id);
+  await saveCalendarEvents();
+  if(!ev.private && ev.invitedUids && ev.invitedUids.length && __db && currentUid()){
+    try{ await __db.collection('calendar_events').doc(ev.id).delete(); }catch(e){ console.error('delete shared event failed', e); }
+  }
+  render();
+}
+
+// Every class in the user's own schedule, decorated with which weekday(s)
+// it meets on — used to place a chip on every matching date in the grid.
+function calendarClassEntries(){
+  return (state.schedules[state.meId]||[]).map(entryFor).filter(Boolean);
+}
+// Every due-dated task/sidequest visible to this user, tagged with a
+// subject label — mirrors the merge logic in renderTasksTab()/Sidequests.
+function calendarTaskItems(){
+  const items = [];
+  const subjects = taskSubjectOptions();
+  subjects.forEach(s=>{
+    const list = isPersonalSubject(s.key) ? state.personalTasks.filter(t=>(t.category||'')===s.key) : (state.tasks[s.key]||[]);
+    list.forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:s.label, kind:'task'}); });
+  });
+  state.personalTasks.filter(t=>!t.category && t.dueDate).forEach(t=> items.push({id:t.id, title:t.task||'Untitled task', date:t.dueDate, label:'', kind:'task'}));
+  (state.sidequests||[]).forEach(t=>{ if(t.dueDate) items.push({id:t.id, title:t.task||'Untitled sidequest', date:t.dueDate, label:'Sidequest', kind:'sidequest'}); });
+  return items;
+}
+function calendarEventItems(){
+  const mine = (state.calendarEvents||[]).map(e=>({...e, __mine:true}));
+  const received = (state.receivedEvents||[]).map(e=>({...e, __mine:false}));
+  return [...mine, ...received];
+}
+
+function renderCalendarTab(){
+  state.calendarViewYear = state.calendarViewYear!=null ? state.calendarViewYear : new Date().getFullYear();
+  state.calendarViewMonth = state.calendarViewMonth!=null ? state.calendarViewMonth : new Date().getMonth();
+  const year = state.calendarViewYear, month = state.calendarViewMonth;
+
+  const wrap = el(`<div></div>`);
+  const monthName = new Date(year, month, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
+  const termRange = semesterDateRange(state.semesterType, state.schoolYear);
+  const termLabel = semesterLabel(state.semesterType, state.schoolYear);
+  const termRangeLabel = termRange
+    ? `${termRange.start.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${termRange.end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`
+    : '';
+  const header = el(`<div class="panel">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div class="row" style="align-items:center;gap:10px;">
+        <button class="ghost small" id="calPrev" title="Previous month">‹</button>
+        <h3 style="margin:0;min-width:170px;">${monthName}</h3>
+        <button class="ghost small" id="calNext" title="Next month">›</button>
+        <button class="ghost small" id="calToday">Today</button>
+      </div>
+      <button id="calNewEvent">+ New event</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0;">Shows your classes (only within ${termLabel}${termRangeLabel?', '+termRangeLabel:''}), task/sidequest due dates, and calendar events. Events you create can stay private to you or be shared with invited friends. Change the term/school year from the picker at the top of My Schedule if this looks off.</p>
+  </div>`);
+  header.querySelector('#calPrev').onclick = ()=>{
+    state.calendarViewMonth--; if(state.calendarViewMonth<0){ state.calendarViewMonth=11; state.calendarViewYear--; }
+    render();
+  };
+  header.querySelector('#calNext').onclick = ()=>{
+    state.calendarViewMonth++; if(state.calendarViewMonth>11){ state.calendarViewMonth=0; state.calendarViewYear++; }
+    render();
+  };
+  header.querySelector('#calToday').onclick = ()=>{
+    const t = new Date(); state.calendarViewYear=t.getFullYear(); state.calendarViewMonth=t.getMonth(); render();
+  };
+  header.querySelector('#calNewEvent').onclick = ()=> openNewEventModal(todayIso());
+  wrap.appendChild(header);
+
+  const classEntries = calendarClassEntries();
+  const taskItems = calendarTaskItems();
+  const eventItems = calendarEventItems();
+  const today = todayIso();
+
+  const gridPanel = el(`<div class="panel cal-panel"></div>`);
+  const grid = el(`<div class="cal-grid"></div>`);
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d=> grid.appendChild(el(`<div class="cal-dow">${d}</div>`)));
+
+  const firstOfMonth = new Date(year, month, 1);
+  const startOffset = firstOfMonth.getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  for(let i=0;i<startOffset;i++) grid.appendChild(el(`<div class="cal-cell cal-cell-empty"></div>`));
+
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = isoDate(year, month, d);
+    const dow = JS_DAY_TO_ABBR[new Date(year, month, d).getDay()];
+    const dayClasses = [];
+    if(isDateInActiveSemester(dateStr)){
+      classEntries.forEach(e=>{
+        (e.meetings||[]).forEach(m=>{
+          if((m.days||[]).includes(dow)) dayClasses.push({entry:e, meeting:m});
+        });
+      });
+    }
+    const dayTasks = taskItems.filter(t=>t.date===dateStr);
+    const dayEvents = eventItems.filter(ev=>ev.date===dateStr);
+
+    const cell = el(`<div class="cal-cell ${dateStr===today?'cal-cell-today':''}"><div class="cal-daynum">${d}</div><div class="cal-chips"></div></div>`);
+    const chipsWrap = cell.querySelector('.cal-chips');
+    const allChips = [];
+    dayClasses.forEach(({entry})=> allChips.push({text:`${entry.code||''} ${entry.section||''}`.trim()||'Class', cls:'cal-chip-class'}));
+    dayTasks.forEach(t=> allChips.push({text:t.title, cls: t.kind==='sidequest'?'cal-chip-sidequest':'cal-chip-task'}));
+    dayEvents.forEach(ev=> allChips.push({text:ev.title, cls: ev.private?'cal-chip-event-private':'cal-chip-event-shared'}));
+    const maxShown = 3;
+    allChips.slice(0,maxShown).forEach(c=> chipsWrap.appendChild(el(`<div class="cal-chip ${c.cls}">${(c.text||'').replace(/</g,'&lt;')}</div>`)));
+    if(allChips.length>maxShown) chipsWrap.appendChild(el(`<div class="cal-chip cal-chip-more">+${allChips.length-maxShown} more</div>`));
+    cell.onclick = ()=> openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents);
+    grid.appendChild(cell);
+  }
+  gridPanel.appendChild(grid);
+  wrap.appendChild(gridPanel);
+
+  return wrap;
+}
+
+function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
+  const niceDate = new Date(dateStr+'T00:00:00').toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  const backdrop = el(`<div class="modal-backdrop">
+    <div class="modal" style="width:380px;text-align:left;max-height:80vh;overflow:auto;">
+      <h2 style="text-align:center;">${niceDate}</h2>
+      <div id="agendaList"></div>
+      <div class="row" style="justify-content:center;margin-top:16px;">
+        <button class="ghost" id="agendaClose">Close</button>
+        <button id="agendaNew">+ New event this day</button>
+      </div>
+    </div>
+  </div>`);
+  const list = backdrop.querySelector('#agendaList');
+
+  if(!dayClasses.length && !dayTasks.length && !dayEvents.length){
+    list.appendChild(el(`<p class="hint" style="margin:0;">Nothing on the calendar for this day yet.</p>`));
+  }
+  dayClasses.forEach(({entry,meeting})=>{
+    list.appendChild(el(`<div class="agenda-row">
+      <span class="cal-chip cal-chip-class" style="flex:none;">Class</span>
+      <div><b>${(entry.code||'')+' '+(entry.section||'')}</b>${entry.title?' — '+entry.title:''}<br/>
+      <span class="hint" style="margin:0;">${meeting.start!=null?minutesToLabel(meeting.start):''}${meeting.end!=null?' – '+minutesToLabel(meeting.end):''}${meeting.room?' · '+meeting.room:''}</span></div>
+    </div>`));
+  });
+  dayTasks.forEach(t=>{
+    list.appendChild(el(`<div class="agenda-row">
+      <span class="cal-chip ${t.kind==='sidequest'?'cal-chip-sidequest':'cal-chip-task'}" style="flex:none;">${t.kind==='sidequest'?'Sidequest':'Task'}</span>
+      <div><b>${(t.title||'').replace(/</g,'&lt;')}</b>${t.label?'<br/><span class="hint" style="margin:0;">'+t.label+'</span>':''}</div>
+    </div>`));
+  });
+  dayEvents.forEach(ev=>{
+    const row = el(`<div class="agenda-row">
+      <span class="cal-chip ${ev.private?'cal-chip-event-private':'cal-chip-event-shared'}" style="flex:none;">${ev.private?'Private':'Shared'}</span>
+      <div style="flex:1;"><b>${(ev.title||'').replace(/</g,'&lt;')}</b><br/>
+      <span class="hint" style="margin:0;">${ev.time?minutesToLabel(hhmmToMinutes(ev.time))+' · ':''}${ev.__mine?'You':ev.ownerName||'Friend'}${(!ev.private && ev.invitedNames && ev.invitedNames.length)?' · with '+ev.invitedNames.join(', '):''}</span>
+      ${ev.notes?'<br/><span class="hint" style="margin:0;">'+ev.notes.replace(/</g,'&lt;')+'</span>':''}</div>
+    </div>`);
+    if(ev.__mine){
+      const del = el(`<button class="danger small" title="Delete event">×</button>`);
+      del.onclick = async (e)=>{ e.stopPropagation(); backdrop.remove(); await deleteCalendarEvent(ev); };
+      row.appendChild(del);
+    }
+    list.appendChild(row);
+  });
+
+  backdrop.querySelector('#agendaClose').onclick = ()=> backdrop.remove();
+  backdrop.querySelector('#agendaNew').onclick = ()=>{ backdrop.remove(); openNewEventModal(dateStr); };
+  backdrop.onclick = (e)=>{ if(e.target===backdrop) backdrop.remove(); };
+  document.body.appendChild(backdrop);
+}
+
+// Only account friends (a linked, signed-in friend with a remoteUid) can be
+// invited — a manual friend typed in by hand has no account to notify.
+function invitableFriends(){
+  return state.members.filter(m=>m.isAccountFriend && m.remoteUid);
+}
+
+function openNewEventModal(prefillDate){
+  const backdrop = el(`<div class="modal-backdrop">
+    <div class="modal" style="width:420px;text-align:left;">
+      <h2 style="text-align:center;">New event</h2>
+      <label class="hint" style="display:block;margin-bottom:4px;">Title</label>
+      <input type="text" id="evTitle" placeholder="e.g. Study session" style="margin:0 0 12px;" />
+      <div class="row" style="gap:10px;align-items:flex-start;">
+        <div style="flex:1;">
+          <label class="hint" style="display:block;margin-bottom:4px;">Date</label>
+          <div id="evDateWrap" style="border:1px solid var(--line);border-radius:8px;padding:2px 4px;"></div>
+        </div>
+        <div style="width:130px;">
+          <label class="hint" style="display:block;margin-bottom:4px;">Time (optional)</label>
+          <input type="time" id="evTime" style="margin:0;width:100%;" />
+        </div>
+      </div>
+      <label class="hint" style="display:block;margin:12px 0 4px;">Notes</label>
+      <textarea id="evNotes" rows="2" placeholder="Optional details" style="width:100%;"></textarea>
+
+      <div style="margin-top:14px;">
+        <label class="hint" style="display:block;margin-bottom:6px;">Who can see this?</label>
+        <div class="row" style="gap:16px;">
+          <label class="row" style="gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="evVis" value="private" checked/> Only me</label>
+          <label class="row" style="gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="evVis" value="shared"/> Invite friends</label>
+        </div>
+      </div>
+      <div id="evFriendsWrap" style="display:none;margin-top:10px;max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px;"></div>
+
+      <div class="row" style="justify-content:center;margin-top:18px;">
+        <button class="ghost" id="evCancel">Cancel</button>
+        <button id="evSave">Create event</button>
+      </div>
+    </div>
+  </div>`);
+
+  let dateVal = prefillDate || todayIso();
+  const dateWrap = backdrop.querySelector('#evDateWrap');
+  const dateField = createDueDateField(dateVal, (val)=>{ dateVal = val; });
+  dateWrap.appendChild(dateField);
+
+  const friends = invitableFriends();
+  const friendsWrap = backdrop.querySelector('#evFriendsWrap');
+  if(friends.length){
+    friends.forEach(f=>{
+      const row = el(`<label class="row" style="gap:8px;align-items:center;padding:5px 4px;cursor:pointer;">
+        <input type="checkbox" value="${f.id}"/> <span>${f.name}</span>
+      </label>`);
+      friendsWrap.appendChild(row);
+    });
+  } else {
+    friendsWrap.appendChild(el(`<p class="hint" style="margin:0;">You don't have any account friends yet to invite — add one from the Friends tab. (Manual, non-account friends can't receive invites.)</p>`));
+  }
+
+  backdrop.querySelectorAll('input[name="evVis"]').forEach(r=>{
+    r.onchange = ()=>{
+      const shared = backdrop.querySelector('input[name="evVis"]:checked').value==='shared';
+      friendsWrap.style.display = shared ? 'block' : 'none';
+    };
+  });
+
+  backdrop.querySelector('#evCancel').onclick = ()=> backdrop.remove();
+  backdrop.onclick = (e)=>{ if(e.target===backdrop) backdrop.remove(); };
+  backdrop.querySelector('#evSave').onclick = async ()=>{
+    const title = backdrop.querySelector('#evTitle').value.trim();
+    if(!title){ showToast('Give the event a title first.'); return; }
+    if(!dateVal){ showToast('Pick a valid date.'); return; }
+    const time = backdrop.querySelector('#evTime').value;
+    const notes = backdrop.querySelector('#evNotes').value.trim();
+    const isPrivate = backdrop.querySelector('input[name="evVis"]:checked').value==='private';
+    const invitedIds = isPrivate ? [] : [...friendsWrap.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);
+    const invitedMembers = invitedIds.map(id=> state.members.find(m=>m.id===id)).filter(Boolean);
+    backdrop.remove();
+    await createCalendarEvent({title, date:dateVal, time, notes, isPrivate, invitedMembers});
+  };
+
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#evTitle').focus();
 }
 
 /* ============================= FRIENDS TAB ============================= */
