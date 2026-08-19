@@ -1,0 +1,6 @@
+{
+  "_comment": "Used ONLY by scheduled runs of .github/workflows/update-aisis.yml (the cron trigger has no way to pass inputs). A manual 'Run workflow' dispatch always overrides these three values with whatever you type into the GitHub UI, so you can fetch a future term any time without editing this file. When a new semester opens for registration, edit this file (schoolYearStart + term) and commit it — that's what moves the *automatic* daily run forward; nothing here is hardcoded into the workflow itself.",
+  "schoolYearStart": 2026,
+  "term": "second",
+  "departments": "all"
+}

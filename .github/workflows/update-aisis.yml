@@ -1,0 +1,62 @@
+name: Update AISIS course catalog
+
+on:
+  # Scheduled run — no inputs available here, so update-aisis.js falls back
+  # to aisis-backend/config/current-term.json for schoolYearStart/term/
+  # departments. Edit that file (not this workflow) to move the automatic
+  # run forward to a new semester. Runs daily at 16:00 UTC (~midnight in
+  # Manila) — change the cron expression if you'd like a different cadence.
+  schedule:
+    - cron: "0 16 * * *"
+
+  # Manual run from the Actions tab ("Run workflow"). Any input left blank
+  # falls back to current-term.json too, so you can e.g. only override
+  # `term` and leave the rest alone. This is also how you fetch a FUTURE
+  # semester ahead of time without touching current-term.json at all.
+  workflow_dispatch:
+    inputs:
+      schoolYearStart:
+        description: "Academic year start, e.g. 2026 for SY2026-2027 (leave blank to use config/current-term.json)"
+        required: false
+        type: string
+      term:
+        description: "Term (leave blank to use config/current-term.json)"
+        required: false
+        type: choice
+        options:
+          - ""
+          - intersession
+          - first
+          - second
+      departments:
+        description: "Comma-separated department codes, or 'all' (leave blank to use config/current-term.json)"
+        required: false
+        type: string
+
+jobs:
+  update-catalog:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aisis-backend
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: aisis-backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Fetch, parse, and update Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          INPUT_SCHOOL_YEAR_START: ${{ github.event.inputs.schoolYearStart }}
+          INPUT_TERM: ${{ github.event.inputs.term }}
+          INPUT_DEPARTMENTS: ${{ github.event.inputs.departments }}
+        run: npm run update

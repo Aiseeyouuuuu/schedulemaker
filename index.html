@@ -643,6 +643,18 @@ function militaryToMinutes(str){
 
 function looksLikeHtml(text){ return /<\s*(td|tr|table)\b/i.test(text); }
 
+// Doc-ID key for the per-term automated catalog written by the GitHub
+// Actions updater (see aisis-backend/), e.g. "2026-2027-1" for First
+// Semester of SY2026-2027. schoolYear is the "YYYY-YYYY+1" string already
+// used everywhere else in this file (state.schoolYear); semesterType is
+// one of SEMESTER_TYPES' values. Keep TERM_CODE in sync with
+// aisis-backend/scripts/aisis-client.js — it's the same convention AISIS
+// itself uses for applicablePeriod.
+const TERM_CODE = {intersession:'0', first:'1', second:'2'};
+function catalogTermKey(schoolYear, semesterType){
+  return `${schoolYear}-${TERM_CODE[semesterType] || '1'}`;
+}
+
 /* ============================= SEMESTER / SCHOOL YEAR ============================= */
 // Which term is currently selected, and what school year it belongs to.
 // The date ranges below follow the pattern given for SY2026-2027 (Intersession
@@ -2854,6 +2866,72 @@ function renderTabs(){
   return wrap;
 }
 
+/* ============================= AUTOMATED CATALOG (GitHub Actions) =============================
+   The Cloud-Functions-based importer was replaced with a GitHub Actions
+   workflow (see aisis-backend/) that fetches + parses AISIS itself, on a
+   schedule or on manual dispatch, and writes each term's result straight
+   to Firestore at sked_shared/catalog__<schoolYear>-<termCode> — using a
+   service-account key that lives in GitHub Secrets, never in this file or
+   the repo. That write bypasses these client-side Firestore rules
+   entirely (the Admin SDK always can), so no admin sign-in is needed for
+   the automated side. This panel just lets an admin pull one of those
+   already-written terms into the LIVE shared catalog everyone here reads
+   from — same merge-by-course+section behavior as the manual import
+   below, so re-loading a term after a re-run never duplicates classes. */
+function renderAutoCatalogPanel(){
+  const panel = el(`
+    <div class="panel">
+      <h3>Load automated catalog</h3>
+      <p class="hint">The GitHub Actions updater writes each term to its own spot in the database — it never touches other terms. Pick a term and load it into the shared catalog below; this merges in by course + section, so nothing already added gets duplicated.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap;">
+        <select id="autoCatYear"></select>
+        <select id="autoCatTerm"></select>
+        <button id="autoCatLoad">Load into shared catalog</button>
+      </div>
+      <p class="hint" id="autoCatStatus" style="margin-top:8px;"></p>
+    </div>`);
+  const yearSel = panel.querySelector('#autoCatYear');
+  schoolYearOptions().forEach(y=> yearSel.appendChild(el(`<option value="${y}" ${state.schoolYear===y?'selected':''}>SY ${y}</option>`)));
+  const termSel = panel.querySelector('#autoCatTerm');
+  SEMESTER_TYPES.forEach(t=> termSel.appendChild(el(`<option value="${t.value}" ${state.semesterType===t.value?'selected':''}>${t.label}</option>`)));
+  const status = panel.querySelector('#autoCatStatus');
+
+  panel.querySelector('#autoCatLoad').onclick = async ()=>{
+    const btn = panel.querySelector('#autoCatLoad');
+    if(btn.disabled) return;
+    btn.disabled = true;
+    status.style.color = 'var(--muted)';
+    status.textContent = 'Loading…';
+    try{
+      const key = catalogTermKey(yearSel.value, termSel.value);
+      const termCourses = await sGet('catalog__'+key, true);
+      if(!termCourses || !termCourses.length){
+        status.textContent = `No automated catalog found yet for ${semesterLabel(termSel.value, yearSel.value)} (doc "catalog__${key}"). Run the GitHub Action first.`;
+        status.style.color = 'var(--danger)';
+        return;
+      }
+      let added=0, replaced=0;
+      termCourses.forEach(entry=>{
+        const k = catalogKey(entry.code, entry.section);
+        const idx = state.catalog.findIndex(c => catalogKey(c.code, c.section) === k);
+        const copy = {...entry};
+        if(idx>-1){ copy.id = state.catalog[idx].id; state.catalog[idx] = copy; replaced++; }
+        else{ copy.id = copy.id || ('c_'+Math.random().toString(36).slice(2,9)); state.catalog.push(copy); added++; }
+      });
+      await saveCatalog();
+      render();
+      showToast(`Loaded ${semesterLabel(termSel.value, yearSel.value)} — ${added} added, ${replaced} replaced.`);
+    }catch(e){
+      console.error('load automated catalog failed', e);
+      status.textContent = 'Something went wrong loading that term — check the console.';
+      status.style.color = 'var(--danger)';
+    }finally{
+      btn.disabled = false;
+    }
+  };
+  return panel;
+}
+
 /* ============================= IMPORT / STAGING ============================= */
 function renderImportPanel(){
   const panel = el(`
@@ -3158,6 +3236,7 @@ function renderManualForm(container, memberId){
 function renderMemberEditor(memberId){
   const member = getMember(memberId);
   const wrap = el(`<div></div>`);
+  if(state.isAdmin) wrap.appendChild(renderAutoCatalogPanel());
   if(state.isAdmin) wrap.appendChild(renderImportPanel());
 
   const entries = (state.schedules[memberId]||[]).map(entryFor).filter(Boolean);

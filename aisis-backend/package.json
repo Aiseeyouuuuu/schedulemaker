@@ -1,0 +1,15 @@
+{
+  "name": "aisis-backend",
+  "description": "GitHub Actions-run replacement for the old Cloud Functions AISIS importer. Fetches AISIS directly, parses it with the same rules as the website's own parseAisisHtml(), and writes results to Firestore with the Admin SDK — no Cloud Functions, no Blaze plan required.",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "update": "node scripts/update-aisis.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "firebase-admin": "^12.6.0"
+  }
+}
