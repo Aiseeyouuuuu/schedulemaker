@@ -53,6 +53,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Test AISIS connectivity
+        run: |
+          curl -I -L --max-time 30 \
+            "https://aisis.ateneo.edu/j_aisis/classSkeds.do"
+
       - name: Fetch, parse, and update Firestore
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
