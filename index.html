@@ -281,16 +281,17 @@
   }
 
   /* ---- link / notes cells that auto-render pasted URLs as chips ---- */
-  .link-cell-wrap{width:100%;}
-  .link-chip-row{display:flex;align-items:center;gap:4px;max-width:100%;}
+  .link-cell-wrap{width:100%;min-width:0;}
+  .link-chip-row{display:flex;align-items:flex-start;gap:4px;width:100%;min-width:0;box-sizing:border-box;}
   .link-chip{
-    display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:20px;
+    display:flex;align-items:flex-start;gap:6px;padding:5px 10px;border-radius:14px;
     border:1px solid var(--line);background:var(--surface);font-size:calc(12.5px * var(--font-scale));
-    color:var(--navy-text);text-decoration:none;max-width:100%;overflow:hidden;font-family:'Poppins',sans-serif;
+    color:var(--navy-text);text-decoration:none;font-family:'Poppins',sans-serif;
+    width:100%;min-width:0;box-sizing:border-box;
   }
   .link-chip:hover{border-color:var(--navy-text);background:rgba(var(--navy-rgb),0.08);}
-  .link-chip-icon{flex:none;font-size:calc(11px * var(--font-scale));line-height:1;}
-  .link-chip-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .link-chip-icon{flex:none;font-size:calc(11px * var(--font-scale));line-height:1.4;}
+  .link-chip-label{min-width:0;flex:1 1 auto;white-space:normal;word-break:break-all;overflow-wrap:anywhere;line-height:1.4;}
   .link-chip-edit{
     flex:none;background:transparent;border:none;color:var(--muted);cursor:pointer;
     font-size:calc(12px * var(--font-scale));padding:2px 5px;border-radius:4px;opacity:0;transition:opacity .15s;
@@ -1976,16 +1977,18 @@ function urlHref(v){
   const s = v.trim();
   return /^https?:\/\//i.test(s) ? s : `https://${s}`;
 }
+// The chip wraps onto extra lines rather than clipping, so this only needs
+// to guard against pathologically long URLs — not the common case.
 function urlLabel(v){
+  let label;
   try{
     const u = new URL(urlHref(v));
-    const path = u.pathname.replace(/\/+$/,'');
-    const label = u.hostname.replace(/^www\./,'') + (path && path!=='/' ? path : '');
-    return label.length > 42 ? label.slice(0,39)+'…' : label;
+    const path = u.pathname.replace(/\/+$/,'') + u.search;
+    label = u.hostname.replace(/^www\./,'') + (path && path!=='/' ? path : '');
   }catch(e){
-    const s = v.trim();
-    return s.length > 42 ? s.slice(0,39)+'…' : s;
+    label = v.trim();
   }
+  return label.length > 200 ? label.slice(0,197)+'…' : label;
 }
 // Builds a <td> for a link/notes field that shows a plain auto-growing
 // textarea while being edited, but renders as a clickable pill (icon + host
