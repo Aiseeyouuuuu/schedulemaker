@@ -67,27 +67,6 @@ async function fetchWithTimeout(url, options, timeoutMs) {
 async function getSessionCookie() {
   try {
     const res = await fetchWithTimeout(
-  AISIS_BASE_URL,
-  {
-    method: "GET",
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Accept": "text/html,application/xhtml+xml",
-    },
-  },
-  30000
-);
-    const headers = res.headers;
-    let cookies = [];
-    if (typeof headers.getSetCookie === "function") {
-      cookies = headers.getSetCookie();
-    } else {
-      const single = headers.get("set-cookie");
-      if (single) cookies = [single];
-    }
-  async function getSessionCookie() {
-  try {
-    const res = await fetchWithTimeout(
       AISIS_BASE_URL,
       {
         method: "GET",
@@ -125,6 +104,7 @@ async function getSessionCookie() {
 
     throw new Error("Could not establish an AISIS session: " + e.message);
   }
+}
 /**
  * Fetches ONE department's schedule-of-classes HTML for a given term.
  * Returns { html, applicablePeriod, deptCode }. Throws on any failure —
