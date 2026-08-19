@@ -231,6 +231,9 @@
     display:inline-block;font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11px * var(--font-scale));
     padding:3px 10px;border-radius:20px;background:var(--line);color:var(--navy-text);white-space:nowrap;
   }
+  /* Per-subject/category color is set inline via JS (see taskSubjectColor),
+     matching the pill colors used in the main Tasks/Sidequests table. The
+     .ut-subject-pill class above stays as a fallback for when no label. */
   .ut-rank-badge{
     display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;
     border-radius:20px;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(11.5px * var(--font-scale));
@@ -3458,7 +3461,12 @@ function renderTasksTab(){
 
       const subjTd = document.createElement('td');
       const subjPill = document.createElement('span'); subjPill.className = 'ut-subject-pill';
-      subjPill.textContent = t.__subjectLabel || ''; subjTd.appendChild(subjPill);
+      subjPill.textContent = t.__subjectLabel || '';
+      if(t.__subjectLabel){
+        subjPill.style.background = taskSubjectColor(t.__subjectLabel, subjectLabels);
+        subjPill.style.color = '#2A2E3D';
+      }
+      subjTd.appendChild(subjPill);
 
       const dueTd = document.createElement('td'); dueTd.className = 'ut-due'; dueTd.textContent = t.dueDate || '';
 
@@ -3753,7 +3761,13 @@ function renderSidequestsTab(){
 
       const catTd = document.createElement('td');
       const catPill = document.createElement('span'); catPill.className = 'ut-subject-pill';
-      catPill.textContent = sidequestCategoryLabel(t.category); catTd.appendChild(catPill);
+      const catLabelText = sidequestCategoryLabel(t.category);
+      catPill.textContent = catLabelText;
+      if(catLabelText){
+        catPill.style.background = taskSubjectColor(catLabelText, categoryLabels);
+        catPill.style.color = '#2A2E3D';
+      }
+      catTd.appendChild(catPill);
 
       const dueTd = document.createElement('td'); dueTd.className = 'ut-due'; dueTd.textContent = t.dueDate || '';
 
