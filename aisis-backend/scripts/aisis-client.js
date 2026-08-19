@@ -66,7 +66,17 @@ async function fetchWithTimeout(url, options, timeoutMs) {
 // never hard-coding a personal AISIS session cookie.
 async function getSessionCookie() {
   try {
-    const res = await fetchWithTimeout(AISIS_BASE_URL, {method: "GET"}, 15000);
+    const res = await fetchWithTimeout(
+  AISIS_BASE_URL,
+  {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "text/html,application/xhtml+xml",
+    },
+  },
+  30000
+);
     const headers = res.headers;
     let cookies = [];
     if (typeof headers.getSetCookie === "function") {
@@ -75,14 +85,47 @@ async function getSessionCookie() {
       const single = headers.get("set-cookie");
       if (single) cookies = [single];
     }
-    if (!cookies.length) return null;
+  async function getSessionCookie() {
+  try {
+    const res = await fetchWithTimeout(
+      AISIS_BASE_URL,
+      {
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "text/html,application/xhtml+xml",
+        },
+      },
+      30000
+    );
+
+    if (!res.ok) {
+      throw new Error(`AISIS returned HTTP ${res.status}`);
+    }
+
+    const headers = res.headers;
+    let cookies = [];
+
+    if (typeof headers.getSetCookie === "function") {
+      cookies = headers.getSetCookie();
+    } else {
+      const single = headers.get("set-cookie");
+      if (single) cookies = [single];
+    }
+
+    if (!cookies.length) {
+      throw new Error("AISIS did not provide a session cookie.");
+    }
+
     return cookies.map((c) => c.split(";")[0]).join("; ");
   } catch (e) {
-    console.warn("could not prime AISIS session cookie, continuing without one:", e.message);
-    return null;
+    if (e.name === "AbortError") {
+      throw new Error("AISIS session request timed out after 30 seconds.");
+    }
+
+    throw new Error("Could not establish an AISIS session: " + e.message);
   }
 }
-
 /**
  * Fetches ONE department's schedule-of-classes HTML for a given term.
  * Returns { html, applicablePeriod, deptCode }. Throws on any failure —
