@@ -125,7 +125,6 @@ async function getSessionCookie() {
 
     throw new Error("Could not establish an AISIS session: " + e.message);
   }
-}
 /**
  * Fetches ONE department's schedule-of-classes HTML for a given term.
  * Returns { html, applicablePeriod, deptCode }. Throws on any failure —
