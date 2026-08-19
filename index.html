@@ -290,7 +290,8 @@
     width:100%;min-width:0;box-sizing:border-box;
   }
   .link-chip:hover{border-color:var(--navy-text);background:rgba(var(--navy-rgb),0.08);}
-  .link-chip-icon{flex:none;font-size:calc(11px * var(--font-scale));line-height:1.4;}
+  .link-chip-icon{flex:none;font-size:calc(11px * var(--font-scale));line-height:1.4;display:inline-flex;align-items:center;}
+  .link-chip-favicon{width:14px;height:14px;border-radius:3px;display:block;object-fit:contain;}
   .link-chip-label{min-width:0;flex:1 1 auto;white-space:normal;word-break:break-all;overflow-wrap:anywhere;line-height:1.4;}
   .link-chip-edit{
     flex:none;background:transparent;border:none;color:var(--muted);cursor:pointer;
@@ -1967,22 +1968,75 @@ function scheduleAutoResize(ta){
 // ---- Link/Notes cells that auto-render a pasted URL as a clickable chip ----
 // Recognizes bare "example.com" style entries too, not just ones already
 // starting with http(s):// — those get that scheme assumed when opened.
+// Also recognizes a URL that's just *part* of the text (e.g. "form here:
+// https://... — fill out by Friday") by pulling the first http(s) URL out
+// of the string, so the rest of the note doesn't block the chip.
+function extractUrlFromText(v){
+  const s = (v||'').trim();
+  if(!s) return null;
+  const m = s.match(/https?:\/\/\S+/i);
+  if(!m) return null;
+  // Trim trailing punctuation/brackets/quotes that were just sentence
+  // punctuation around the link, not part of it.
+  return m[0].replace(/[),.;!?\]}'"]+$/,'');
+}
 function isLikelyUrl(v){
   if(!v) return false;
   const s = v.trim();
-  if(!s || /\s/.test(s)) return false;
-  return /^https?:\/\/\S+$/i.test(s) || /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(s);
+  if(!s) return false;
+  if(!/\s/.test(s)){
+    if(/^https?:\/\/\S+$/i.test(s) || /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(s)) return true;
+  }
+  return !!extractUrlFromText(s);
 }
 function urlHref(v){
   const s = v.trim();
+  const embedded = extractUrlFromText(s);
+  if(embedded) return embedded;
   return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+}
+// Recognizes common file/doc/media hosts and returns a short, friendly
+// title (e.g. "Google Sheet", "Canva Design") instead of the raw URL —
+// covers the file types people actually paste in here.
+function knownLinkTitle(href){
+  let host, path;
+  try{
+    const u = new URL(href);
+    host = u.hostname.replace(/^www\./,'').toLowerCase();
+    path = u.pathname;
+  }catch(e){ return null; }
+
+  if(host==='docs.google.com'){
+    if(path.startsWith('/spreadsheets')) return 'Google Sheet';
+    if(path.startsWith('/presentation')) return 'Google Slides';
+    if(path.startsWith('/forms')) return 'Google Form';
+    if(path.startsWith('/document')) return 'Google Doc';
+    return 'Google Docs';
+  }
+  if(host==='sheets.google.com') return 'Google Sheet';
+  if(host==='slides.google.com') return 'Google Slides';
+  if(host==='forms.google.com' || host==='forms.gle') return 'Google Form';
+  if(host==='drive.google.com') return 'Google Drive File';
+  if(host==='photos.google.com' || host==='photos.app.goo.gl') return 'Google Photos';
+  if(host==='canva.com' || host.endsWith('.canva.com') || host==='canva.site') return 'Canva Design';
+  if(host==='youtube.com' || host==='m.youtube.com' || host==='youtu.be') return 'YouTube Video';
+  if(host==='notion.so' || host.endsWith('.notion.site')) return 'Notion Page';
+  if(host==='dropbox.com' || host==='www.dropbox.com') return 'Dropbox File';
+  if(host==='figma.com') return 'Figma File';
+  if(host==='airtable.com') return 'Airtable Base';
+  if(host==='zoom.us' || host.endsWith('.zoom.us')) return 'Zoom Link';
+  if(host==='calendar.google.com') return 'Google Calendar';
+  return null;
 }
 // The chip wraps onto extra lines rather than clipping, so this only needs
 // to guard against pathologically long URLs — not the common case.
 function urlLabel(v){
+  const href = urlHref(v);
+  const known = knownLinkTitle(href);
+  if(known) return known;
   let label;
   try{
-    const u = new URL(urlHref(v));
+    const u = new URL(href);
     const path = u.pathname.replace(/\/+$/,'') + u.search;
     label = u.hostname.replace(/^www\./,'') + (path && path!=='/' ? path : '');
   }catch(e){
@@ -1991,9 +2045,10 @@ function urlLabel(v){
   return label.length > 200 ? label.slice(0,197)+'…' : label;
 }
 // Builds a <td> for a link/notes field that shows a plain auto-growing
-// textarea while being edited, but renders as a clickable pill (icon + host
-// + path, opening in a new tab) once it holds something URL-shaped and loses
-// focus. A small pencil button (visible on hover) switches back to editing.
+// textarea while being edited, but renders as a clickable pill (site icon +
+// friendly title or host/path, opening in a new tab) once it holds
+// something URL-shaped and loses focus. A small pencil button (visible on
+// hover) switches back to editing.
 function makeLinkCell(initialValue, placeholder, onSave){
   const td = elCell(`<td class="grow-cell"><div class="link-cell-wrap"></div></td>`);
   const wrap = td.querySelector('.link-cell-wrap');
@@ -2007,12 +2062,35 @@ function makeLinkCell(initialValue, placeholder, onSave){
     <button type="button" class="link-chip-edit" title="Edit">✎</button>
   </div>`);
   const anchor = chip.querySelector('.link-chip');
+  const icon = chip.querySelector('.link-chip-icon');
   const label = chip.querySelector('.link-chip-label');
   const editBtn = chip.querySelector('.link-chip-edit');
 
+  // Swaps in the site's favicon (via a lightweight, no-CORS favicon
+  // service) in place of the generic chain emoji; falls back to the
+  // emoji if the favicon fails to load or the host can't be parsed.
+  function setChipIcon(href){
+    let host = null;
+    try{ host = new URL(href).hostname; }catch(e){}
+    icon.innerHTML = '';
+    if(host){
+      const img = document.createElement('img');
+      img.className = 'link-chip-favicon';
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
+      img.src = `https://www.google.com/s2/favicons?sz=32&domain=${encodeURIComponent(host)}`;
+      img.onerror = ()=>{ icon.textContent = '🔗'; };
+      icon.appendChild(img);
+    } else {
+      icon.textContent = '🔗';
+    }
+  }
+
   function showChip(){
-    anchor.href = urlHref(ta.value);
+    const href = urlHref(ta.value);
+    anchor.href = href;
     label.textContent = urlLabel(ta.value);
+    setChipIcon(href);
     wrap.innerHTML = ''; wrap.appendChild(chip);
   }
   function showTextarea(focus){
