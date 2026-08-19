@@ -3922,6 +3922,12 @@ function renderSidequestsTab(){
 //     works between signed-in accounts that are already account friends
 //     (manual, non-account friends have no uid to invite).
 function isoDate(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+// e.g. "10/20/2026" -> "Oct 20"
+function fmtShortDate(iso){
+  const [y,m,d] = (iso||'').split('-').map(Number);
+  if(!y||!m||!d) return iso||'';
+  return new Date(y, m-1, d).toLocaleDateString('en-US', {month:'short', day:'numeric'});
+}
 // Bounds class chips to the actual semester date range (from the existing
 // semesterDateRange() used for .ics export) instead of showing a class on
 // every matching weekday forever — see state.semesterType/schoolYear.
@@ -4023,20 +4029,21 @@ async function loadReceivedEvents(){
     state.receivedEvents = snap.docs.map(d=>({...d.data(), id:d.id, __remote:true}));
   }catch(e){ console.error('loadReceivedEvents failed', e); }
 }
-async function createCalendarEvent({title, date, time, notes, isPrivate, invitedMembers}){
+async function createCalendarEvent({title, date, endDate, time, notes, isPrivate, invitedMembers}){
   const uid = currentUid();
   const me = getMember(state.meId);
   const id = 'ev_'+Math.random().toString(36).slice(2,9);
   const invitedUids = isPrivate ? [] : (invitedMembers||[]).map(m=>m.remoteUid).filter(Boolean);
   const invitedNames = isPrivate ? [] : (invitedMembers||[]).map(m=>m.name);
-  const event = { id, title, date, time:time||'', notes:notes||'', private:!!isPrivate, invitedUids, invitedNames, ownerUid: uid||null, ownerName: me?me.name:'' };
+  const endDateVal = (endDate && endDate>=date) ? endDate : date;
+  const event = { id, title, date, endDate:endDateVal, time:time||'', notes:notes||'', private:!!isPrivate, invitedUids, invitedNames, ownerUid: uid||null, ownerName: me?me.name:'' };
   state.calendarEvents.push(event);
   await saveCalendarEvents();
   if(!isPrivate && invitedUids.length){
     if(__db && uid){
       try{
         await __db.collection('calendar_events').doc(id).set({
-          ownerUid: uid, ownerName: me?me.name:'', title, date, time: time||'', notes: notes||'',
+          ownerUid: uid, ownerName: me?me.name:'', title, date, endDate: endDateVal, time: time||'', notes: notes||'',
           invitedUids, invitedNames, createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
       }catch(e){ console.error('share event failed', e); showToast("Saved to your calendar, but couldn't share it — check your connection."); }
@@ -4077,6 +4084,14 @@ function calendarEventItems(){
   const mine = (state.calendarEvents||[]).map(e=>({...e, __mine:true}));
   const received = (state.receivedEvents||[]).map(e=>({...e, __mine:false}));
   return [...mine, ...received];
+}
+// Multi-day events store a start `date` and an `endDate` (equal to `date`
+// for single-day events, and absent on events saved before this feature
+// existed — treated as single-day in that case).
+function eventOccursOn(ev, dateStr){
+  const start = ev.date;
+  const end = ev.endDate || ev.date;
+  return dateStr >= start && dateStr <= end;
 }
 
 function renderCalendarTab(){
@@ -4148,7 +4163,7 @@ function renderCalendarTab(){
       });
     }
     const dayTasks = taskItems.filter(t=>t.date===dateStr);
-    const dayEvents = eventItems.filter(ev=>ev.date===dateStr);
+    const dayEvents = eventItems.filter(ev=>eventOccursOn(ev, dateStr));
 
     const cell = el(`<div class="cal-cell ${dateStr===today?'cal-cell-today':''} ${holiday?'cal-cell-holiday':''}"><div class="cal-daynum">${d}</div><div class="cal-chips"></div></div>`);
     const chipsWrap = cell.querySelector('.cal-chips');
@@ -4207,7 +4222,7 @@ function openDayAgendaModal(dateStr, dayClasses, dayTasks, dayEvents){
     const row = el(`<div class="agenda-row">
       <span class="cal-chip ${ev.private?'cal-chip-event-private':'cal-chip-event-shared'}" style="flex:none;">${ev.private?'Private':'Shared'}</span>
       <div style="flex:1;"><b>${(ev.title||'').replace(/</g,'&lt;')}</b><br/>
-      <span class="hint" style="margin:0;">${ev.time?minutesToLabel(hhmmToMinutes(ev.time))+' · ':''}${ev.__mine?'You':ev.ownerName||'Friend'}${(!ev.private && ev.invitedNames && ev.invitedNames.length)?' · with '+ev.invitedNames.join(', '):''}</span>
+      <span class="hint" style="margin:0;">${(ev.endDate && ev.endDate!==ev.date)?(fmtShortDate(ev.date)+' – '+fmtShortDate(ev.endDate)+' · '):''}${ev.time?minutesToLabel(hhmmToMinutes(ev.time))+' · ':''}${ev.__mine?'You':ev.ownerName||'Friend'}${(!ev.private && ev.invitedNames && ev.invitedNames.length)?' · with '+ev.invitedNames.join(', '):''}</span>
       ${ev.notes?'<br/><span class="hint" style="margin:0;">'+ev.notes.replace(/</g,'&lt;')+'</span>':''}</div>
     </div>`);
     if(ev.__mine){
@@ -4247,6 +4262,13 @@ function openNewEventModal(prefillDate){
           <input type="time" id="evTime" style="margin:0;width:100%;" />
         </div>
       </div>
+      <label class="row" style="gap:6px;align-items:center;cursor:pointer;margin-top:10px;">
+        <input type="checkbox" id="evMultiDay" style="width:auto;margin:0;flex:none;"/> Spans multiple days
+      </label>
+      <div id="evEndDateWrap" style="display:none;margin-top:8px;">
+        <label class="hint" style="display:block;margin-bottom:4px;">End date</label>
+        <div id="evEndDateInner" style="border:1px solid var(--line);border-radius:8px;padding:2px 4px;"></div>
+      </div>
       <label class="hint" style="display:block;margin:12px 0 4px;">Notes</label>
       <textarea id="evNotes" rows="2" placeholder="Optional details" style="width:100%;"></textarea>
 
@@ -4268,8 +4290,25 @@ function openNewEventModal(prefillDate){
 
   let dateVal = prefillDate || todayIso();
   const dateWrap = backdrop.querySelector('#evDateWrap');
-  const dateField = createDueDateField(dateVal, (val)=>{ dateVal = val; });
+  const dateField = createDueDateField(dateVal, (val)=>{
+    dateVal = val;
+    if(endDateVal && endDateVal < dateVal){
+      endDateVal = dateVal;
+      endDateField.querySelector('.due-date-text').value = isoToTyped(endDateVal);
+      endDateField.querySelector('.due-date-native').value = endDateVal;
+    }
+  });
   dateWrap.appendChild(dateField);
+
+  let endDateVal = dateVal;
+  const endDateWrap = backdrop.querySelector('#evEndDateWrap');
+  const endDateInner = backdrop.querySelector('#evEndDateInner');
+  const endDateField = createDueDateField(endDateVal, (val)=>{ endDateVal = val; });
+  endDateInner.appendChild(endDateField);
+  backdrop.querySelector('#evMultiDay').onchange = (e)=>{
+    endDateWrap.style.display = e.target.checked ? 'block' : 'none';
+    if(!e.target.checked) endDateVal = dateVal;
+  };
 
   const friends = invitableFriends();
   const friendsWrap = backdrop.querySelector('#evFriendsWrap');
@@ -4297,13 +4336,16 @@ function openNewEventModal(prefillDate){
     const title = backdrop.querySelector('#evTitle').value.trim();
     if(!title){ showToast('Give the event a title first.'); return; }
     if(!dateVal){ showToast('Pick a valid date.'); return; }
+    const isMultiDay = backdrop.querySelector('#evMultiDay').checked;
+    const endDate = isMultiDay ? (endDateVal || dateVal) : dateVal;
+    if(isMultiDay && endDate < dateVal){ showToast('End date must be on or after the start date.'); return; }
     const time = backdrop.querySelector('#evTime').value;
     const notes = backdrop.querySelector('#evNotes').value.trim();
     const isPrivate = backdrop.querySelector('input[name="evVis"]:checked').value==='private';
     const invitedIds = isPrivate ? [] : [...friendsWrap.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);
     const invitedMembers = invitedIds.map(id=> state.members.find(m=>m.id===id)).filter(Boolean);
     backdrop.remove();
-    await createCalendarEvent({title, date:dateVal, time, notes, isPrivate, invitedMembers});
+    await createCalendarEvent({title, date:dateVal, endDate, time, notes, isPrivate, invitedMembers});
   };
 
   document.body.appendChild(backdrop);
