@@ -280,6 +280,24 @@
     border:1.5px solid rgba(0,0,0,0.15);
   }
 
+  /* ---- link / notes cells that auto-render pasted URLs as chips ---- */
+  .link-cell-wrap{width:100%;}
+  .link-chip-row{display:flex;align-items:center;gap:4px;max-width:100%;}
+  .link-chip{
+    display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:20px;
+    border:1px solid var(--line);background:var(--surface);font-size:calc(12.5px * var(--font-scale));
+    color:var(--navy-text);text-decoration:none;max-width:100%;overflow:hidden;font-family:'Poppins',sans-serif;
+  }
+  .link-chip:hover{border-color:var(--navy-text);background:rgba(var(--navy-rgb),0.08);}
+  .link-chip-icon{flex:none;font-size:calc(11px * var(--font-scale));line-height:1;}
+  .link-chip-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .link-chip-edit{
+    flex:none;background:transparent;border:none;color:var(--muted);cursor:pointer;
+    font-size:calc(12px * var(--font-scale));padding:2px 5px;border-radius:4px;opacity:0;transition:opacity .15s;
+  }
+  .link-chip-row:hover .link-chip-edit{opacity:1;}
+  .link-chip-edit:hover{background:var(--line);color:var(--ink);}
+
   /* ---- grid (departure board) ---- */
   .board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;font-family:var(--schedule-font);}
   .board-head{display:grid;grid-template-columns:64px repeat(6,1fr);border-bottom:2px solid var(--navy-text);}
@@ -1945,6 +1963,71 @@ function scheduleAutoResize(ta){
   requestAnimationFrame(()=> autoResizeTextarea(ta));
 }
 
+// ---- Link/Notes cells that auto-render a pasted URL as a clickable chip ----
+// Recognizes bare "example.com" style entries too, not just ones already
+// starting with http(s):// — those get that scheme assumed when opened.
+function isLikelyUrl(v){
+  if(!v) return false;
+  const s = v.trim();
+  if(!s || /\s/.test(s)) return false;
+  return /^https?:\/\/\S+$/i.test(s) || /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(s);
+}
+function urlHref(v){
+  const s = v.trim();
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+}
+function urlLabel(v){
+  try{
+    const u = new URL(urlHref(v));
+    const path = u.pathname.replace(/\/+$/,'');
+    const label = u.hostname.replace(/^www\./,'') + (path && path!=='/' ? path : '');
+    return label.length > 42 ? label.slice(0,39)+'…' : label;
+  }catch(e){
+    const s = v.trim();
+    return s.length > 42 ? s.slice(0,39)+'…' : s;
+  }
+}
+// Builds a <td> for a link/notes field that shows a plain auto-growing
+// textarea while being edited, but renders as a clickable pill (icon + host
+// + path, opening in a new tab) once it holds something URL-shaped and loses
+// focus. A small pencil button (visible on hover) switches back to editing.
+function makeLinkCell(initialValue, placeholder, onSave){
+  const td = elCell(`<td class="grow-cell"><div class="link-cell-wrap"></div></td>`);
+  const wrap = td.querySelector('.link-cell-wrap');
+  const ta = el(`<textarea rows="1" placeholder="${placeholder}"></textarea>`);
+  ta.value = initialValue || '';
+
+  const chip = el(`<div class="link-chip-row">
+    <a class="link-chip" target="_blank" rel="noopener noreferrer">
+      <span class="link-chip-icon">🔗</span><span class="link-chip-label"></span>
+    </a>
+    <button type="button" class="link-chip-edit" title="Edit">✎</button>
+  </div>`);
+  const anchor = chip.querySelector('.link-chip');
+  const label = chip.querySelector('.link-chip-label');
+  const editBtn = chip.querySelector('.link-chip-edit');
+
+  function showChip(){
+    anchor.href = urlHref(ta.value);
+    label.textContent = urlLabel(ta.value);
+    wrap.innerHTML = ''; wrap.appendChild(chip);
+  }
+  function showTextarea(focus){
+    wrap.innerHTML = ''; wrap.appendChild(ta);
+    scheduleAutoResize(ta);
+    if(focus){ ta.focus(); ta.select(); }
+  }
+
+  ta.oninput = ()=> autoResizeTextarea(ta);
+  ta.onchange = (e)=> onSave(e.target.value);
+  ta.onblur = ()=>{ if(isLikelyUrl(ta.value)) showChip(); };
+  editBtn.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); showTextarea(true); };
+  anchor.onclick = (e)=> e.stopPropagation();
+
+  if(isLikelyUrl(ta.value)) showChip(); else showTextarea(false);
+  return td;
+}
+
 // ---- Task-tracker due-date cell ----
 // A native <input type="date"> makes typing awkward: it splits into
 // month/day/year segments and each one intercepts keystrokes on its own,
@@ -3580,21 +3663,8 @@ function renderTasksTab(){
     tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
     tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
 
-    const linkTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="https://…"></textarea></td>`);
-    const linkInput = linkTd.querySelector('textarea');
-    linkInput.value = t.link || '';
-    linkInput.oninput = ()=> autoResizeTextarea(linkInput);
-    linkInput.onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'link', e.target.value);
-    scheduleAutoResize(linkInput);
-    tr.appendChild(linkTd);
-
-    const notesTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="Notes"></textarea></td>`);
-    const notesInput = notesTd.querySelector('textarea');
-    notesInput.value = t.notes || '';
-    notesInput.oninput = ()=> autoResizeTextarea(notesInput);
-    notesInput.onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'notes', e.target.value);
-    scheduleAutoResize(notesInput);
-    tr.appendChild(notesTd);
+    tr.appendChild(makeLinkCell(t.link, 'https://…', (val)=> updateTaskField(t.__subjectKey, t.id, 'link', val)));
+    tr.appendChild(makeLinkCell(t.notes, 'Notes', (val)=> updateTaskField(t.__subjectKey, t.id, 'notes', val)));
 
     const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
     delTd.querySelector('button').onclick = ()=> deleteTask(t.__subjectKey, t.id);
@@ -3880,21 +3950,8 @@ function renderSidequestsTab(){
     tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
     tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
 
-    const linkTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="https://…"></textarea></td>`);
-    const linkInput = linkTd.querySelector('textarea');
-    linkInput.value = t.link || '';
-    linkInput.oninput = ()=> autoResizeTextarea(linkInput);
-    linkInput.onchange = (e)=> updateSidequestField(t.id, 'link', e.target.value);
-    scheduleAutoResize(linkInput);
-    tr.appendChild(linkTd);
-
-    const notesTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="Notes"></textarea></td>`);
-    const notesInput = notesTd.querySelector('textarea');
-    notesInput.value = t.notes || '';
-    notesInput.oninput = ()=> autoResizeTextarea(notesInput);
-    notesInput.onchange = (e)=> updateSidequestField(t.id, 'notes', e.target.value);
-    scheduleAutoResize(notesInput);
-    tr.appendChild(notesTd);
+    tr.appendChild(makeLinkCell(t.link, 'https://…', (val)=> updateSidequestField(t.id, 'link', val)));
+    tr.appendChild(makeLinkCell(t.notes, 'Notes', (val)=> updateSidequestField(t.id, 'notes', val)));
 
     const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
     delTd.querySelector('button').onclick = ()=> deleteSidequest(t.id);
