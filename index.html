@@ -658,6 +658,16 @@ function catalogTermKey(schoolYear, semesterType){
   return `${schoolYear}-${TERM_CODE[semesterType] || '1'}`;
 }
 
+// Cloudflare Worker that kicks off the GitHub Actions AISIS updater on
+// manual dispatch. The Worker itself holds the X-Trigger-Secret (a
+// server-side secret, set in the Worker's environment) and the GitHub
+// credentials needed to start the workflow — neither ever ships to this
+// page. From the browser we only send the signed-in admin's Firebase ID
+// token; the Worker is expected to verify that token and check the uid
+// against its own allow-list before it will act on the request. See the
+// note above renderAutoCatalogPanel() for what that requires Worker-side.
+const AISIS_TRIGGER_WORKER_URL = 'https://aisis-manual-trigger.aisis-manual-trigger.workers.dev/trigger';
+
 /* ============================= SEMESTER / SCHOOL YEAR ============================= */
 // Which term is currently selected, and what school year it belongs to.
 // The date ranges below follow the pattern given for SY2026-2027 (Intersession
@@ -2993,17 +3003,29 @@ function renderTabs(){
    the automated side. This panel just lets an admin pull one of those
    already-written terms into the LIVE shared catalog everyone here reads
    from — same merge-by-course+section behavior as the manual import
-   below, so re-loading a term after a re-run never duplicates classes. */
+   below, so re-loading a term after a re-run never duplicates classes.
+
+   "Update AISIS Catalog" (below) is a separate step from that: it just
+   asks the Cloudflare Worker to kick off the GitHub Actions workflow for
+   a term, it does NOT load anything into the shared catalog itself. The
+   Worker holds the real X-Trigger-Secret server-side — this page never
+   sees it. All the browser sends is the signed-in admin's Firebase ID
+   token (via __auth.currentUser.getIdToken()); the Worker needs a small
+   server-side change to verify that token (Firebase's public JWKS, or
+   the Firebase Admin SDK) and check the uid against its own allow-list
+   before honoring the request — see AISIS_TRIGGER_WORKER_URL above. */
 function renderAutoCatalogPanel(){
   const panel = el(`
     <div class="panel">
       <h3>Load automated catalog</h3>
-      <p class="hint">The GitHub Actions updater writes each term to its own spot in the database — it never touches other terms. Pick a term and load it into the shared catalog below; this merges in by course + section, so nothing already added gets duplicated.</p>
+      <p class="hint">The GitHub Actions updater writes each term to its own spot in the database — it never touches other terms. Pick a term, optionally start a fresh AISIS pull for it, then load it into the shared catalog below; loading merges in by course + section, so nothing already added gets duplicated.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap;">
         <select id="autoCatYear"></select>
         <select id="autoCatTerm"></select>
+        <button class="ghost" id="autoCatTrigger">🔄 Update AISIS Catalog</button>
         <button id="autoCatLoad">Load into shared catalog</button>
       </div>
+      <p class="hint" id="autoCatTriggerStatus" style="margin-top:8px;"></p>
       <p class="hint" id="autoCatStatus" style="margin-top:8px;"></p>
     </div>`);
   const yearSel = panel.querySelector('#autoCatYear');
@@ -3011,6 +3033,59 @@ function renderAutoCatalogPanel(){
   const termSel = panel.querySelector('#autoCatTerm');
   SEMESTER_TYPES.forEach(t=> termSel.appendChild(el(`<option value="${t.value}" ${state.semesterType===t.value?'selected':''}>${t.label}</option>`)));
   const status = panel.querySelector('#autoCatStatus');
+  const triggerStatus = panel.querySelector('#autoCatTriggerStatus');
+
+  // Starts the GitHub Actions AISIS updater for the selected term. This
+  // only queues the workflow run — it does not load anything into the
+  // shared catalog. Once the run finishes, use "Load into shared
+  // catalog" below (possibly after a manual refresh/re-check) to pull
+  // the result in.
+  panel.querySelector('#autoCatTrigger').onclick = async ()=>{
+    const btn = panel.querySelector('#autoCatTrigger');
+    if(btn.disabled) return;
+    btn.disabled = true;
+    triggerStatus.style.color = 'var(--muted)';
+    triggerStatus.textContent = 'Starting AISIS update…';
+    try{
+      const schoolYearStart = parseInt(String(yearSel.value).split('-')[0], 10);
+      const term = termSel.value; // SEMESTER_TYPES values are already 'intersession'|'first'|'second' — same strings the Worker expects
+      // No X-Trigger-Secret here — that stays server-side in the Worker.
+      // We send the signed-in admin's Firebase ID token instead, so the
+      // Worker can verify who's asking without this page ever holding a
+      // credential capable of triggering the workflow on its own.
+      const idToken = (__auth && __auth.currentUser) ? await __auth.currentUser.getIdToken() : null;
+      const headers = {'Content-Type':'application/json'};
+      if(idToken) headers['Authorization'] = 'Bearer ' + idToken;
+      const res = await fetch(AISIS_TRIGGER_WORKER_URL, {
+        method:'POST',
+        headers,
+        body: JSON.stringify({schoolYearStart, term, departments:'all'})
+      });
+      let data = null;
+      try{ data = await res.json(); }catch(e){ /* non-JSON error body, fall through to the generic message below */ }
+      if(!res.ok || !data || data.triggered !== true){
+        triggerStatus.textContent = 'Could not start the AISIS update. Please try again.';
+        triggerStatus.style.color = 'var(--danger)';
+        return;
+      }
+      triggerStatus.textContent = 'AISIS update started successfully. GitHub Actions is now running. ';
+      triggerStatus.style.color = 'var(--muted)';
+      if(data.html_url){
+        const link = document.createElement('a');
+        link.href = data.html_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'View GitHub Action';
+        triggerStatus.appendChild(link);
+      }
+    }catch(e){
+      console.error('trigger AISIS update failed', e);
+      triggerStatus.textContent = 'Could not start the AISIS update. Please try again.';
+      triggerStatus.style.color = 'var(--danger)';
+    }finally{
+      btn.disabled = false;
+    }
+  };
 
   panel.querySelector('#autoCatLoad').onclick = async ()=>{
     const btn = panel.querySelector('#autoCatLoad');
