@@ -3022,6 +3022,11 @@ function renderAutoCatalogPanel(){
       <div class="row" style="gap:8px;flex-wrap:wrap;">
         <select id="autoCatYear"></select>
         <select id="autoCatTerm"></select>
+        <select id="autoCatDeptMode">
+          <option value="all">All Departments</option>
+          <option value="specific">Specific department(s)…</option>
+        </select>
+        <input id="autoCatDeptCodes" type="text" placeholder="e.g. COMM or COMM,ECON" style="display:none;width:160px;" />
         <button class="ghost" id="autoCatTrigger">🔄 Update AISIS Catalog</button>
         <button id="autoCatLoad">Load into shared catalog</button>
       </div>
@@ -3034,6 +3039,11 @@ function renderAutoCatalogPanel(){
   SEMESTER_TYPES.forEach(t=> termSel.appendChild(el(`<option value="${t.value}" ${state.semesterType===t.value?'selected':''}>${t.label}</option>`)));
   const status = panel.querySelector('#autoCatStatus');
   const triggerStatus = panel.querySelector('#autoCatTriggerStatus');
+  const deptModeSel = panel.querySelector('#autoCatDeptMode');
+  const deptCodesInput = panel.querySelector('#autoCatDeptCodes');
+  deptModeSel.onchange = ()=>{
+    deptCodesInput.style.display = deptModeSel.value === 'specific' ? '' : 'none';
+  };
 
   // Starts the GitHub Actions AISIS updater for the selected term. This
   // only queues the workflow run — it does not load anything into the
@@ -3043,6 +3053,30 @@ function renderAutoCatalogPanel(){
   panel.querySelector('#autoCatTrigger').onclick = async ()=>{
     const btn = panel.querySelector('#autoCatTrigger');
     if(btn.disabled) return;
+
+    // "all" or a comma-separated list of department codes — same format
+    // the Worker's validateDepartments() and the AISIS updater expect.
+    // The Worker re-validates this server-side regardless; this is just
+    // to catch obvious mistakes before spending a workflow run on them.
+    let departments = 'all';
+    if(deptModeSel.value === 'specific'){
+      const raw = deptCodesInput.value.trim();
+      if(!raw){
+        triggerStatus.textContent = 'Enter at least one department code, or switch back to "All Departments".';
+        triggerStatus.style.color = 'var(--danger)';
+        deptCodesInput.focus();
+        return;
+      }
+      const codes = raw.split(',').map(c=>c.trim().toUpperCase()).filter(Boolean);
+      if(codes.some(c => c.length>20 || !/^[A-Z0-9 ()]+$/.test(c))){
+        triggerStatus.textContent = 'Department codes can only contain letters, numbers, spaces, and parentheses.';
+        triggerStatus.style.color = 'var(--danger)';
+        deptCodesInput.focus();
+        return;
+      }
+      departments = codes.join(',');
+    }
+
     btn.disabled = true;
     triggerStatus.style.color = 'var(--muted)';
     triggerStatus.textContent = 'Starting AISIS update…';
@@ -3059,16 +3093,18 @@ function renderAutoCatalogPanel(){
       const res = await fetch(AISIS_TRIGGER_WORKER_URL, {
         method:'POST',
         headers,
-        body: JSON.stringify({schoolYearStart, term, departments:'all'})
+        body: JSON.stringify({schoolYearStart, term, departments})
       });
       let data = null;
       try{ data = await res.json(); }catch(e){ /* non-JSON error body, fall through to the generic message below */ }
       if(!res.ok || !data || data.triggered !== true){
-        triggerStatus.textContent = 'Could not start the AISIS update. Please try again.';
+        const detail = data && data.error ? ` (${data.error})` : '';
+        triggerStatus.textContent = `Could not start the AISIS update. Please try again.${detail}`;
         triggerStatus.style.color = 'var(--danger)';
         return;
       }
-      triggerStatus.textContent = 'AISIS update started successfully. GitHub Actions is now running. ';
+      const deptLabel = departments === 'all' ? 'all departments' : departments;
+      triggerStatus.textContent = `AISIS update started successfully for ${deptLabel}. GitHub Actions is now running. `;
       triggerStatus.style.color = 'var(--muted)';
       if(data.html_url){
         const link = document.createElement('a');
