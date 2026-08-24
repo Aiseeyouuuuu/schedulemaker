@@ -159,6 +159,9 @@
   }
   table.tasks textarea:focus{border-color:var(--line);background:var(--surface);}
   table.tasks td.grow-cell{vertical-align:top;min-width:160px;}
+  /* Task name stays vertically centered with the rest of the row even when
+     the Link/Notes column grows tall from multiple stacked chips. */
+  table.tasks td.task-name-cell{vertical-align:middle;}
   table.tasks select{border:none;border-radius:20px;padding:5px 10px;font-weight:600;font-size:calc(11.5px * var(--font-scale));cursor:pointer;width:100%;}
   table.tasks tr:hover td{background:var(--line);}
   /* Status/Subject/Category use a custom pill button + popover instead of
@@ -3805,7 +3808,7 @@ function renderTasksTab(){
   decorated.forEach(t=>{
     const tr = elRow(`<tr></tr>`);
 
-    const taskTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
+    const taskTd = elCell(`<td class="grow-cell task-name-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
     const taskInput = taskTd.querySelector('textarea');
     taskInput.value = t.task || '';
     taskInput.oninput = ()=> autoResizeTextarea(taskInput);
@@ -4091,7 +4094,7 @@ function renderSidequestsTab(){
   decorated.forEach(t=>{
     const tr = elRow(`<tr></tr>`);
 
-    const taskTd = elCell(`<td class="grow-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
+    const taskTd = elCell(`<td class="grow-cell task-name-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
     const taskInput = taskTd.querySelector('textarea');
     taskInput.value = t.task || '';
     taskInput.oninput = ()=> autoResizeTextarea(taskInput);
