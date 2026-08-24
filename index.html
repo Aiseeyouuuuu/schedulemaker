@@ -293,7 +293,7 @@
   .link-chip:hover{border-color:var(--navy-text);background:rgba(var(--navy-rgb),0.08);}
   .link-chip-icon{flex:none;font-size:calc(11px * var(--font-scale));line-height:1.4;display:inline-flex;align-items:center;}
   .link-chip-favicon{width:14px;height:14px;border-radius:3px;display:block;object-fit:contain;}
-  .link-chip-label{min-width:0;flex:1 1 auto;white-space:normal;word-break:break-all;overflow-wrap:anywhere;line-height:1.4;}
+  .link-chip-label{min-width:0;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;}
   /* Any text that was in the box alongside the link (e.g. a note before or
      after a pasted URL) — shown under the chip so it isn't lost from view. */
   .link-chip-extra{
@@ -3693,6 +3693,9 @@ function computeTaskUrgencyAndRank(tasks){
   });
 
   return decorated.sort((a,b)=>{
+    // Completed tasks always sink to the bottom of the list, regardless of due date.
+    const aDone = a.status==='Completed', bDone = b.status==='Completed';
+    if(aDone !== bDone) return aDone ? 1 : -1;
     if(!a.dueDate && !b.dueDate) return 0;
     if(!a.dueDate) return -1;
     if(!b.dueDate) return 1;
