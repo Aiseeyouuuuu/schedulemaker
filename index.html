@@ -694,19 +694,6 @@ function schoolYearOptions(){
   if(state.schoolYear && !opts.includes(state.schoolYear)) opts.unshift(state.schoolYear);
   return opts;
 }
-// Everything that's specific to a single term (your own class schedule,
-// friends' schedules, tasks, sidequests) is namespaced under this key so
-// switching term/school year swaps in a completely separate data set
-// instead of showing the same thing everywhere. The Calendar tab
-// deliberately does NOT use this — calendarEvents/receivedEvents stay a
-// single running list across every term, since those are one-off events
-// (birthdays, appointments, etc.) rather than term-bound coursework.
-function currentTermKey(){
-  return `${state.schoolYear||'unknown'}::${state.semesterType||'first'}`;
-}
-function termScopedKey(key){
-  return `term:${currentTermKey()}:${key}`;
-}
 
 /* ============================= GOOGLE CALENDAR EXPORT (.ics) ============================= */
 // No backend/OAuth is configured for this deployment, so a true one-click
@@ -1336,14 +1323,13 @@ function setAdminFlag(on){
 async function loadAll(){
   state.catalog = (await sGet('catalog', true)) || [];
   state.members = (await sGet('members', false)) || [];
+  state.schedules = (await sGet('schedules', false)) || {};
+  state.manualEntries = (await sGet('manualEntries', false)) || {};
+  state.blockColors = (await sGet('blockColors', false)) || {};
+  state.groups = (await sGet('groups', false)) || [];
   state.meId = await sGet('me-id', false);
   state.semesterType = (await sGet('semesterType', false)) || 'first';
   state.schoolYear = (await sGet('schoolYear', false)) || defaultSchoolYear();
-  // Term-scoped: must load AFTER semesterType/schoolYear are known.
-  state.schedules = (await sGet(termScopedKey('schedules'), false)) || {};
-  state.manualEntries = (await sGet(termScopedKey('manualEntries'), false)) || {};
-  state.blockColors = (await sGet(termScopedKey('blockColors'), false)) || {};
-  state.groups = (await sGet('groups', false)) || [];
   state.googleClientId = (await sGet('googleClientId', true)) || '';
   state.holidays = (await sGet('holidays', true)) || [];
   loadAdminFlag();
@@ -1352,11 +1338,7 @@ async function loadAll(){
 // Every personal (shared=false) key the app stores — used to copy a
 // guest's local data into their new account right after they sign up, so
 // creating an account doesn't wipe out work they already did as a guest.
-// Term-scoped data (schedules, manualEntries, blockColors, personalTasks,
-// taskStatuses, customCategories, sidequests, sidequestCategories) is
-// handled separately below since its key name depends on which term(s)
-// the guest used.
-const PERSONAL_KEYS = ['members','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear'];
+const PERSONAL_KEYS = ['members','schedules','manualEntries','blockColors','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear','personalTasks'];
 async function migrateGuestDataToAccount(){
   for(const key of PERSONAL_KEYS){
     let raw;
@@ -1364,21 +1346,6 @@ async function migrateGuestDataToAccount(){
     if(raw==null) continue;
     try{ await sSet(key, JSON.parse(raw), false); }catch(e){ console.error('migration failed for', key, e); }
   }
-  // Copy over every term-scoped key the guest touched — not just the
-  // currently selected term — so switching terms after signing up still
-  // shows the work they did as a guest in other terms too.
-  try{
-    const prefix = lsKey('term:', false); // 'sked:me:term:'
-    for(let i=0;i<localStorage.length;i++){
-      const lsK = localStorage.key(i);
-      if(!lsK || !lsK.startsWith(prefix)) continue;
-      const rawKey = lsK.slice('sked:me:'.length); // back to the un-prefixed 'term:...' key sSet/sGet expect
-      let raw;
-      try{ raw = localStorage.getItem(lsK); }catch(e){ continue; }
-      if(raw==null) continue;
-      try{ await sSet(rawKey, JSON.parse(raw), false); }catch(e){ console.error('migration failed for', rawKey, e); }
-    }
-  }catch(e){ console.error('term-scoped guest migration scan failed', e); }
 }
 
 // ============================= ACCOUNT FRIENDS =============================
@@ -1495,7 +1462,7 @@ async function fetchFriendSchedule(remoteUid){
   try{
     const base = __db.collection('sked_users').doc(remoteUid).collection('data');
     const [meIdSnap, schedSnap, manualSnap] = await Promise.all([
-      base.doc('me-id').get(), base.doc(termScopedKey('schedules')).get(), base.doc(termScopedKey('manualEntries')).get(),
+      base.doc('me-id').get(), base.doc('schedules').get(), base.doc('manualEntries').get(),
     ]);
     const theirMeId = meIdSnap.exists ? meIdSnap.data().value : null;
     const remoteSchedules = schedSnap.exists ? (schedSnap.data().value||{}) : {};
@@ -1537,42 +1504,10 @@ async function loadFriendsData(){
 
 async function saveCatalog(){ return queueSave(()=> sSet('catalog', state.catalog, true)); }
 async function saveMembers(){ return queueSave(()=> sSet('members', state.members, false)); }
-async function saveSchedules(){ return queueSave(()=> sSet(termScopedKey('schedules'), state.schedules, false)); }
-async function saveManual(){ return queueSave(()=> sSet(termScopedKey('manualEntries'), state.manualEntries, false)); }
-async function saveBlockColors(){ return queueSave(()=> sSet(termScopedKey('blockColors'), state.blockColors, false)); }
+async function saveSchedules(){ return queueSave(()=> sSet('schedules', state.schedules, false)); }
+async function saveManual(){ return queueSave(()=> sSet('manualEntries', state.manualEntries, false)); }
+async function saveBlockColors(){ return queueSave(()=> sSet('blockColors', state.blockColors, false)); }
 async function saveGroups(){ return queueSave(()=> sSet('groups', state.groups, false)); }
-
-// Called whenever the term/school-year picker changes. Swaps in a
-// completely separate data set for your own schedule, friends' schedules,
-// tasks, and sidequests — Calendar events are deliberately left untouched
-// (see the note above currentTermKey()).
-async function reloadTermScopedData(){
-  state.schedules = (await sGet(termScopedKey('schedules'), false)) || {};
-  state.manualEntries = (await sGet(termScopedKey('manualEntries'), false)) || {};
-  state.blockColors = (await sGet(termScopedKey('blockColors'), false)) || {};
-  // Re-pull account friends' schedules for the newly selected term (their
-  // side is stored under the same term-scoped key, so this fetches the
-  // right slice of their data too).
-  if(currentUid()) await loadFriendsData();
-
-  // Tasks/sidequests are lazy-loaded per tab behind a "loaded" flag —
-  // clear the cached data and flags so the next visit fetches fresh,
-  // term-scoped data instead of showing what was cached from the old term.
-  state.tasks = {};
-  state.personalTasks = [];
-  state.personalStatuses = {};
-  state.customCategories = [];
-  state.__personalTasksLoaded = false;
-  state.sidequests = [];
-  state.sidequestCategories = [];
-  state.__sidequestsLoaded = false;
-
-  // If already sitting on a tab that needs this data, reload it now
-  // instead of waiting for a tab switch.
-  if(state.activeTab==='tasks') await ensureTasksLoaded();
-  if(state.activeTab==='sidequests') await ensureSidequestsLoaded();
-  if(state.activeTab==='calendar'){ await ensureTasksLoaded(); await ensureSidequestsLoaded(); }
-}
 
 function getBlockColor(memberId, entryId, fallback){
   return (state.blockColors[memberId] && state.blockColors[memberId][entryId]) || fallback;
@@ -3360,15 +3295,11 @@ function renderSemesterBar(){
     state.semesterType = typeSelect.value;
     updateLabel();
     await queueSave(()=> sSet('semesterType', state.semesterType, false));
-    await reloadTermScopedData();
-    render();
   };
   yearSelect.onchange = async ()=>{
     state.schoolYear = yearSelect.value;
     updateLabel();
     await queueSave(()=> sSet('schoolYear', state.schoolYear, false));
-    await reloadTermScopedData();
-    render();
   };
 
   return wrap;
@@ -3551,29 +3482,29 @@ function taskSubjectColor(label, allLabelsInOrder){
 
 async function ensureTasksLoaded(){
   if(!state.__personalTasksLoaded){
-    state.personalTasks = (await sGet(termScopedKey('personalTasks'), false)) || [];
-    state.personalStatuses = (await sGet(termScopedKey('taskStatuses'), false)) || {};
-    state.customCategories = (await sGet(termScopedKey('customCategories'), false)) || [];
+    state.personalTasks = (await sGet('personalTasks', false)) || [];
+    state.personalStatuses = (await sGet('taskStatuses', false)) || {};
+    state.customCategories = (await sGet('customCategories', false)) || [];
     state.__personalTasksLoaded = true;
   }
   const subjects = taskSubjectOptions().filter(s=>!isPersonalSubject(s.key));
   for(const s of subjects){
     if(!(s.key in state.tasks)){
-      state.tasks[s.key] = (await sGet(`tasks:${currentTermKey()}:${s.key}`, true)) || [];
+      state.tasks[s.key] = (await sGet(`tasks:${s.key}`, true)) || [];
     }
   }
 }
 async function saveCustomCategories(){
-  await queueSave(()=> sSet(termScopedKey('customCategories'), state.customCategories, false));
+  await queueSave(()=> sSet('customCategories', state.customCategories, false));
 }
 async function saveSubjectTasks(key){
-  await queueSave(()=> sSet(`tasks:${currentTermKey()}:${key}`, state.tasks[key]||[], true));
+  await queueSave(()=> sSet(`tasks:${key}`, state.tasks[key]||[], true));
 }
 async function savePersonalTasks(){
-  await queueSave(()=> sSet(termScopedKey('personalTasks'), state.personalTasks, false));
+  await queueSave(()=> sSet('personalTasks', state.personalTasks, false));
 }
 async function saveTaskStatuses(){
-  await queueSave(()=> sSet(termScopedKey('taskStatuses'), state.personalStatuses, false));
+  await queueSave(()=> sSet('taskStatuses', state.personalStatuses, false));
 }
 // A class's task LIST is shared (everyone in that class sees the same
 // tasks), but each person's progress on it is their own — one classmate
@@ -3957,15 +3888,15 @@ function sidequestCategoryLabel(key){
 }
 async function ensureSidequestsLoaded(){
   if(state.__sidequestsLoaded) return;
-  state.sidequests = (await sGet(termScopedKey('sidequests'), false)) || [];
-  state.sidequestCategories = (await sGet(termScopedKey('sidequestCategories'), false)) || [];
+  state.sidequests = (await sGet('sidequests', false)) || [];
+  state.sidequestCategories = (await sGet('sidequestCategories', false)) || [];
   state.__sidequestsLoaded = true;
 }
 async function saveSidequests(){
-  await queueSave(()=> sSet(termScopedKey('sidequests'), state.sidequests, false));
+  await queueSave(()=> sSet('sidequests', state.sidequests, false));
 }
 async function saveSidequestCategories(){
-  await queueSave(()=> sSet(termScopedKey('sidequestCategories'), state.sidequestCategories, false));
+  await queueSave(()=> sSet('sidequestCategories', state.sidequestCategories, false));
 }
 function newSidequestObj(){
   return { id:'sq_'+Math.random().toString(36).slice(2,9), task:'', status:'Not Started', onsite:'Onsite', dueDate:'', link:'', notes:'', category:'' };
