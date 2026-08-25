@@ -668,6 +668,14 @@ function catalogTermKey(schoolYear, semesterType){
 // note above renderAutoCatalogPanel() for what that requires Worker-side.
 const AISIS_TRIGGER_WORKER_URL = 'https://aisis-manual-trigger.aisis-manual-trigger.workers.dev/trigger';
 
+// Companion read-only status routes on the same Worker (see index.js):
+//   GET /status?run_id=<id>  -> {run_id, status, conclusion, html_url, ...}
+//   GET /status/latest       -> same shape, for the most recent manual run
+// Both are left open (no auth) by the Worker itself, but we still send the
+// admin's ID token along — harmless, and matches /trigger's header shape.
+const AISIS_STATUS_WORKER_URL = AISIS_TRIGGER_WORKER_URL.replace(/\/trigger\/?$/, '/status');
+const AISIS_STATUS_LATEST_WORKER_URL = AISIS_STATUS_WORKER_URL + '/latest';
+
 /* ============================= SEMESTER / SCHOOL YEAR ============================= */
 // Which term is currently selected, and what school year it belongs to.
 // The date ranges below follow the pattern given for SY2026-2027 (Intersession
@@ -3070,6 +3078,121 @@ function renderTabs(){
    server-side change to verify that token (Firebase's public JWKS, or
    the Firebase Admin SDK) and check the uid against its own allow-list
    before honoring the request — see AISIS_TRIGGER_WORKER_URL above. */
+
+// ---- "Last triggered run per term" persistence + polling --------------
+// Keeps the queued/running/succeeded/failed status visible under "Update
+// AISIS Catalog" even across page reloads and re-renders of this panel
+// (renderMemberEditor rebuilds it on most state changes). Stored in
+// localStorage, keyed by the same catalogTermKey() used for the catalog
+// docs themselves, since the trigger + load flow is per-term.
+const AUTO_CAT_RUN_KEY = 'aisisAutoCatRuns';
+function loadAutoCatRuns(){
+  try{ return JSON.parse(localStorage.getItem(AUTO_CAT_RUN_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function saveAutoCatRun(termKey, info){
+  const all = loadAutoCatRuns();
+  all[termKey] = info;
+  try{ localStorage.setItem(AUTO_CAT_RUN_KEY, JSON.stringify(all)); }catch(e){}
+}
+
+// Only one poll loop runs at a time, regardless of how many times the
+// panel gets rebuilt — otherwise every re-render would spin up another
+// setInterval on top of the old (now-detached) one.
+let autoCatPollTimer = null;
+let autoCatPollToken = null; // opaque token identifying the current poll "session"
+
+function stopAutoCatPoll(){
+  if(autoCatPollTimer){ clearInterval(autoCatPollTimer); autoCatPollTimer = null; }
+  autoCatPollToken = null;
+}
+
+// Fetches run status from the Worker. If runId is given, hits
+// GET /status?run_id=; otherwise falls back to GET /status/latest (used
+// right after triggering, when the Worker couldn't resolve a run id in
+// time — see index.js's findNewRun()).
+async function fetchAutoCatRunStatus(runId){
+  const idToken = (__auth && __auth.currentUser) ? await __auth.currentUser.getIdToken() : null;
+  const headers = {};
+  if(idToken) headers['Authorization'] = 'Bearer ' + idToken;
+  const url = runId
+    ? `${AISIS_STATUS_WORKER_URL}?run_id=${encodeURIComponent(runId)}`
+    : AISIS_STATUS_LATEST_WORKER_URL;
+  const res = await fetch(url, {headers});
+  if(!res.ok) throw new Error('status check failed: ' + res.status);
+  return res.json(); // {run_id, status, conclusion, html_url, created_at, updated_at}
+}
+
+function runStatusLabel(info, deptLabel){
+  const dept = deptLabel || (info.departments==='all' ? 'all departments' : info.departments) || 'this term';
+  if(info.status==='completed'){
+    if(info.conclusion==='success'){
+      return {text:`✅ AISIS update for ${dept} succeeded. You can load it into the shared catalog below. `, color:'var(--gold-ink)'};
+    }
+    if(info.conclusion==='cancelled'){
+      return {text:`AISIS update for ${dept} was cancelled. `, color:'var(--muted)'};
+    }
+    return {text:`❌ AISIS update for ${dept} failed (${info.conclusion||'error'}). Check the GitHub Action log for details. `, color:'var(--danger)'};
+  }
+  if(info.status==='in_progress'){
+    return {text:`AISIS update for ${dept} is running… `, color:'var(--muted)'};
+  }
+  return {text:`AISIS update started for ${dept}. GitHub Actions is now running. `, color:'var(--muted)'};
+}
+
+// Paints the given run info into the currently-mounted trigger-status
+// element (looked up fresh by id, since the panel may have been torn
+// down and rebuilt since a poll loop started).
+function paintAutoCatRunStatus(info, deptLabel){
+  const triggerStatus = document.getElementById('autoCatTriggerStatus');
+  if(!triggerStatus) return; // panel not on screen right now
+  const {text, color} = runStatusLabel(info, deptLabel);
+  triggerStatus.textContent = text;
+  triggerStatus.style.color = color;
+  if(info.html_url){
+    const link = document.createElement('a');
+    link.href = info.html_url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'View GitHub Action';
+    triggerStatus.appendChild(link);
+  }
+}
+
+// Polls the Worker until the run reaches 'completed', updating both the
+// on-screen status and the localStorage record. If runId is null (the
+// Worker's dispatch response didn't resolve one in time), polls
+// /status/latest instead and adopts whatever run_id that returns as soon
+// as it appears. Stops on its own once completed, on error, or once the
+// panel showing this term is no longer on screen.
+async function pollAutoCatRun(termKey, runId, deptLabel){
+  stopAutoCatPoll();
+  const token = {}; // unique object identity per poll session
+  autoCatPollToken = token;
+  let currentRunId = runId || null;
+  const tick = async ()=>{
+    if(autoCatPollToken !== token) return; // superseded
+    if(!document.getElementById('autoCatTriggerStatus')){ stopAutoCatPoll(); return; }
+    try{
+      const data = await fetchAutoCatRunStatus(currentRunId);
+      if(autoCatPollToken !== token) return; // a newer trigger/poll started mid-request
+      if(data.run_id) currentRunId = data.run_id;
+      const prev = (loadAutoCatRuns()[termKey]) || {};
+      const info = {...prev, id:currentRunId, status:data.status, conclusion:data.conclusion||null, html_url:data.html_url||prev.html_url};
+      saveAutoCatRun(termKey, info);
+      paintAutoCatRunStatus(info, deptLabel);
+      if(data.status === 'completed') stopAutoCatPoll();
+    }catch(e){
+      console.error('AISIS run status check failed', e);
+      stopAutoCatPoll(); // leave last-known status on screen; don't retry a broken endpoint forever
+    }
+  };
+  await tick();
+  if(autoCatPollToken === token){
+    autoCatPollTimer = setInterval(tick, 8000);
+  }
+}
+
 function renderAutoCatalogPanel(){
   const panel = el(`
     <div class="panel">
@@ -3100,6 +3223,26 @@ function renderAutoCatalogPanel(){
   SEMESTER_TYPES.forEach(t=> termSel.appendChild(el(`<option value="${t.value}" ${state.semesterType===t.value?'selected':''}>${t.label}</option>`)));
   const status = panel.querySelector('#autoCatStatus');
   const triggerStatus = panel.querySelector('#autoCatTriggerStatus');
+
+  // Show whatever we last know about THIS term's automated update
+  // (queued / running / succeeded / failed), and resume polling if it
+  // hadn't finished yet. Re-run whenever the term/year selection changes,
+  // since the status shown is per-term.
+  function refreshTriggerStatusForSelection(){
+    stopAutoCatPoll();
+    triggerStatus.textContent = '';
+    const key = catalogTermKey(yearSel.value, termSel.value);
+    const info = loadAutoCatRuns()[key];
+    if(!info) return;
+    const deptLabel = info.departments==='all' ? 'all departments' : info.departments;
+    paintAutoCatRunStatus(info, deptLabel);
+    if(info.status !== 'completed'){
+      pollAutoCatRun(key, info.id || null, deptLabel);
+    }
+  }
+  refreshTriggerStatusForSelection();
+  yearSel.addEventListener('change', refreshTriggerStatusForSelection);
+  termSel.addEventListener('change', refreshTriggerStatusForSelection);
 
   // Department checklist dropdown. AISIS_DEPARTMENTS is a placeholder
   // (see its definition above) — until it's filled in, this falls back
@@ -3224,16 +3367,15 @@ function renderAutoCatalogPanel(){
         return;
       }
       const deptLabel = departments === 'all' ? 'all departments' : departments;
-      triggerStatus.textContent = `AISIS update started successfully for ${deptLabel}. GitHub Actions is now running. `;
-      triggerStatus.style.color = 'var(--muted)';
-      if(data.html_url){
-        const link = document.createElement('a');
-        link.href = data.html_url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = 'View GitHub Action';
-        triggerStatus.appendChild(link);
-      }
+      // The Worker's dispatch response includes run_id when it managed to
+      // resolve it in time; otherwise run_id is null and status polling
+      // falls back to GET /status/latest until a run_id shows up.
+      const runId = data.run_id || null;
+      const key = catalogTermKey(yearSel.value, termSel.value);
+      const info = {id: runId, html_url: data.html_url || null, status: data.status || 'queued', conclusion: data.conclusion || null, departments};
+      saveAutoCatRun(key, info);
+      paintAutoCatRunStatus(info, deptLabel);
+      pollAutoCatRun(key, runId, deptLabel);
     }catch(e){
       console.error('trigger AISIS update failed', e);
       triggerStatus.textContent = 'Could not start the AISIS update. Please try again.';
