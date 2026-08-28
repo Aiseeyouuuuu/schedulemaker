@@ -5497,12 +5497,28 @@ function renderCombinedTab(){
 }
 
 /* ============================= BOARD (weekly grid) ============================= */
-const BOARD_START = 7*60+30; // 7:30 AM — a half-row of padding above 8:00
-                              // so the top hour label never collides with
-                              // the day header row; that half-hour itself
-                              // isn't labeled (labels stay on the :00 marks).
+let BOARD_START = 7*60+30;  // 7:30 AM by default — a half-row of padding
+                              // above 8:00 so the top hour label never
+                              // collides with the day header row; that
+                              // half-hour itself isn't labeled (labels stay
+                              // on the :00 marks). Recomputed per render by
+                              // computeBoardStart() — bumped to 7:00 AM
+                              // (one extra unlabeled row) whenever the
+                              // schedule being drawn has a class that
+                              // starts exactly at 7:00 AM, so it's never
+                              // flush against the header.
 const BOARD_END = 21*60;    // 9:00 PM
 const ROW_H = 48;           // px per 30 min
+
+// Shared by the live board and the wallpaper/image export: normally the
+// grid starts at 7:30 AM; if — and only if — one of the given entries has
+// a meeting starting at exactly 7:00 AM, it starts at 7:00 AM instead so
+// that class gets its own row.
+function computeBoardStart(entries){
+  const hasSevenAM = (entries||[]).some(entry =>
+    (entry.meetings||[]).some(m => m.start === 7*60));
+  return hasSevenAM ? 7*60 : 7*60+30;
+}
 
 // Greedy interval-lane packing: overlapping blocks on the same day get
 // assigned side-by-side lanes instead of drawing directly on top of each
@@ -5528,6 +5544,7 @@ function packDayBlocks(blocks){
 }
 
 function renderBoard(groups, allowDelete){
+  BOARD_START = computeBoardStart((groups||[]).flatMap(g=>g.entries||[]));
   const totalRows = (BOARD_END-BOARD_START)/30;
   const board = el(`
     <div class="board">
@@ -5691,22 +5708,19 @@ function surnameOf(instructor){
   return words[words.length-1];
 }
 
-// Auto-fits the visible hour range to this person's actual classes: padded
-// by a half-hour above the first class and a full hour after the last one,
-// so the top hour label has a blank half-row above it instead of colliding
-// with the day header row, matching the live board. That leading half-hour
-// isn't itself labeled — labels stay on the :00 marks. Clamped to sane
-// bounds.
+// Fits the visible hour range to this person's actual classes. The start
+// matches the live board via computeBoardStart() — 7:30 AM by default,
+// or 7:00 AM (one extra unlabeled row) when a class starts exactly then.
+// The end is padded a full hour past the last class so it isn't flush
+// against the bottom. Clamped to sane bounds.
 function computeWallpaperTimeRange(entries){
-  let minStart=Infinity, maxEnd=-Infinity;
+  let maxEnd=-Infinity;
   entries.forEach(entry=>(entry.meetings||[]).forEach(m=>{
-    if(m.start!=null) minStart = Math.min(minStart, m.start);
     if(m.end!=null) maxEnd = Math.max(maxEnd, m.end);
   }));
-  if(!isFinite(minStart) || !isFinite(maxEnd)){ minStart=7*60; maxEnd=21*60; }
-  let start = Math.floor(minStart/60)*60 - 30;
+  if(!isFinite(maxEnd)){ maxEnd=21*60; }
+  let start = computeBoardStart(entries);
   let end = Math.ceil(maxEnd/60)*60 + 60;
-  start = Math.max(start, 5*60);
   end = Math.min(end, 23*60);
   if(end-start < 6*60) end = Math.min(start+6*60, 23*60);
   return {start, end};
