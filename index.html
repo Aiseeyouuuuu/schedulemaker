@@ -257,6 +257,31 @@
     font-size:calc(24px * var(--font-scale));color:var(--ink);
   }
 
+  /* ---- QPI overview cards (Overall QPI / Target QPI) ---- */
+  .qpi-overview-label{
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(11.5px * var(--font-scale));
+    color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;margin:0 0 8px;
+  }
+  .qpi-overview-value{
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(40px * var(--font-scale));
+    line-height:1.1;margin:0 0 14px;
+  }
+  .qpi-overview-row{
+    display:flex;justify-content:space-between;align-items:center;
+    font-size:calc(13px * var(--font-scale));color:var(--muted);padding:5px 0;
+  }
+  .qpi-overview-row b{color:var(--ink);font-family:'Poppins',sans-serif;font-weight:700;}
+  .qpi-progress-track{
+    width:100%;height:8px;border-radius:20px;background:var(--line);overflow:hidden;margin-top:10px;
+  }
+  .qpi-progress-fill{height:100%;border-radius:20px;background:var(--navy);transition:width .2s;}
+  .qpi-progress-caption{font-size:calc(12px * var(--font-scale));color:var(--muted);margin-top:6px;}
+  .qpi-target-result{
+    background:var(--bg);border:1px solid var(--line);border-radius:8px;
+    padding:12px 14px;margin-top:10px;font-size:calc(13.5px * var(--font-scale));color:var(--ink);
+  }
+  .qpi-target-result b{font-family:'Poppins',sans-serif;font-weight:700;}
+
   /* ---- staging table ---- */
   table.stage{width:100%;border-collapse:collapse;margin-top:12px;font-size:calc(12.5px * var(--font-scale));}
   table.stage th{text-align:left;color:var(--muted);font-weight:500;font-size:calc(11px * var(--font-scale));text-transform:uppercase;letter-spacing:0.4px;padding:4px 6px;border-bottom:1px solid var(--line);}
@@ -4684,6 +4709,27 @@ const QPI_PASSFAIL_GRADE_OPTIONS = ['S','U','N/A'];
 // not graded yet, or Satisfactory/Unsatisfactory (S/U courses aren't on
 // the point scale at all, so neither ever contributes either way).
 const QPI_EXCLUDED_GRADES = ['W','N/A','S','U'];
+// Per-letter-grade color coding (background + text), used anywhere a grade
+// is shown as a colored pill/badge — the QPI course grade dropdown, the
+// Grades tab's grade-equivalence table, and its final-grade badge. Runs
+// green (best) through yellow/tan to pink/red (worst), matching the
+// reference swatch; S/U (pass-fail) and W/N/A get neutral colors.
+const GRADE_LETTER_COLORS = {
+  'A':   {bg:'#D9F2D9', fg:'#2E5B22'},
+  'B+':  {bg:'#D9F2D9', fg:'#2E5B22'},
+  'B':   {bg:'#FFF6C9', fg:'#7A6A12'},
+  'C+':  {bg:'#F5DFC0', fg:'#7A4A12'},
+  'C':   {bg:'#FBE0E3', fg:'#7A2030'},
+  'D':   {bg:'#F3C6C6', fg:'#7A1E1E'},
+  'F':   {bg:'#E79999', fg:'#5C1414'},
+  'S':   {bg:'#D6EAF8', fg:'#274E70'},
+  'U':   {bg:'#F3C6C6', fg:'#7A1E1E'},
+  'W':   {bg:'#E5E5E5', fg:'#555555'},
+  'N/A': {bg:'#E5E5E5', fg:'#6B7290'},
+};
+function gradeLetterColors(grade){
+  return GRADE_LETTER_COLORS[(grade||'').trim().toUpperCase()] || {bg:'#E5E5E5', fg:'#555555'};
+}
 // Reverse of TERM_CODE (defined up near the semester/school-year helpers)
 // — turns AISIS's "Sem" column ('0'/'1'/'2') back into our semesterType
 // strings, so an imported row lands under the same Intersession/First/
@@ -4691,7 +4737,7 @@ const QPI_EXCLUDED_GRADES = ['W','N/A','S','U'];
 const TERM_TYPE_BY_CODE = Object.fromEntries(Object.entries(TERM_CODE).map(([k,v])=>[v,k]));
 
 function defaultQpiData(){
-  return { includePE:false, semesters:[] };
+  return { includePE:false, semesters:[], totalUnitsRequired:null, targetQpi:null };
 }
 function newQpiSemester(label){
   return { id:'qsem_'+Math.random().toString(36).slice(2,9), label: label||'New Semester', courses:[] };
@@ -4751,6 +4797,34 @@ async function setQpiIncludePE(val){
   await saveQpiData();
   render();
 }
+// Total units needed to complete the degree — user-entered since this
+// varies by program; used to compute "Units left" and the completion bar.
+async function setQpiTotalUnitsRequired(val){
+  state.qpiData = state.qpiData || defaultQpiData();
+  state.qpiData.totalUnitsRequired = (val===''||val==null) ? null : Math.max(0, Number(val)||0);
+  await saveQpiData();
+  render();
+}
+// The QPI the person is aiming for by graduation — used to back-solve the
+// average grade point needed on the remaining units.
+async function setQpiTarget(val){
+  state.qpiData = state.qpiData || defaultQpiData();
+  state.qpiData.targetQpi = (val===''||val==null) ? null : Number(val);
+  await saveQpiData();
+  render();
+}
+// Reverses the weighted-average QPI formula: given the quality points
+// already earned and the units already counted, what average grade point
+// is needed across the remaining units to land on targetQpi by the time
+// totalUnitsRequired is reached. Returns null when it can't be computed
+// (no target set, no total units set, or no units remaining).
+function computeNeededQpiForTarget(qualityPoints, unitsTaken, totalUnitsRequired, targetQpi){
+  if(targetQpi==null || !Number.isFinite(targetQpi)) return null;
+  if(totalUnitsRequired==null || totalUnitsRequired<=0) return null;
+  const unitsLeft = totalUnitsRequired - unitsTaken;
+  if(unitsLeft<=0) return null;
+  return (targetQpi*totalUnitsRequired - qualityPoints) / unitsLeft;
+}
 // NSTP never counts toward QPI — matched by code prefix so it stays
 // automatic no matter how the section/program is written (e.g. "NSTP 11
 // (CWTS)", "NSTP (ADAST)", imported rows, etc.) instead of relying on a
@@ -4785,7 +4859,7 @@ function computeQpiForCourses(courses, includePE){
     qualityPoints += gp*units;
     totalUnits += units;
   });
-  return { qpi: totalUnits>0 ? qualityPoints/totalUnits : null, units: totalUnits };
+  return { qpi: totalUnits>0 ? qualityPoints/totalUnits : null, units: totalUnits, qualityPoints };
 }
 
 // ===== Import from AISIS's "All Grades" page (Others -> View Grades ->
@@ -4860,6 +4934,11 @@ function importAisisGradesPaste(text){
   return { imported, skipped };
 }
 
+function qpiScoreColor(qpi){
+  if(qpi==null || !Number.isFinite(qpi)) return 'var(--ink)';
+  return gradeScoreColor(Math.max(0, Math.min(100, qpi/4*100)));
+}
+
 function renderQpiTab(){
   state.qpiData = state.qpiData || defaultQpiData();
   const qd = state.qpiData;
@@ -4867,19 +4946,61 @@ function renderQpiTab(){
 
   const allCourses = qd.semesters.flatMap(s=>s.courses);
   const cumulative = computeQpiForCourses(allCourses, qd.includePE);
+  const totalRequired = qd.totalUnitsRequired;
+  const unitsTaken = cumulative.units;
+  const unitsLeft = totalRequired!=null ? Math.max(0, totalRequired - unitsTaken) : null;
+  const pctComplete = (totalRequired!=null && totalRequired>0) ? Math.min(100, unitsTaken/totalRequired*100) : null;
 
-  const summaryRow = el(`<div class="row" style="align-items:flex-start;gap:16px;margin-bottom:0;"></div>`);
-  const cumCard = el(`<div class="stat-card">
-    <div class="stat-card-label">Cumulative QPI</div>
-    <div class="stat-card-value">${cumulative.qpi!=null ? cumulative.qpi.toFixed(2) : '—'}</div>
+  const overviewRow = el(`<div class="row" style="align-items:stretch;gap:16px;flex-wrap:wrap;"></div>`);
+
+  // ---- Overall QPI card ----
+  const overallCard = el(`<div class="panel" style="flex:1;min-width:260px;">
+    <p class="qpi-overview-label">Overall QPI</p>
+    <p class="qpi-overview-value" style="color:${qpiScoreColor(cumulative.qpi)};">${cumulative.qpi!=null ? cumulative.qpi.toFixed(2) : '—'}</p>
+    <label class="row" style="gap:6px;cursor:pointer;margin-bottom:10px;">
+      <input type="checkbox" id="qpiIncludePeCheck" style="width:auto;margin:0;flex:none;" ${qd.includePE?'checked':''}/>
+      Include PE
+    </label>
+    <div class="qpi-overview-row"><span>Units taken</span><b>${unitsTaken}</b></div>
+    <div class="qpi-overview-row"><span>Units left</span><b>${unitsLeft!=null ? unitsLeft : '—'}</b></div>
+    <div class="qpi-progress-track"><div class="qpi-progress-fill" style="width:${pctComplete!=null?pctComplete:0}%;"></div></div>
+    <p class="qpi-progress-caption">${pctComplete!=null ? pctComplete.toFixed(0)+'% complete' : 'Set your total program units below to track completion.'}</p>
+    <div class="row" style="gap:8px;align-items:center;margin-top:12px;">
+      <span class="hint" style="margin:0;">Total units to graduate:</span>
+      <input type="number" id="qpiTotalUnitsInput" min="0" step="1" placeholder="e.g. 165" style="width:80px;" value="${totalRequired!=null?totalRequired:''}"/>
+    </div>
   </div>`);
-  summaryRow.appendChild(cumCard);
-  const unitsCard = el(`<div class="stat-card">
-    <div class="stat-card-label">Units Counted</div>
-    <div class="stat-card-value">${cumulative.units}</div>
+  overallCard.querySelector('#qpiIncludePeCheck').onchange = (e)=> setQpiIncludePE(e.target.checked);
+  const totalUnitsInput = overallCard.querySelector('#qpiTotalUnitsInput');
+  totalUnitsInput.onchange = (e)=> setQpiTotalUnitsRequired(e.target.value);
+  overviewRow.appendChild(overallCard);
+
+  // ---- Target QPI card ----
+  const neededQpi = computeNeededQpiForTarget(cumulative.qualityPoints, unitsTaken, totalRequired, qd.targetQpi);
+  let targetResultHtml;
+  if(qd.targetQpi==null){
+    targetResultHtml = `<span class="hint" style="margin:0;">Enter a target QPI above to see what you'll need on your remaining units.</span>`;
+  } else if(totalRequired==null){
+    targetResultHtml = `<span class="hint" style="margin:0;">Set your total units to graduate (in the Overall QPI card) to calculate this.</span>`;
+  } else if(unitsLeft<=0){
+    targetResultHtml = cumulative.qpi!=null && cumulative.qpi>=qd.targetQpi
+      ? `You've already reached your target QPI 🎉`
+      : `No units left — your target QPI isn't reachable anymore.`;
+  } else {
+    const neededColor = neededQpi<=4 ? qpiScoreColor(Math.max(0,neededQpi)) : 'var(--danger)';
+    targetResultHtml = neededQpi>4
+      ? `Need <b style="color:var(--danger);">${neededQpi.toFixed(2)}</b> for remaining units — not achievable (max is 4.00).`
+      : `Need <b style="color:${neededColor};">${Math.max(0,neededQpi).toFixed(2)}</b> for remaining units`;
+  }
+  const targetCard = el(`<div class="panel" style="flex:1;min-width:260px;">
+    <p class="qpi-overview-label">Target QPI</p>
+    <input type="number" id="qpiTargetInput" min="0" max="4" step="0.01" placeholder="e.g. 3.3" style="width:100%;font-size:calc(15px * var(--font-scale));padding:10px 12px;" value="${qd.targetQpi!=null?qd.targetQpi:''}"/>
+    <div class="qpi-target-result">${targetResultHtml}</div>
   </div>`);
-  summaryRow.appendChild(unitsCard);
-  wrap.appendChild(summaryRow);
+  targetCard.querySelector('#qpiTargetInput').onchange = (e)=> setQpiTarget(e.target.value);
+  overviewRow.appendChild(targetCard);
+
+  wrap.appendChild(overviewRow);
 
   const importPanel = el(`<div class="panel">
     <h3>Import from AISIS</h3>
@@ -4903,16 +5024,12 @@ function renderQpiTab(){
 
   const topPanel = el(`<div class="panel">
     <h3>QPI Calculator</h3>
-    <label class="row" style="gap:6px;cursor:pointer;">
-      <input type="checkbox" style="width:auto;margin:0;flex:none;" ${qd.includePE?'checked':''}/>
-      Include PE units in QPI
-    </label>
     <p class="hint">Grade scale: A = 4.0, B+ = 3.5, B = 3.0, C+ = 2.5, C = 2.0, D = 1.0, F = 0.0. Quality points are each course's grade value multiplied by its units, summed and divided by total units. Courses graded W (withdrawn) or N/A (not yet graded) aren't counted. Mark a course "PE" and use the toggle above to include or exclude PE units from the QPI, same as it works during the actual term. NSTP courses are excluded from QPI automatically; INTACT courses use a Satisfactory/Unsatisfactory scale instead of A–F, and (like S/U grades generally) never count toward quality points either way. Courses imported from AISIS with a subject code starting "PHYED" are marked PE automatically; anything graded "S"/"U" for a non-INTACT course or otherwise not on its scale comes in as N/A and is naturally excluded.</p>
     <div class="row" style="margin-top:10px;">
       <button id="addQpiSemesterBtn">+ Add Semester</button>
     </div>
+
   </div>`);
-  topPanel.querySelector('input[type=checkbox]').onchange = (e)=> setQpiIncludePE(e.target.checked);
   topPanel.querySelector('#addQpiSemesterBtn').onclick = ()=> addQpiSemester();
   wrap.appendChild(topPanel);
 
@@ -4991,7 +5108,13 @@ function renderQpiTab(){
       const gradeTd = elCell(`<td></td>`);
       const gradeSel = el(`<select></select>`);
       qpiGradeOptionsFor(c.code).forEach(g=> gradeSel.appendChild(el(`<option value="${g}" ${c.grade===g?'selected':''}>${g}</option>`)));
-      gradeSel.onchange = ()=> { updateQpiCourseField(sem.id, c.id, 'grade', gradeSel.value); render(); };
+      const paintGradeSel = ()=>{
+        const gc = gradeLetterColors(gradeSel.value);
+        gradeSel.style.background = gc.bg;
+        gradeSel.style.color = gc.fg;
+      };
+      paintGradeSel();
+      gradeSel.onchange = ()=> { updateQpiCourseField(sem.id, c.id, 'grade', gradeSel.value); paintGradeSel(); render(); };
       gradeTd.appendChild(gradeSel);
       tr.appendChild(gradeTd);
 
@@ -5506,10 +5629,17 @@ function renderGradesTab(){
   scale.forEach(band=>{
     const tr = elRow(`<tr></tr>`);
 
-    const gradeTd = elCell(`<td><input type="text" style="width:64px;font-family:'Poppins',sans-serif;font-weight:700;" placeholder="A"/></td>`);
+    const gradeTd = elCell(`<td><input type="text" style="width:64px;font-family:'Poppins',sans-serif;font-weight:700;border-radius:20px;text-align:center;border:none;" placeholder="A"/></td>`);
     const gradeEl = gradeTd.querySelector('input');
     gradeEl.value = band.grade || '';
-    gradeEl.onchange = (e)=> updateGradeScaleBandField(activeKey, band.id, 'grade', e.target.value);
+    const paintGradeEl = ()=>{
+      const gc = gradeLetterColors(gradeEl.value);
+      gradeEl.style.background = gc.bg;
+      gradeEl.style.color = gc.fg;
+    };
+    paintGradeEl();
+    gradeEl.onchange = (e)=>{ updateGradeScaleBandField(activeKey, band.id, 'grade', e.target.value); paintGradeEl(); };
+    gradeEl.oninput = paintGradeEl;
     tr.appendChild(gradeTd);
 
     const labelTd = elCell(`<td><input type="text" style="width:150px;" placeholder="Description"/></td>`);
@@ -5536,7 +5666,9 @@ function renderGradesTab(){
 
     scaleTbody.appendChild(tr);
   });
-  wrap.appendChild(scalePanel);
+  // scalePanel is appended at the very bottom of the tab (see below), not
+  // here, so it always stays in the same place regardless of how much
+  // content (categories, synced-tasks list, etc.) renders above it.
 
   // Tasks synced from this class's Tasks tab that nobody's filed under a
   // category yet — orphan/legacy subjects (not a real class this term)
@@ -5594,6 +5726,7 @@ function renderGradesTab(){
 
   if(!cats.length){
     wrap.appendChild(el(`<p class="hint">No categories yet for this subject. Add one above — e.g. "Exams" at 40%, "Quizzes" at 30%.</p>`));
+    wrap.appendChild(scalePanel);
     return wrap;
   }
 
@@ -5710,11 +5843,17 @@ function renderGradesTab(){
   wrap.appendChild(bottomRow);
 
   const equiv = gradeEquivalentFor(finalGrade, scale);
+  const equivColors = equiv ? gradeLetterColors(equiv.grade) : null;
   const finalPanel = el(`<div class="panel" style="text-align:left;">
     <div class="stat-card-label" style="display:inline-flex;border-radius:8px;">Final Grade</div>
-    <p style="margin:10px 0 0;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(28px * var(--font-scale));color:${gradeScoreColor(finalGrade)};">${finalGrade.toFixed(2)}%${equiv ? ` <span style="font-size:calc(18px * var(--font-scale));">(${[equiv.grade, equiv.label].filter(Boolean).join(' — ')})</span>` : ''}</p>
+    <p style="margin:10px 0 0;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(28px * var(--font-scale));color:${gradeScoreColor(finalGrade)};">${finalGrade.toFixed(2)}%${equiv ? ` <span style="font-size:calc(18px * var(--font-scale));background:${equivColors.bg};color:${equivColors.fg};border-radius:20px;padding:3px 12px;">${[equiv.grade, equiv.label].filter(Boolean).join(' — ')}</span>` : ''}</p>
   </div>`);
   wrap.appendChild(finalPanel);
+
+  // The grade-equivalence table always sits at the bottom of the tab,
+  // regardless of how many categories exist above it — appended last here
+  // instead of up near the subject picker.
+  wrap.appendChild(scalePanel);
 
   return wrap;
 }
