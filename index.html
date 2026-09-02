@@ -4993,6 +4993,10 @@ function renderQpiTab(){
 // entirely) never loses what you typed; it's all saved via saveGrades()
 // on every edit.
 async function ensureGradesLoaded(){
+  // Grades now pulls each subject's task list straight from the Tasks tab
+  // (see gradeSyncedTasksForSubject), so that shared data has to be loaded
+  // too — not just this tab's own personal grade breakdowns.
+  await ensureTasksLoaded();
   if(state.__gradesLoaded) return;
   let loaded = await loadTermScopedPersonal('grades', {});
   // Migrate the older flat-list format (before grades were split per
@@ -5080,6 +5084,63 @@ async function deleteGradeTask(subjectKey, catId, taskId){
   await saveGrades();
   render();
 }
+// ---- syncing grade tasks from the Tasks tab -------------------------------
+// A grade subject is always a real class (see gradeSubjectOptions), so its
+// task list lives at state.tasks[subjectKey] — the exact same shared,
+// synced list the Tasks tab shows for that class. Pulling from it here
+// means the task NAME (and whether it still exists) always tracks Tasks
+// automatically; only the score/max score/category are entered here, and
+// those stay personal to you (stored on the grade-task record itself,
+// never written back to the shared task) since classmates' grades on a
+// shared task aren't the same.
+function gradeSyncedTasksForSubject(subjectKey){
+  return (state.tasks && state.tasks[subjectKey]) || [];
+}
+// Every sourceTaskId already filed under some category for this subject —
+// used so the "categorize" list only offers tasks nobody's placed yet.
+function categorizedSourceTaskIds(subjectKey){
+  const ids = new Set();
+  ((state.grades && state.grades[subjectKey]) || []).forEach(cat=>
+    (cat.tasks||[]).forEach(t=>{ if(t.sourceTaskId) ids.add(t.sourceTaskId); }));
+  return ids;
+}
+// Files a synced task under a category — the user's own choice, since the
+// same shared task can reasonably belong to different categories for
+// different people (or none, if they'd rather leave it out of their
+// grade calc entirely). name is only a fallback for if the source task
+// is later deleted from the Tasks tab; while it still exists, the name
+// shown is always looked up live.
+async function addSyncedTaskToCategory(subjectKey, catId, sourceTask){
+  state.grades[subjectKey] = state.grades[subjectKey] || [];
+  const cat = state.grades[subjectKey].find(c=>c.id===catId);
+  if(!cat) return;
+  cat.tasks.push({
+    id: 'gt_'+Math.random().toString(36).slice(2,9),
+    sourceTaskId: sourceTask.id,
+    name: sourceTask.task || 'Untitled task',
+    score: 0, maxScore: 100
+  });
+  await saveGrades();
+  render();
+}
+// Re-categorizing a synced task: move its grade-task record from one
+// category's list to another, keeping whatever score/maxScore was
+// already entered. Un-categorizing (sending it back to the "not yet
+// categorized" list) is just deleteGradeTask — the record disappears and
+// categorizedSourceTaskIds() no longer counts it, so it resurfaces there.
+async function moveGradeTaskCategory(subjectKey, oldCatId, taskId, newCatId){
+  if(!newCatId || newCatId===oldCatId) return;
+  const list = state.grades[subjectKey] || [];
+  const oldCat = list.find(c=>c.id===oldCatId);
+  const newCat = list.find(c=>c.id===newCatId);
+  if(!oldCat || !newCat) return;
+  const idx = oldCat.tasks.findIndex(t=>t.id===taskId);
+  if(idx<0) return;
+  const [t] = oldCat.tasks.splice(idx,1);
+  newCat.tasks.push(t);
+  await saveGrades();
+  render();
+}
 // A category with no tasks yet scores 0 rather than blank, matching the
 // reference calculator. Scores/max-scores are rounded to whole cents
 // (×100) before dividing so repeating-decimal floating point drift never
@@ -5164,6 +5225,41 @@ function renderGradesTab(){
   const remaining = Math.max(0, 100 - totalWeight);
   const finalGrade = computeFinalGrade(cats);
 
+  // Tasks synced from this class's Tasks tab that nobody's filed under a
+  // category yet — orphan/legacy subjects (not a real class this term)
+  // have no matching task list, so this simply stays empty for those.
+  const syncedTasks = gradeSyncedTasksForSubject(activeKey);
+  const categorizedIds = categorizedSourceTaskIds(activeKey);
+  const uncategorizedSynced = syncedTasks.filter(t=> !categorizedIds.has(t.id));
+
+  if(syncedTasks.length){
+    const syncPanel = el(`<div class="panel">
+      <h3>Categorize tasks from Tasks</h3>
+      <p class="hint">These are the tasks already shared in this class's Tasks tab. Pick a category for each to pull it into your grade calculation below with its name kept in sync — the category and score you set are yours alone, not shared with classmates.</p>
+      <div class="sync-task-list" style="margin-top:6px;"></div>
+    </div>`);
+    const listEl = syncPanel.querySelector('.sync-task-list');
+    if(!uncategorizedSynced.length){
+      listEl.appendChild(el(`<p class="hint" style="margin:4px 2px;">All caught up — every task from Tasks has been categorized below.</p>`));
+    } else if(!cats.length){
+      listEl.appendChild(el(`<p class="hint" style="margin:4px 2px;">Add a category above first, then come back here to file these tasks under it.</p>`));
+    } else {
+      uncategorizedSynced.forEach(t=>{
+        const row = el(`<div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid #F0F1EF;">
+          <span>${t.task || 'Untitled task'}${t.dueDate?` <span class="hint" style="margin:0;">— due ${fmtShortDate(t.dueDate)}</span>`:''}</span>
+          <select class="sync-cat-select" style="max-width:200px;">
+            <option value="">Categorize as…</option>
+          </select>
+        </div>`);
+        const sel = row.querySelector('.sync-cat-select');
+        cats.forEach(c=> sel.appendChild(el(`<option value="${c.id}">${c.name||'Category'}</option>`)));
+        sel.onchange = (e)=>{ if(e.target.value) addSyncedTaskToCategory(activeKey, e.target.value, t); };
+        listEl.appendChild(row);
+      });
+    }
+    wrap.appendChild(syncPanel);
+  }
+
   if(!cats.length){
     wrap.appendChild(el(`<p class="hint">No categories yet for this subject. Add one above — e.g. "Exams" at 40%, "Quizzes" at 30%.</p>`));
     return wrap;
@@ -5187,7 +5283,7 @@ function renderGradesTab(){
       <div style="overflow-x:auto;">
         <table class="tasks">
           <thead><tr>
-            <th>Task</th><th>Score</th><th>Max Score</th><th></th>
+            <th>Task</th><th>Score</th><th>Max Score</th><th>Category</th><th></th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -5214,15 +5310,27 @@ function renderGradesTab(){
 
     const tbody = panel.querySelector('tbody');
     if(!cat.tasks.length){
-      tbody.appendChild(elRow(`<tr><td colspan="4" class="hint" style="padding:10px 6px;">No tasks yet.</td></tr>`));
+      tbody.appendChild(elRow(`<tr><td colspan="5" class="hint" style="padding:10px 6px;">No tasks yet.</td></tr>`));
     }
     cat.tasks.forEach(t=>{
       const tr = elRow(`<tr></tr>`);
+      // A task with a sourceTaskId was filed here from the "Categorize
+      // tasks from Tasks" list above — its name is looked up live from
+      // the shared Tasks list so an edit there shows up here too, with
+      // t.name kept only as a fallback for if it's later deleted there.
+      const isSynced = !!t.sourceTaskId;
+      const srcTask = isSynced ? syncedTasks.find(x=>x.id===t.sourceTaskId) : null;
 
-      const nameTd = elCell(`<td><input type="text" placeholder="Task name"/></td>`);
-      const nameEl = nameTd.querySelector('input');
-      nameEl.value = t.name || '';
-      nameEl.onchange = (e)=> updateGradeTaskField(activeKey, cat.id, t.id, 'name', e.target.value);
+      const nameTd = elCell(`<td></td>`);
+      if(isSynced){
+        const label = srcTask ? (srcTask.task||'Untitled task') : `${t.name||'Untitled task'} (removed from Tasks)`;
+        nameTd.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;"><span title="Synced from the Tasks tab" style="opacity:0.6;">🔗</span>${label}</span>`;
+      } else {
+        nameTd.innerHTML = `<input type="text" placeholder="Task name"/>`;
+        const nameEl = nameTd.querySelector('input');
+        nameEl.value = t.name || '';
+        nameEl.onchange = (e)=> updateGradeTaskField(activeKey, cat.id, t.id, 'name', e.target.value);
+      }
       tr.appendChild(nameTd);
 
       const scoreTd = elCell(`<td><input type="number" style="width:80px;"/></td>`);
@@ -5241,7 +5349,20 @@ function renderGradesTab(){
       };
       tr.appendChild(maxTd);
 
-      const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
+      // Recategorize: only meaningful for synced tasks, since a manual
+      // task already lives in exactly the category it was typed into.
+      const catTd = elCell(`<td></td>`);
+      if(isSynced && cats.length>1){
+        const catSel = el(`<select style="width:100%;max-width:160px;"></select>`);
+        cats.forEach(c=> catSel.appendChild(el(`<option value="${c.id}" ${c.id===cat.id?'selected':''}>${c.name||'Category'}</option>`)));
+        catSel.onchange = (e)=> moveGradeTaskCategory(activeKey, cat.id, t.id, e.target.value);
+        catTd.appendChild(catSel);
+      } else {
+        catTd.innerHTML = '<span class="hint" style="margin:0;">—</span>';
+      }
+      tr.appendChild(catTd);
+
+      const delTd = elCell(`<td><button class="task-del" title="${isSynced?'Remove from this category (task stays in Tasks)':'Delete task'}">×</button></td>`);
       delTd.querySelector('button').onclick = ()=> deleteGradeTask(activeKey, cat.id, t.id);
       tr.appendChild(delTd);
 
