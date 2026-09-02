@@ -1424,6 +1424,7 @@ let state = {
   sidequests: [],       // personal — [task,...] for the Sidequests tab; fully personal, never synced to anyone
   sidequestCategories: [], // personal — [{id, label}] — categories for Sidequests; starts empty, user adds their own
   grades: {},             // personal — term-scoped { subjectKey: [{id,name,weight,tasks:[{id,name,score,maxScore}]}] } for the Grades tab weighted grade calculator, one category list per subject
+  gradeExcludedTasks: {}, // personal — term-scoped { subjectKey: [taskId,...] } — synced Tasks-tab tasks the user has chosen to leave out of their grade calc entirely, so they stop showing up in the "Categorize tasks from Tasks" list without being filed under a category
   gradesActiveSubject: null, // ephemeral — which subject is currently selected in the Grades tab; not persisted, resets (to the first available subject) whenever the term changes
   calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
   receivedEvents: [],   // ephemeral cache of events other account friends invited you to (loaded from Firestore when signed in)
@@ -1693,6 +1694,7 @@ async function reloadTermScopedData(){
   state.sidequestCategories = [];
   state.__sidequestsLoaded = false;
   state.grades = {};
+  state.gradeExcludedTasks = {};
   state.__gradesLoaded = false;
   state.gradesActiveSubject = null;
 
@@ -4670,9 +4672,14 @@ function renderSidequestsTab(){
 // currently selected up top.
 const QPI_GRADE_POINTS = { 'A':4, 'B+':3.5, 'B':3, 'C+':2.5, 'C':2, 'D':1, 'F':0 };
 const QPI_GRADE_OPTIONS = ['A','B+','B','C+','C','D','F','W','N/A'];
-// Grades that never count toward quality points or units — withdrawn or
-// simply not graded yet.
-const QPI_EXCLUDED_GRADES = ['W','N/A'];
+// Some courses (currently INTACT, the Ateneo Culture and Traditions
+// seminar) are graded Satisfactory/Unsatisfactory instead of the A–F
+// scale — this is the option list shown for those instead.
+const QPI_PASSFAIL_GRADE_OPTIONS = ['S','U','N/A'];
+// Grades that never count toward quality points or units — withdrawn,
+// not graded yet, or Satisfactory/Unsatisfactory (S/U courses aren't on
+// the point scale at all, so neither ever contributes either way).
+const QPI_EXCLUDED_GRADES = ['W','N/A','S','U'];
 // Reverse of TERM_CODE (defined up near the semester/school-year helpers)
 // — turns AISIS's "Sem" column ('0'/'1'/'2') back into our semesterType
 // strings, so an imported row lands under the same Intersession/First/
@@ -4686,7 +4693,7 @@ function newQpiSemester(label){
   return { id:'qsem_'+Math.random().toString(36).slice(2,9), label: label||'New Semester', courses:[] };
 }
 function newQpiCourse(){
-  return { id:'qc_'+Math.random().toString(36).slice(2,9), code:'', title:'', units:'3', grade:'A', isPE:false, alwaysExcluded:false };
+  return { id:'qc_'+Math.random().toString(36).slice(2,9), code:'', title:'', units:'3', grade:'A', isPE:false };
 }
 async function saveQpiData(){
   await queueSave(()=> sSet('qpiData', state.qpiData, false));
@@ -4740,12 +4747,32 @@ async function setQpiIncludePE(val){
   await saveQpiData();
   render();
 }
+// NSTP never counts toward QPI — matched by code prefix so it stays
+// automatic no matter how the section/program is written (e.g. "NSTP 11
+// (CWTS)", "NSTP (ADAST)", imported rows, etc.) instead of relying on a
+// manual per-course checkbox.
+function isNstpCourse(code){
+  return /^nstp/i.test((code||'').trim());
+}
+// INTACT (the Ateneo Culture and Traditions seminar) is graded
+// Satisfactory/Unsatisfactory rather than A–F — matched by code prefix,
+// same approach as isNstpCourse. Unlike NSTP it still counts as "graded"
+// (S/U just aren't on the point scale, so QPI_EXCLUDED_GRADES already
+// keeps them out of the quality-point math without needing a separate
+// always-excluded check here).
+function isIntactCourse(code){
+  return /^intact/i.test((code||'').trim());
+}
+// Which grade scale a course's dropdown should offer, based on its code.
+function qpiGradeOptionsFor(code){
+  return isIntactCourse(code) ? QPI_PASSFAIL_GRADE_OPTIONS : QPI_GRADE_OPTIONS;
+}
 // Weighted QPI over any list of courses — used for both a single
 // semester's QPI and the cumulative QPI across every semester.
 function computeQpiForCourses(courses, includePE){
   let qualityPoints = 0, totalUnits = 0;
   (courses||[]).forEach(c=>{
-    if(!c || !c.grade || c.alwaysExcluded || QPI_EXCLUDED_GRADES.includes(c.grade)) return;
+    if(!c || !c.grade || isNstpCourse(c.code) || QPI_EXCLUDED_GRADES.includes(c.grade)) return;
     if(c.isPE && !includePE) return;
     const gp = QPI_GRADE_POINTS[c.grade];
     if(gp==null) return;
@@ -4778,14 +4805,14 @@ function parseAisisGradesPasteRows(text){
   }
   return rows;
 }
-// AISIS's "S" (satisfactory/pass) and any other non-letter code (INC, DRP,
-// blank, etc.) don't map onto the A–F quality-point scale, so they're
-// filed as N/A — already one of the grades computeQpiForCourses excludes,
-// same as it does for a manually-entered course you haven't been graded
-// in yet.
-function mapAisisGradeToQpi(raw){
+// AISIS's "S"/"U" (satisfactory/unsatisfactory, e.g. for INTACT) and any
+// other code that isn't valid for this course's scale (INC, DRP, blank,
+// etc.) don't map onto a quality-point value, so they're filed as N/A —
+// already one of the grades computeQpiForCourses excludes, same as it
+// does for a manually-entered course you haven't been graded in yet.
+function mapAisisGradeToQpi(raw, code){
   const g = String(raw||'').trim().toUpperCase();
-  return QPI_GRADE_OPTIONS.includes(g) ? g : 'N/A';
+  return qpiGradeOptionsFor(code).includes(g) ? g : 'N/A';
 }
 function importAisisGradesPaste(text){
   const rows = parseAisisGradesPasteRows(text);
@@ -4822,7 +4849,7 @@ function importAisisGradesPaste(text){
     course.code = subjectCode;
     course.title = courseTitle;
     if(/^\d+(\.\d+)?$/.test(units)) course.units = units;
-    course.grade = mapAisisGradeToQpi(finalGrade);
+    course.grade = mapAisisGradeToQpi(finalGrade, subjectCode);
     course.isPE = /^PHYED\b/i.test(subjectCode);
     imported++;
   });
@@ -4876,7 +4903,7 @@ function renderQpiTab(){
       <input type="checkbox" style="width:auto;margin:0;flex:none;" ${qd.includePE?'checked':''}/>
       Include PE units in QPI
     </label>
-    <p class="hint">Grade scale: A = 4.0, B+ = 3.5, B = 3.0, C+ = 2.5, C = 2.0, D = 1.0, F = 0.0. Quality points are each course's grade value multiplied by its units, summed and divided by total units. Courses graded W (withdrawn) or N/A (not yet graded) aren't counted. Mark a course "PE" and use the toggle above to include or exclude PE units from the QPI, same as it works during the actual term. Check "Always Exclude" for courses that never count toward QPI no matter what — e.g. NSTP. Courses imported from AISIS with a subject code starting "PHYED" are marked PE automatically; anything graded "S" (satisfactory) or otherwise not on the A–F scale comes in as N/A and is naturally excluded.</p>
+    <p class="hint">Grade scale: A = 4.0, B+ = 3.5, B = 3.0, C+ = 2.5, C = 2.0, D = 1.0, F = 0.0. Quality points are each course's grade value multiplied by its units, summed and divided by total units. Courses graded W (withdrawn) or N/A (not yet graded) aren't counted. Mark a course "PE" and use the toggle above to include or exclude PE units from the QPI, same as it works during the actual term. NSTP courses are excluded from QPI automatically; INTACT courses use a Satisfactory/Unsatisfactory scale instead of A–F, and (like S/U grades generally) never count toward quality points either way. Courses imported from AISIS with a subject code starting "PHYED" are marked PE automatically; anything graded "S"/"U" for a non-INTACT course or otherwise not on its scale comes in as N/A and is naturally excluded.</p>
     <div class="row" style="margin-top:10px;">
       <button id="addQpiSemesterBtn">+ Add Semester</button>
     </div>
@@ -4905,7 +4932,7 @@ function renderQpiTab(){
       <div style="overflow-x:auto;">
         <table class="tasks">
           <thead><tr>
-            <th>Code</th><th>Course Title</th><th>Units</th><th>Grade</th><th>PE</th><th>Always Excl.</th><th></th>
+            <th>Code</th><th>Course Title</th><th>Units</th><th>Grade</th><th>PE</th><th></th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -4924,7 +4951,7 @@ function renderQpiTab(){
 
     const tbody = panel.querySelector('tbody');
     if(!sem.courses.length){
-      tbody.appendChild(elRow(`<tr><td colspan="7" class="hint" style="padding:10px 6px;">No courses yet.</td></tr>`));
+      tbody.appendChild(elRow(`<tr><td colspan="6" class="hint" style="padding:10px 6px;">No courses yet.</td></tr>`));
     }
     sem.courses.forEach(c=>{
       const tr = elRow(`<tr></tr>`);
@@ -4932,7 +4959,17 @@ function renderQpiTab(){
       const codeTd = elCell(`<td><input type="text" placeholder="e.g. MATH 21"/></td>`);
       const codeInput = codeTd.querySelector('input');
       codeInput.value = c.code || '';
-      codeInput.onchange = (e)=> updateQpiCourseField(sem.id, c.id, 'code', e.target.value);
+      codeInput.onchange = (e)=>{
+        updateQpiCourseField(sem.id, c.id, 'code', e.target.value);
+        // Switching in or out of a pass/fail course (e.g. INTACT) can
+        // leave the stored grade off the new scale entirely — reset it
+        // to N/A rather than silently keeping an invalid value, and
+        // re-render since the dropdown's option list itself changes.
+        if(!qpiGradeOptionsFor(e.target.value).includes(c.grade)){
+          updateQpiCourseField(sem.id, c.id, 'grade', 'N/A');
+        }
+        render();
+      };
       tr.appendChild(codeTd);
 
       const titleTd = elCell(`<td><input type="text" placeholder="Course title"/></td>`);
@@ -4949,7 +4986,7 @@ function renderQpiTab(){
 
       const gradeTd = elCell(`<td></td>`);
       const gradeSel = el(`<select></select>`);
-      QPI_GRADE_OPTIONS.forEach(g=> gradeSel.appendChild(el(`<option value="${g}" ${c.grade===g?'selected':''}>${g}</option>`)));
+      qpiGradeOptionsFor(c.code).forEach(g=> gradeSel.appendChild(el(`<option value="${g}" ${c.grade===g?'selected':''}>${g}</option>`)));
       gradeSel.onchange = ()=> { updateQpiCourseField(sem.id, c.id, 'grade', gradeSel.value); render(); };
       gradeTd.appendChild(gradeSel);
       tr.appendChild(gradeTd);
@@ -4959,12 +4996,6 @@ function renderQpiTab(){
       peCheck.checked = !!c.isPE;
       peCheck.onchange = (e)=> { updateQpiCourseField(sem.id, c.id, 'isPE', e.target.checked); render(); };
       tr.appendChild(peTd);
-
-      const exclTd = elCell(`<td style="text-align:center;"><input type="checkbox" title="Always excluded from QPI (e.g. NSTP)" style="width:auto;margin:0;"/></td>`);
-      const exclCheck = exclTd.querySelector('input');
-      exclCheck.checked = !!c.alwaysExcluded;
-      exclCheck.onchange = (e)=> { updateQpiCourseField(sem.id, c.id, 'alwaysExcluded', e.target.checked); render(); };
-      tr.appendChild(exclTd);
 
       const delTd = elCell(`<td><button class="task-del" title="Delete course">×</button></td>`);
       delTd.querySelector('button').onclick = ()=> deleteQpiCourse(sem.id, c.id);
@@ -5004,6 +5035,7 @@ async function ensureGradesLoaded(){
   // generic bucket so nobody's existing data just disappears.
   if(Array.isArray(loaded)) loaded = loaded.length ? { __legacy: loaded } : {};
   state.grades = loaded || {};
+  state.gradeExcludedTasks = await loadTermScopedPersonal('gradeExcludedTasks', {});
   state.__gradesLoaded = true;
 }
 async function saveGrades(){
@@ -5103,6 +5135,29 @@ function categorizedSourceTaskIds(subjectKey){
   ((state.grades && state.grades[subjectKey]) || []).forEach(cat=>
     (cat.tasks||[]).forEach(t=>{ if(t.sourceTaskId) ids.add(t.sourceTaskId); }));
   return ids;
+}
+async function saveGradeExcludedTasks(){
+  await queueSave(()=> sSet(termScopedKey('gradeExcludedTasks'), state.gradeExcludedTasks, false));
+}
+// Tasks the user chose to leave out of this subject's grade calc entirely
+// (via the × on the "categorize" list) — kept separate from
+// categorizedSourceTaskIds so an excluded task doesn't need a category to
+// disappear from that list, and can be brought back later.
+function excludedSourceTaskIds(subjectKey){
+  return new Set((state.gradeExcludedTasks && state.gradeExcludedTasks[subjectKey]) || []);
+}
+async function excludeGradeSyncedTask(subjectKey, taskId){
+  state.gradeExcludedTasks = state.gradeExcludedTasks || {};
+  state.gradeExcludedTasks[subjectKey] = state.gradeExcludedTasks[subjectKey] || [];
+  if(!state.gradeExcludedTasks[subjectKey].includes(taskId)) state.gradeExcludedTasks[subjectKey].push(taskId);
+  await saveGradeExcludedTasks();
+  render();
+}
+async function restoreGradeSyncedTask(subjectKey, taskId){
+  state.gradeExcludedTasks = state.gradeExcludedTasks || {};
+  state.gradeExcludedTasks[subjectKey] = (state.gradeExcludedTasks[subjectKey] || []).filter(id=>id!==taskId);
+  await saveGradeExcludedTasks();
+  render();
 }
 // Files a synced task under a category — the user's own choice, since the
 // same shared task can reasonably belong to different categories for
@@ -5230,32 +5285,51 @@ function renderGradesTab(){
   // have no matching task list, so this simply stays empty for those.
   const syncedTasks = gradeSyncedTasksForSubject(activeKey);
   const categorizedIds = categorizedSourceTaskIds(activeKey);
-  const uncategorizedSynced = syncedTasks.filter(t=> !categorizedIds.has(t.id));
+  const excludedIds = excludedSourceTaskIds(activeKey);
+  const uncategorizedSynced = syncedTasks.filter(t=> !categorizedIds.has(t.id) && !excludedIds.has(t.id));
+  const excludedSynced = syncedTasks.filter(t=> excludedIds.has(t.id) && !categorizedIds.has(t.id));
 
   if(syncedTasks.length){
     const syncPanel = el(`<div class="panel">
       <h3>Categorize tasks from Tasks</h3>
-      <p class="hint">These are the tasks already shared in this class's Tasks tab. Pick a category for each to pull it into your grade calculation below with its name kept in sync — the category and score you set are yours alone, not shared with classmates.</p>
+      <p class="hint">These are the tasks already shared in this class's Tasks tab. Pick a category for each to pull it into your grade calculation below with its name kept in sync, or hit × to leave it out of your grade calc entirely — the category, score, and this choice are yours alone, not shared with classmates.</p>
       <div class="sync-task-list" style="margin-top:6px;"></div>
     </div>`);
     const listEl = syncPanel.querySelector('.sync-task-list');
     if(!uncategorizedSynced.length){
-      listEl.appendChild(el(`<p class="hint" style="margin:4px 2px;">All caught up — every task from Tasks has been categorized below.</p>`));
+      listEl.appendChild(el(`<p class="hint" style="margin:4px 2px;">${syncedTasks.length===categorizedIds.size+excludedIds.size?'All caught up — every task from Tasks has been categorized or removed below.':'All caught up for now.'}</p>`));
     } else if(!cats.length){
       listEl.appendChild(el(`<p class="hint" style="margin:4px 2px;">Add a category above first, then come back here to file these tasks under it.</p>`));
     } else {
       uncategorizedSynced.forEach(t=>{
         const row = el(`<div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid #F0F1EF;">
           <span>${t.task || 'Untitled task'}${t.dueDate?` <span class="hint" style="margin:0;">— due ${fmtShortDate(t.dueDate)}</span>`:''}</span>
-          <select class="sync-cat-select" style="max-width:200px;">
-            <option value="">Categorize as…</option>
-          </select>
+          <div class="row" style="gap:8px;">
+            <select class="sync-cat-select" style="max-width:200px;">
+              <option value="">Categorize as…</option>
+            </select>
+            <button type="button" class="task-del sync-exclude-btn" title="Leave out of grade calc">×</button>
+          </div>
         </div>`);
         const sel = row.querySelector('.sync-cat-select');
         cats.forEach(c=> sel.appendChild(el(`<option value="${c.id}">${c.name||'Category'}</option>`)));
         sel.onchange = (e)=>{ if(e.target.value) addSyncedTaskToCategory(activeKey, e.target.value, t); };
+        row.querySelector('.sync-exclude-btn').onclick = ()=> excludeGradeSyncedTask(activeKey, t.id);
         listEl.appendChild(row);
       });
+    }
+    if(excludedSynced.length){
+      const restoreWrap = el(`<div style="margin-top:12px;"></div>`);
+      restoreWrap.appendChild(el(`<p class="hint" style="margin:0 2px 4px;">Left out of your grade calc (${excludedSynced.length}):</p>`));
+      excludedSynced.forEach(t=>{
+        const row = el(`<div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:5px 2px;">
+          <span class="hint" style="margin:0;">${t.task || 'Untitled task'}</span>
+          <button type="button" class="ghost sync-restore-btn">Bring back</button>
+        </div>`);
+        row.querySelector('.sync-restore-btn').onclick = ()=> restoreGradeSyncedTask(activeKey, t.id);
+        restoreWrap.appendChild(row);
+      });
+      listEl.appendChild(restoreWrap);
     }
     wrap.appendChild(syncPanel);
   }
