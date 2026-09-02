@@ -1423,7 +1423,9 @@ let state = {
   customCategories: [], // personal — [{id, label}] — user-defined task categories that don't belong to any class; never synced to other students
   sidequests: [],       // personal — [task,...] for the Sidequests tab; fully personal, never synced to anyone
   sidequestCategories: [], // personal — [{id, label}] — categories for Sidequests; starts empty, user adds their own
-  grades: {},             // personal — term-scoped { subjectKey: [{id,name,weight,tasks:[{id,name,score,maxScore}]}] } for the Grades tab weighted grade calculator, one category list per subject
+  gradeCategories: {}, // cache of SHARED per-subject category lists: { subjectKey: [{id,name,weight,tasks:[{id,name,maxScore,sourceTaskId}]}] } — the Grades tab's category/task structure, synced to everyone in that class exactly like state.tasks; never holds a score
+  grades: {},             // personal — term-scoped { subjectKey: { taskId: score } } — YOUR OWN scores against the shared categories/tasks above; never synced to classmates
+  gradeScales: {},        // cache of SHARED per-subject grade-equivalence tables: { subjectKey: [{id,grade,label,min,max}] } — the letter/descriptor scale for that subject's final grade percentage, synced to everyone in the class exactly like state.gradeCategories; defaults to the standard scale but editable per class since grading systems differ
   gradeExcludedTasks: {}, // personal — term-scoped { subjectKey: [taskId,...] } — synced Tasks-tab tasks the user has chosen to leave out of their grade calc entirely, so they stop showing up in the "Categorize tasks from Tasks" list without being filed under a category
   gradesActiveSubject: null, // ephemeral — which subject is currently selected in the Grades tab; not persisted, resets (to the first available subject) whenever the term changes
   calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
@@ -1693,7 +1695,9 @@ async function reloadTermScopedData(){
   state.sidequests = [];
   state.sidequestCategories = [];
   state.__sidequestsLoaded = false;
+  state.gradeCategories = {};
   state.grades = {};
+  state.gradeScales = {};
   state.gradeExcludedTasks = {};
   state.__gradesLoaded = false;
   state.gradesActiveSubject = null;
@@ -5018,34 +5022,127 @@ function renderQpiTab(){
 // weighted sum of that subject's own categories. Term-scoped like
 // Tasks/Sidequests (via the semester bar rendered in this tab) since a
 // grade breakdown belongs to one semester's classes, not your whole
-// history — state.grades is { subjectKey: [category,...] }, and every
-// subject's data lives side by side in that same object, so filling in
-// one class's breakdown and switching to another (or to a different tab
-// entirely) never loses what you typed; it's all saved via saveGrades()
-// on every edit.
+// history. The category/task STRUCTURE
+// (names, weights, max scores) is shared with everyone in that class —
+// see state.gradeCategories, saved via saveGradeCategories() — while each
+// person's actual scores are personal and saved separately via
+// saveGrades(); nothing in saveGrades() is ever written to shared storage.
 async function ensureGradesLoaded(){
   // Grades now pulls each subject's task list straight from the Tasks tab
   // (see gradeSyncedTasksForSubject), so that shared data has to be loaded
-  // too — not just this tab's own personal grade breakdowns.
+  // too — not just this tab's own personal scores.
   await ensureTasksLoaded();
   if(state.__gradesLoaded) return;
-  let loaded = await loadTermScopedPersonal('grades', {});
-  // Migrate the older flat-list format (before grades were split per
-  // subject) into the new shape, filing whatever was there under a
-  // generic bucket so nobody's existing data just disappears.
-  if(Array.isArray(loaded)) loaded = loaded.length ? { __legacy: loaded } : {};
-  state.grades = loaded || {};
+  let loadedScores = await loadTermScopedPersonal('grades', {});
+  // gradeScales used to be personal-only, saved as a single doc under this
+  // key — now it's synced per subject like gradeCategories (see below), so
+  // this is only read once here, as a migration source to seed the shared
+  // doc with whatever the person had already customized.
+  const oldPersonalScales = await loadTermScopedPersonal('gradeScales', {});
   state.gradeExcludedTasks = await loadTermScopedPersonal('gradeExcludedTasks', {});
+
+  // One-time migration: this key used to hold the FULL category/task
+  // structure per subject (including everyone's scores mixed in), from
+  // before categories were synced with classmates. Split anything found
+  // in that old shape into the two new stores below; a plain scores
+  // object (the new shape) is left alone.
+  let legacyFull = null;
+  if(Array.isArray(loadedScores)){
+    legacyFull = loadedScores.length ? { __legacy: loadedScores } : {};
+    loadedScores = {};
+  } else {
+    const looksLegacy = Object.values(loadedScores||{}).some(v=> Array.isArray(v));
+    if(looksLegacy){ legacyFull = loadedScores; loadedScores = {}; }
+  }
+
+  state.gradeCategories = state.gradeCategories || {};
+  state.gradeScales = {};
+  state.grades = {};
+
+  // Load/seed this class's shared category list (and grade-equivalence
+  // scale) for every subject that either (a) is a real class in your
+  // schedule this term, (b) has leftover local category data from before
+  // that migration, or (c) has a leftover personal grade-scale edit from
+  // before the scale was synced — so nothing already typed in just
+  // vanishes.
+  const subjectKeys = new Set(gradeSubjectOptions().map(s=>s.key));
+  if(legacyFull) Object.keys(legacyFull).forEach(k=> subjectKeys.add(k));
+  Object.keys(oldPersonalScales||{}).forEach(k=> subjectKeys.add(k));
+
+  for(const key of subjectKeys){
+    const canSync = key !== '__legacy';
+    const oldCats = legacyFull ? (legacyFull[key] || []) : [];
+    let shared = canSync ? await loadTermScopedShared(`gradeCategories:${key}`, null) : null;
+
+    if(shared===null){
+      // Nobody in this class has synced categories yet (or this is a
+      // legacy/orphan subject with no classmates to sync with) — seed
+      // the shared list from whatever this user already had locally,
+      // scores stripped out, so their existing breakdown becomes the
+      // class's starting shared categories instead of disappearing.
+      const seeded = oldCats.map(c=>({
+        id:c.id, name:c.name, weight:c.weight,
+        tasks:(c.tasks||[]).map(t=>({id:t.id, name:t.name, maxScore:t.maxScore, sourceTaskId:t.sourceTaskId}))
+      }));
+      state.gradeCategories[key] = seeded;
+      if(canSync && seeded.length){
+        await queueSave(()=> sSet(termScopedKey(`gradeCategories:${key}`), seeded, true));
+      }
+    } else {
+      state.gradeCategories[key] = shared;
+    }
+
+    // Grade-equivalence scale — same shared-per-subject pattern as
+    // categories above. If nobody's synced one yet, seed it from any old
+    // personal edit this person made pre-migration; otherwise it's just
+    // left unset here and getGradeScale() falls back to the built-in
+    // default on the fly (so a subject nobody's customized doesn't need
+    // a write at all).
+    let sharedScale = canSync ? await loadTermScopedShared(`gradeScales:${key}`, null) : null;
+    if(sharedScale===null){
+      const localOld = (oldPersonalScales && oldPersonalScales[key]) || null;
+      if(localOld && localOld.length){
+        state.gradeScales[key] = localOld.map(b=>({...b}));
+        if(canSync) await queueSave(()=> sSet(termScopedKey(`gradeScales:${key}`), state.gradeScales[key], true));
+      }
+    } else {
+      state.gradeScales[key] = sharedScale;
+    }
+
+    // Personal scores, keyed by task id — pulled out of the old combined
+    // records if this is a first-time migration, otherwise just whatever
+    // was already saved under the new shape.
+    const scores = { ...(loadedScores[key]||{}) };
+    oldCats.forEach(c=> (c.tasks||[]).forEach(t=>{ if(t.score!=null) scores[t.id] = t.score; }));
+    state.grades[key] = scores;
+  }
+
   state.__gradesLoaded = true;
+  if(legacyFull) await saveGrades(); // persist the migrated (scores-only) shape
 }
+// Saves YOUR scores only — state.grades never contains category names,
+// weights, or task max-scores, so there's nothing gradeable to leak to
+// classmates here even though this is a personal (shared=false) write.
 async function saveGrades(){
   await queueSave(()=> sSet(termScopedKey('grades'), state.grades, false));
+}
+// Saves one subject's category/task STRUCTURE to shared storage — visible
+// to, and editable by, everyone else in that class, same as the Tasks
+// tab's shared task lists. Never include a score field here.
+async function saveGradeCategories(subjectKey){
+  state.gradeCategories = state.gradeCategories || {};
+  await queueSave(()=> sSet(termScopedKey(`gradeCategories:${subjectKey}`), state.gradeCategories[subjectKey]||[], true));
 }
 function newGradeCategory(){
   return { id:'gcat_'+Math.random().toString(36).slice(2,9), name:'New Category', weight:25, tasks:[] };
 }
 function newGradeTask(){
-  return { id:'gt_'+Math.random().toString(36).slice(2,9), name:'New Task', score:0, maxScore:100 };
+  return { id:'gt_'+Math.random().toString(36).slice(2,9), name:'New Task', maxScore:100 };
+}
+// Your own score for a shared grade-task, or 0 if you haven't entered one.
+function gradeTaskScore(subjectKey, taskId){
+  const scores = (state.grades && state.grades[subjectKey]) || {};
+  return scores[taskId]!=null ? scores[taskId] : 0;
 }
 // Which subjects the Grades tab's picker offers: every distinct class in
 // the signed-in person's OWN schedule THIS TERM (reusing the same
@@ -5068,51 +5165,68 @@ function gradeSubjectOptions(){
 }
 async function addGradeCategory(subjectKey){
   if(!subjectKey) return;
-  state.grades = state.grades || {};
-  state.grades[subjectKey] = state.grades[subjectKey] || [];
-  state.grades[subjectKey].push(newGradeCategory());
-  await saveGrades();
+  state.gradeCategories = state.gradeCategories || {};
+  state.gradeCategories[subjectKey] = state.gradeCategories[subjectKey] || [];
+  state.gradeCategories[subjectKey].push(newGradeCategory());
+  await saveGradeCategories(subjectKey);
   render();
 }
 async function deleteGradeCategory(subjectKey, catId){
-  const list = (state.grades && state.grades[subjectKey]) || [];
+  const list = (state.gradeCategories && state.gradeCategories[subjectKey]) || [];
   const cat = list.find(c=>c.id===catId);
   if(!cat) return;
-  const ok = await customConfirm(`Delete "${cat.name||'this category'}" and all of its tasks?`);
+  const ok = await customConfirm(`Delete "${cat.name||'this category'}" and all of its tasks?\n\nThis is a shared class category, so it disappears for your classmates too — only your own scores stay private and untouched elsewhere.`);
   if(!ok) return;
-  state.grades[subjectKey] = list.filter(c=>c.id!==catId);
+  state.gradeCategories[subjectKey] = list.filter(c=>c.id!==catId);
+  await saveGradeCategories(subjectKey);
+  // Your own scores for that category's tasks are personal, so deleting a
+  // shared category doesn't touch anyone else's — just clear yours.
+  const scores = state.grades[subjectKey] || {};
+  (cat.tasks||[]).forEach(t=> delete scores[t.id]);
   await saveGrades();
   render();
 }
 async function updateGradeCategoryField(subjectKey, catId, field, value){
-  const list = (state.grades && state.grades[subjectKey]) || [];
+  const list = (state.gradeCategories && state.gradeCategories[subjectKey]) || [];
   const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   cat[field] = value;
-  await saveGrades();
+  await saveGradeCategories(subjectKey);
 }
 async function addGradeTask(subjectKey, catId){
-  const list = (state.grades && state.grades[subjectKey]) || [];
+  const list = (state.gradeCategories && state.gradeCategories[subjectKey]) || [];
   const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   cat.tasks.push(newGradeTask());
-  await saveGrades();
+  await saveGradeCategories(subjectKey);
   render();
 }
+// field is either a shared structure field ('name'/'maxScore', on the
+// task) or 'score' — score is the one field that's always personal, so it
+// goes straight to state.grades and never touches the shared record.
 async function updateGradeTaskField(subjectKey, catId, taskId, field, value){
-  const list = (state.grades && state.grades[subjectKey]) || [];
+  if(field==='score'){
+    state.grades[subjectKey] = state.grades[subjectKey] || {};
+    state.grades[subjectKey][taskId] = value;
+    await saveGrades();
+    return;
+  }
+  const list = (state.gradeCategories && state.gradeCategories[subjectKey]) || [];
   const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   const t = cat.tasks.find(x=>x.id===taskId);
   if(!t) return;
   t[field] = value;
-  await saveGrades();
+  await saveGradeCategories(subjectKey);
 }
 async function deleteGradeTask(subjectKey, catId, taskId){
-  const list = (state.grades && state.grades[subjectKey]) || [];
+  const list = (state.gradeCategories && state.gradeCategories[subjectKey]) || [];
   const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   cat.tasks = cat.tasks.filter(x=>x.id!==taskId);
+  await saveGradeCategories(subjectKey);
+  const scores = state.grades[subjectKey] || {};
+  delete scores[taskId];
   await saveGrades();
   render();
 }
@@ -5132,7 +5246,7 @@ function gradeSyncedTasksForSubject(subjectKey){
 // used so the "categorize" list only offers tasks nobody's placed yet.
 function categorizedSourceTaskIds(subjectKey){
   const ids = new Set();
-  ((state.grades && state.grades[subjectKey]) || []).forEach(cat=>
+  ((state.gradeCategories && state.gradeCategories[subjectKey]) || []).forEach(cat=>
     (cat.tasks||[]).forEach(t=>{ if(t.sourceTaskId) ids.add(t.sourceTaskId); }));
   return ids;
 }
@@ -5159,33 +5273,36 @@ async function restoreGradeSyncedTask(subjectKey, taskId){
   await saveGradeExcludedTasks();
   render();
 }
-// Files a synced task under a category — the user's own choice, since the
-// same shared task can reasonably belong to different categories for
-// different people (or none, if they'd rather leave it out of their
-// grade calc entirely). name is only a fallback for if the source task
-// is later deleted from the Tasks tab; while it still exists, the name
-// shown is always looked up live.
+// Files a synced task under a category. This is now a SHARED structural
+// change (like adding any other grade task) — whoever files it, everyone
+// in the class sees it filed there, though each person's own score for it
+// stays theirs alone. name is only a fallback for if the source task is
+// later deleted from the Tasks tab; while it still exists, the name shown
+// is always looked up live.
 async function addSyncedTaskToCategory(subjectKey, catId, sourceTask){
-  state.grades[subjectKey] = state.grades[subjectKey] || [];
-  const cat = state.grades[subjectKey].find(c=>c.id===catId);
+  state.gradeCategories[subjectKey] = state.gradeCategories[subjectKey] || [];
+  const cat = state.gradeCategories[subjectKey].find(c=>c.id===catId);
   if(!cat) return;
   cat.tasks.push({
     id: 'gt_'+Math.random().toString(36).slice(2,9),
     sourceTaskId: sourceTask.id,
     name: sourceTask.task || 'Untitled task',
-    score: 0, maxScore: 100
+    maxScore: 100
   });
-  await saveGrades();
+  await saveGradeCategories(subjectKey);
   render();
 }
 // Re-categorizing a synced task: move its grade-task record from one
-// category's list to another, keeping whatever score/maxScore was
-// already entered. Un-categorizing (sending it back to the "not yet
-// categorized" list) is just deleteGradeTask — the record disappears and
-// categorizedSourceTaskIds() no longer counts it, so it resurfaces there.
+// category's list to another, keeping whatever maxScore was already set —
+// a shared structural change, same as addSyncedTaskToCategory. Everyone's
+// own scores for that task travel with it since scores are keyed by task
+// id, not by which category it's filed under. Un-categorizing (sending it
+// back to the "not yet categorized" list) is just deleteGradeTask — the
+// record disappears and categorizedSourceTaskIds() no longer counts it,
+// so it resurfaces there.
 async function moveGradeTaskCategory(subjectKey, oldCatId, taskId, newCatId){
   if(!newCatId || newCatId===oldCatId) return;
-  const list = state.grades[subjectKey] || [];
+  const list = state.gradeCategories[subjectKey] || [];
   const oldCat = list.find(c=>c.id===oldCatId);
   const newCat = list.find(c=>c.id===newCatId);
   if(!oldCat || !newCat) return;
@@ -5193,31 +5310,114 @@ async function moveGradeTaskCategory(subjectKey, oldCatId, taskId, newCatId){
   if(idx<0) return;
   const [t] = oldCat.tasks.splice(idx,1);
   newCat.tasks.push(t);
-  await saveGrades();
+  await saveGradeCategories(subjectKey);
   render();
 }
 // A category with no tasks yet scores 0 rather than blank, matching the
 // reference calculator. Scores/max-scores are rounded to whole cents
 // (×100) before dividing so repeating-decimal floating point drift never
 // creeps into the percentage.
-function computeGradeCategoryScore(tasks){
+function computeGradeCategoryScore(subjectKey, tasks){
   if(!tasks || !tasks.length) return 0;
   let sumScore = 0, sumMax = 0;
   tasks.forEach(t=>{
-    sumScore += Math.round(100*Number(t.score||0));
+    sumScore += Math.round(100*Number(gradeTaskScore(subjectKey, t.id)||0));
     sumMax += Math.round(100*Number(t.maxScore||0));
   });
   return sumMax>0 ? sumScore/sumMax*100 : 0;
 }
-function computeFinalGrade(categories){
-  return (categories||[]).reduce((acc,cat)=> acc + Math.round(computeGradeCategoryScore(cat.tasks)*cat.weight*100)/1e4, 0);
+function computeFinalGrade(subjectKey, categories){
+  return (categories||[]).reduce((acc,cat)=> acc + Math.round(computeGradeCategoryScore(subjectKey, cat.tasks)*cat.weight*100)/1e4, 0);
 }
 function gradeScoreColor(pct){
+  const dark = !!state.darkMode;
   if(pct>=90) return '#2E5B22';
   if(pct>=80) return '#3A7D2C';
   if(pct>=70) return '#7A5A12';
   if(pct>=60) return '#E8862E';
-  return '#7A1E1E';
+  // The failing-grade red is a shade lighter in dark mode — the darker
+  // version above (#7A1E1E) reads fine on a light background but nearly
+  // disappears against a dark one.
+  return dark ? '#D96B6B' : '#7A1E1E';
+}
+
+// ---- grade equivalence (letter/descriptor) table ---------------------
+// Defaults to the school's standard scale below; fully editable per
+// subject since some classes grade differently. Shared with everyone in
+// that class — same sync pattern as gradeCategories — so classmates all
+// see (and can edit) the same equivalence table for a given subject.
+const DEFAULT_GRADE_SCALE = [
+  {id:'ge_a',      grade:'A',  label:'Excellent',    min:92,   max:100},
+  {id:'ge_bplus',  grade:'B+', label:'Very Good',    min:87,   max:91},
+  {id:'ge_b',      grade:'B',  label:'Good',         min:83,   max:86},
+  {id:'ge_cplus',  grade:'C+', label:'Satisfactory', min:79,   max:82},
+  {id:'ge_c',      grade:'C',  label:'Sufficient',   min:75,   max:78},
+  {id:'ge_d',      grade:'D',  label:'Pass',         min:70,   max:74},
+  {id:'ge_f',      grade:'F',  label:'Fail',         min:null, max:69},
+  {id:'ge_w',      grade:'W',  label:'Withdraw',     min:null, max:null},
+];
+function defaultGradeScale(){
+  return DEFAULT_GRADE_SCALE.map(b=>({...b}));
+}
+// Lazily falls back to the default the first time a subject's scale is
+// looked at — nothing is written to shared storage until the person (or
+// a classmate) actually edits it, so a subject nobody's touched just
+// keeps using the default on every device instead of needing a write.
+function getGradeScale(subjectKey){
+  state.gradeScales = state.gradeScales || {};
+  if(!state.gradeScales[subjectKey]) state.gradeScales[subjectKey] = defaultGradeScale();
+  return state.gradeScales[subjectKey];
+}
+// Shared (visible to, and editable by, everyone in this class) — same as
+// saveGradeCategories(). Editing your grade-equivalence table changes
+// what classmates see too.
+async function saveGradeScales(subjectKey){
+  state.gradeScales = state.gradeScales || {};
+  await queueSave(()=> sSet(termScopedKey(`gradeScales:${subjectKey}`), state.gradeScales[subjectKey]||[], true));
+}
+function newGradeScaleBand(){
+  return {id:'ge_'+Math.random().toString(36).slice(2,9), grade:'', label:'', min:0, max:100};
+}
+async function addGradeScaleBand(subjectKey){
+  const scale = getGradeScale(subjectKey);
+  scale.push(newGradeScaleBand());
+  await saveGradeScales(subjectKey);
+  render();
+}
+async function updateGradeScaleBandField(subjectKey, bandId, field, value){
+  const scale = getGradeScale(subjectKey);
+  const band = scale.find(b=>b.id===bandId);
+  if(!band) return;
+  band[field] = value;
+  await saveGradeScales(subjectKey);
+}
+async function deleteGradeScaleBand(subjectKey, bandId){
+  const scale = getGradeScale(subjectKey);
+  state.gradeScales[subjectKey] = scale.filter(b=>b.id!==bandId);
+  await saveGradeScales(subjectKey);
+  render();
+}
+async function resetGradeScaleToDefault(subjectKey){
+  const ok = await customConfirm('Reset this subject\'s grade equivalence table back to the default scale?\n\nThis is shared with the class, so it resets for everyone, not just you.');
+  if(!ok) return;
+  state.gradeScales[subjectKey] = defaultGradeScale();
+  await saveGradeScales(subjectKey);
+  render();
+}
+// Finds which band a final-grade percentage falls into. A band with
+// neither a min nor a max (like "W — Withdraw" above, which has no
+// numeric range) is never auto-matched — it just sits in the table as a
+// manual reference. A blank min/max on an otherwise-numeric band is
+// treated as unbounded in that direction ("min and above" / "max and
+// below"), matching how the reference scale writes "69-below".
+function gradeEquivalentFor(pct, scale){
+  for(const band of (scale||[])){
+    if(band.min==null && band.max==null) continue;
+    const min = band.min==null ? -Infinity : Number(band.min);
+    const max = band.max==null ? Infinity : Number(band.max);
+    if(pct>=min && pct<=max) return band;
+  }
+  return null;
 }
 
 function renderGradesTab(){
@@ -5236,8 +5436,8 @@ function renderGradesTab(){
   // is still offered so nothing typed in gets orphaned/hidden.
   const scheduleSubjects = gradeSubjectOptions();
   const knownKeys = new Set(scheduleSubjects.map(s=>s.key));
-  const orphanSubjects = Object.keys(state.grades)
-    .filter(k=> !knownKeys.has(k) && (state.grades[k]||[]).length)
+  const orphanSubjects = Object.keys(state.gradeCategories)
+    .filter(k=> !knownKeys.has(k) && (state.gradeCategories[k]||[]).length)
     .map(k=>{
       if(k==='__legacy') return {key:k, label:'Unfiled grades (older data)'};
       const [code, section] = k.split('|');
@@ -5257,7 +5457,7 @@ function renderGradesTab(){
 
   const subjectPanel = el(`<div class="panel">
     <h3>Grade Calculator</h3>
-    <p class="hint">Pick a subject, then add categories (e.g. "Exams" at 40%, "Quizzes" at 30%) each with a weight (%) and a list of tasks with a score and max score. A category's score is its tasks' total score over total max score; the subject's final grade is every category's score multiplied by its weight, added together. Each subject keeps its own breakdown — switching subjects (or tabs) never loses what you typed.</p>
+    <p class="hint">Pick a subject, then add categories (e.g. "Exams" at 40%, "Quizzes" at 30%) each with a weight (%) and a list of tasks with a max score. A category's score is its tasks' total score over total max score; the subject's final grade is every category's score multiplied by its weight, added together. Categories, weights, and tasks are shared with everyone in the class — like the Tasks tab — but each person's own scores stay private to them.</p>
     <div class="row" style="margin-top:10px;gap:14px;">
       <div class="row" style="gap:8px;">
         <span class="hint" style="margin:0;">Subject:</span>
@@ -5275,10 +5475,68 @@ function renderGradesTab(){
   subjectPanel.querySelector('#addGradeCategoryBtn').onclick = ()=> addGradeCategory(activeKey);
   wrap.appendChild(subjectPanel);
 
-  const cats = state.grades[activeKey] || [];
+  const cats = state.gradeCategories[activeKey] || [];
   const totalWeight = cats.reduce((a,c)=> a + (Number(c.weight)||0), 0);
   const remaining = Math.max(0, 100 - totalWeight);
-  const finalGrade = computeFinalGrade(cats);
+  const finalGrade = computeFinalGrade(activeKey, cats);
+  const scale = getGradeScale(activeKey);
+
+  // Editable grade-equivalence table for this subject — always shown once
+  // a subject's picked, independent of whether categories exist yet,
+  // since someone may want to set up their scale before entering scores.
+  const scalePanel = el(`<div class="panel">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px;">
+      <h3 style="margin:0;">Grade Equivalence</h3>
+      <div class="row" style="gap:8px;">
+        <button class="ghost" id="resetGradeScaleBtn">Reset to Default</button>
+        <button id="addGradeScaleBandBtn">+ Add Grade</button>
+      </div>
+    </div>
+    <p class="hint">Defaults to the standard scale (A 92-100, B+ 87-91, B 83-86, C+ 79-82, C 75-78, D 70-74, F 69 and below); edit freely if this class grades differently — this is shared with everyone in the class, like categories, so an edit here updates it for classmates too.</p>
+    <div style="overflow-x:auto;">
+      <table class="tasks">
+        <thead><tr><th>Grade</th><th>Description</th><th>Min %</th><th>Max %</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>`);
+  scalePanel.querySelector('#resetGradeScaleBtn').onclick = ()=> resetGradeScaleToDefault(activeKey);
+  scalePanel.querySelector('#addGradeScaleBandBtn').onclick = ()=> addGradeScaleBand(activeKey);
+  const scaleTbody = scalePanel.querySelector('tbody');
+  scale.forEach(band=>{
+    const tr = elRow(`<tr></tr>`);
+
+    const gradeTd = elCell(`<td><input type="text" style="width:64px;font-family:'Poppins',sans-serif;font-weight:700;" placeholder="A"/></td>`);
+    const gradeEl = gradeTd.querySelector('input');
+    gradeEl.value = band.grade || '';
+    gradeEl.onchange = (e)=> updateGradeScaleBandField(activeKey, band.id, 'grade', e.target.value);
+    tr.appendChild(gradeTd);
+
+    const labelTd = elCell(`<td><input type="text" style="width:150px;" placeholder="Description"/></td>`);
+    const labelEl = labelTd.querySelector('input');
+    labelEl.value = band.label || '';
+    labelEl.onchange = (e)=> updateGradeScaleBandField(activeKey, band.id, 'label', e.target.value);
+    tr.appendChild(labelTd);
+
+    const minTd = elCell(`<td><input type="number" style="width:70px;" placeholder="—"/></td>`);
+    const minEl = minTd.querySelector('input');
+    minEl.value = band.min!=null ? band.min : '';
+    minEl.onchange = (e)=> updateGradeScaleBandField(activeKey, band.id, 'min', e.target.value===''?null:Number(e.target.value));
+    tr.appendChild(minTd);
+
+    const maxTd = elCell(`<td><input type="number" style="width:70px;" placeholder="—"/></td>`);
+    const maxEl = maxTd.querySelector('input');
+    maxEl.value = band.max!=null ? band.max : '';
+    maxEl.onchange = (e)=> updateGradeScaleBandField(activeKey, band.id, 'max', e.target.value===''?null:Number(e.target.value));
+    tr.appendChild(maxTd);
+
+    const delTd = elCell(`<td><button class="task-del" title="Delete grade">×</button></td>`);
+    delTd.querySelector('button').onclick = ()=> deleteGradeScaleBand(activeKey, band.id);
+    tr.appendChild(delTd);
+
+    scaleTbody.appendChild(tr);
+  });
+  wrap.appendChild(scalePanel);
 
   // Tasks synced from this class's Tasks tab that nobody's filed under a
   // category yet — orphan/legacy subjects (not a real class this term)
@@ -5292,7 +5550,7 @@ function renderGradesTab(){
   if(syncedTasks.length){
     const syncPanel = el(`<div class="panel">
       <h3>Categorize tasks from Tasks</h3>
-      <p class="hint">These are the tasks already shared in this class's Tasks tab. Pick a category for each to pull it into your grade calculation below with its name kept in sync, or hit × to leave it out of your grade calc entirely — the category, score, and this choice are yours alone, not shared with classmates.</p>
+      <p class="hint">These are the tasks already shared in this class's Tasks tab. Pick a category for each to pull it into the grade calculation below with its name kept in sync — this files it under that category for the whole class, same as adding any other category or task here. Hit × to leave it out of your own grade calc entirely; that choice, and your score, stay yours alone.</p>
       <div class="sync-task-list" style="margin-top:6px;"></div>
     </div>`);
     const listEl = syncPanel.querySelector('.sync-task-list');
@@ -5340,7 +5598,7 @@ function renderGradesTab(){
   }
 
   cats.forEach(cat=>{
-    const catScore = computeGradeCategoryScore(cat.tasks);
+    const catScore = computeGradeCategoryScore(activeKey, cat.tasks);
     const panel = el(`<div class="panel">
       <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div class="row" style="gap:10px;flex:1;min-width:200px;">
@@ -5409,7 +5667,8 @@ function renderGradesTab(){
 
       const scoreTd = elCell(`<td><input type="number" style="width:80px;"/></td>`);
       const scoreEl = scoreTd.querySelector('input');
-      scoreEl.value = t.score!=null ? t.score : '';
+      const myScore = (state.grades[activeKey] || {})[t.id];
+      scoreEl.value = myScore!=null ? myScore : '';
       scoreEl.onchange = (e)=> { updateGradeTaskField(activeKey, cat.id, t.id, 'score', e.target.value); render(); };
       tr.appendChild(scoreTd);
 
@@ -5450,9 +5709,10 @@ function renderGradesTab(){
   bottomRow.appendChild(el(`<span class="hint" style="margin:0;">Remaining weight: ${remaining.toFixed(2)}%</span>`));
   wrap.appendChild(bottomRow);
 
+  const equiv = gradeEquivalentFor(finalGrade, scale);
   const finalPanel = el(`<div class="panel" style="text-align:left;">
     <div class="stat-card-label" style="display:inline-flex;border-radius:8px;">Final Grade</div>
-    <p style="margin:10px 0 0;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(28px * var(--font-scale));color:${gradeScoreColor(finalGrade)};">${finalGrade.toFixed(2)}%</p>
+    <p style="margin:10px 0 0;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(28px * var(--font-scale));color:${gradeScoreColor(finalGrade)};">${finalGrade.toFixed(2)}%${equiv ? ` <span style="font-size:calc(18px * var(--font-scale));">(${[equiv.grade, equiv.label].filter(Boolean).join(' — ')})</span>` : ''}</p>
   </div>`);
   wrap.appendChild(finalPanel);
 
