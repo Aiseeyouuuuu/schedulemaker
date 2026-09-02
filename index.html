@@ -1423,7 +1423,9 @@ let state = {
   customCategories: [], // personal — [{id, label}] — user-defined task categories that don't belong to any class; never synced to other students
   sidequests: [],       // personal — [task,...] for the Sidequests tab; fully personal, never synced to anyone
   sidequestCategories: [], // personal — [{id, label}] — categories for Sidequests; starts empty, user adds their own
-  grades: [],            // personal — term-scoped [{id,name,weight,tasks:[{id,name,score,maxScore}]}] for the Grades tab weighted grade calculator  calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
+  grades: {},             // personal — term-scoped { subjectKey: [{id,name,weight,tasks:[{id,name,score,maxScore}]}] } for the Grades tab weighted grade calculator, one category list per subject
+  gradesActiveSubject: null, // ephemeral — which subject is currently selected in the Grades tab; not persisted, resets (to the first available subject) whenever the term changes
+  calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
   receivedEvents: [],   // ephemeral cache of events other account friends invited you to (loaded from Firestore when signed in)
   holidays: [],          // SHARED across all users — [ {date:'YYYY-MM-DD', label:''}, ... ] — dates anyone has marked as no-class (with an optional name like "Typhoon suspension"); hides class chips on that date for everyone's Calendar tab
   qpiData: null,        // personal — { includePE:false, semesters:[{id,label,courses:[{id,code,title,units,grade,isPE}]}] } for the QPI tab; not term-scoped since QPI spans your whole academic history
@@ -1690,8 +1692,9 @@ async function reloadTermScopedData(){
   state.sidequests = [];
   state.sidequestCategories = [];
   state.__sidequestsLoaded = false;
-  state.grades = [];
+  state.grades = {};
   state.__gradesLoaded = false;
+  state.gradesActiveSubject = null;
 
   // If already sitting on a tab that needs this data, reload it now
   // instead of waiting for a tab switch.
@@ -4670,6 +4673,11 @@ const QPI_GRADE_OPTIONS = ['A','B+','B','C+','C','D','F','W','N/A'];
 // Grades that never count toward quality points or units — withdrawn or
 // simply not graded yet.
 const QPI_EXCLUDED_GRADES = ['W','N/A'];
+// Reverse of TERM_CODE (defined up near the semester/school-year helpers)
+// — turns AISIS's "Sem" column ('0'/'1'/'2') back into our semesterType
+// strings, so an imported row lands under the same Intersession/First/
+// Second bucket the rest of the app already uses.
+const TERM_TYPE_BY_CODE = Object.fromEntries(Object.entries(TERM_CODE).map(([k,v])=>[v,k]));
 
 function defaultQpiData(){
   return { includePE:false, semesters:[] };
@@ -4749,6 +4757,78 @@ function computeQpiForCourses(courses, includePE){
   return { qpi: totalUnits>0 ? qualityPoints/totalUnits : null, units: totalUnits };
 }
 
+// ===== Import from AISIS's "All Grades" page (Others -> View Grades ->
+// All Grades) =====
+// That page is a plain HTML table with columns School Year | Sem | Course
+// | Subject Code | Course Title | Units | Final Grade (Course being the
+// curriculum, e.g. "AB Dip IR" — not needed for QPI). Selecting the table
+// and pasting into a plain textarea normally comes through as one row per
+// line with cells separated by tabs, so that's tried first; a run of 2+
+// spaces is used as a fallback for browsers/copy paths that flatten tabs
+// into spaces. The Course column is optional (some copies omit it), so
+// both a 7-column and a 6-column row shape are accepted.
+function parseAisisGradesPasteRows(text){
+  const lines = String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length);
+  const rows = [];
+  for(const line of lines){
+    let cols = line.split('\t').map(c=>c.trim()).filter((c,i,arr)=> arr.length>1 || c.length);
+    if(cols.length < 4) cols = line.split(/\s{2,}/).map(c=>c.trim()).filter(c=>c.length);
+    if(cols.length < 4) continue;
+    rows.push(cols);
+  }
+  return rows;
+}
+// AISIS's "S" (satisfactory/pass) and any other non-letter code (INC, DRP,
+// blank, etc.) don't map onto the A–F quality-point scale, so they're
+// filed as N/A — already one of the grades computeQpiForCourses excludes,
+// same as it does for a manually-entered course you haven't been graded
+// in yet.
+function mapAisisGradeToQpi(raw){
+  const g = String(raw||'').trim().toUpperCase();
+  return QPI_GRADE_OPTIONS.includes(g) ? g : 'N/A';
+}
+function importAisisGradesPaste(text){
+  const rows = parseAisisGradesPasteRows(text);
+  state.qpiData = state.qpiData || defaultQpiData();
+  let imported = 0, skipped = 0;
+  rows.forEach(cols=>{
+    if(/^school\s*year$/i.test(cols[0]||'')) return; // header row, not a data row
+    let schoolYear, sem, subjectCode, courseTitle, units, finalGrade;
+    if(cols.length>=7){
+      schoolYear=cols[0]; sem=cols[1]; subjectCode=cols[3]; courseTitle=cols[4]; units=cols[5]; finalGrade=cols[6];
+    } else if(cols.length===6){
+      schoolYear=cols[0]; sem=cols[1]; subjectCode=cols[2]; courseTitle=cols[3]; units=cols[4]; finalGrade=cols[5];
+    } else { skipped++; return; }
+    schoolYear = (schoolYear||'').trim();
+    sem = (sem||'').trim();
+    subjectCode = (subjectCode||'').trim();
+    courseTitle = (courseTitle||'').trim();
+    units = (units||'').trim();
+    finalGrade = (finalGrade||'').trim();
+    const semType = TERM_TYPE_BY_CODE[sem];
+    if(!/^\d{4}-\d{4}$/.test(schoolYear) || !semType || !subjectCode){ skipped++; return; }
+
+    const label = semesterLabel(semType, schoolYear);
+    let semObj = state.qpiData.semesters.find(s=> (s.__schoolYear===schoolYear && s.__semType===semType) || s.label===label);
+    if(!semObj){
+      semObj = newQpiSemester(label);
+      semObj.__schoolYear = schoolYear; semObj.__semType = semType;
+      state.qpiData.semesters.push(semObj);
+    }
+    // Re-importing the same paste (or an overlapping one) updates the
+    // existing course for that subject code instead of duplicating it.
+    let course = semObj.courses.find(c=> (c.code||'').trim().toUpperCase()===subjectCode.toUpperCase());
+    if(!course){ course = newQpiCourse(); semObj.courses.push(course); }
+    course.code = subjectCode;
+    course.title = courseTitle;
+    if(/^\d+(\.\d+)?$/.test(units)) course.units = units;
+    course.grade = mapAisisGradeToQpi(finalGrade);
+    course.isPE = /^PHYED\b/i.test(subjectCode);
+    imported++;
+  });
+  return { imported, skipped };
+}
+
 function renderQpiTab(){
   state.qpiData = state.qpiData || defaultQpiData();
   const qd = state.qpiData;
@@ -4770,13 +4850,33 @@ function renderQpiTab(){
   summaryRow.appendChild(unitsCard);
   wrap.appendChild(summaryRow);
 
+  const importPanel = el(`<div class="panel">
+    <h3>Import from AISIS</h3>
+    <p class="hint">In AISIS, go to <b>Others &rarr; View Grades &rarr; All Grades</b>, select the whole table (click inside it, Ctrl/Cmd+A, Ctrl/Cmd+C), then paste it below. Semesters and courses are created automatically, grouped by School Year and Sem; pasting again just updates the same courses instead of duplicating them.</p>
+    <textarea id="aisisPasteArea" placeholder="Paste the AISIS All Grades table here…" style="min-height:120px;"></textarea>
+    <div class="row" style="margin-top:10px;">
+      <button id="aisisImportBtn">Import Pasted Grades</button>
+    </div>
+  </div>`);
+  importPanel.querySelector('#aisisImportBtn').onclick = async ()=>{
+    const ta = importPanel.querySelector('#aisisPasteArea');
+    const text = ta.value;
+    if(!text.trim()){ showToast('Paste your AISIS grades table first.'); return; }
+    const {imported, skipped} = importAisisGradesPaste(text);
+    if(!imported){ showToast('No recognizable rows found — make sure you copied the whole table, headers and all.'); return; }
+    await saveQpiData();
+    showToast(`Imported ${imported} course${imported===1?'':'s'}${skipped?`, skipped ${skipped} row${skipped===1?'':'s'} that didn't look like grade rows`:''}.`);
+    render();
+  };
+  wrap.appendChild(importPanel);
+
   const topPanel = el(`<div class="panel">
     <h3>QPI Calculator</h3>
     <label class="row" style="gap:6px;cursor:pointer;">
       <input type="checkbox" style="width:auto;margin:0;flex:none;" ${qd.includePE?'checked':''}/>
       Include PE units in QPI
     </label>
-    <p class="hint">Grade scale: A = 4.0, B+ = 3.5, B = 3.0, C+ = 2.5, C = 2.0, D = 1.0, F = 0.0. Quality points are each course's grade value multiplied by its units, summed and divided by total units. Courses graded W (withdrawn) or N/A (not yet graded) aren't counted. Mark a course "PE" and use the toggle above to include or exclude PE units from the QPI, same as it works during the actual term. Check "Always Exclude" for courses that never count toward QPI no matter what — e.g. NSTP.</p>
+    <p class="hint">Grade scale: A = 4.0, B+ = 3.5, B = 3.0, C+ = 2.5, C = 2.0, D = 1.0, F = 0.0. Quality points are each course's grade value multiplied by its units, summed and divided by total units. Courses graded W (withdrawn) or N/A (not yet graded) aren't counted. Mark a course "PE" and use the toggle above to include or exclude PE units from the QPI, same as it works during the actual term. Check "Always Exclude" for courses that never count toward QPI no matter what — e.g. NSTP. Courses imported from AISIS with a subject code starting "PHYED" are marked PE automatically; anything graded "S" (satisfactory) or otherwise not on the A–F scale comes in as N/A and is naturally excluded.</p>
     <div class="row" style="margin-top:10px;">
       <button id="addQpiSemesterBtn">+ Add Semester</button>
     </div>
@@ -4880,15 +4980,26 @@ function renderQpiTab(){
 }
 
 /* ============================= GRADES TAB ============================= */
-// A weighted grade calculator: categories (e.g. "Exams", "Quizzes") each
-// carry a weight (%) and a list of tasks (each with a score / max score).
-// A category's score is the sum of its task scores over the sum of its
-// max scores; the final grade is the weighted sum of every category's
-// score. Term-scoped like Tasks/Sidequests since a grade breakdown belongs
-// to one semester's classes, not your whole history.
+// A weighted grade calculator, one breakdown PER SUBJECT: categories (e.g.
+// "Exams", "Quizzes") each carry a weight (%) and a list of tasks (each
+// with a score / max score). A category's score is the sum of its task
+// scores over the sum of its max scores; a subject's final grade is the
+// weighted sum of that subject's own categories. Term-scoped like
+// Tasks/Sidequests (via the semester bar rendered in this tab) since a
+// grade breakdown belongs to one semester's classes, not your whole
+// history — state.grades is { subjectKey: [category,...] }, and every
+// subject's data lives side by side in that same object, so filling in
+// one class's breakdown and switching to another (or to a different tab
+// entirely) never loses what you typed; it's all saved via saveGrades()
+// on every edit.
 async function ensureGradesLoaded(){
   if(state.__gradesLoaded) return;
-  state.grades = await loadTermScopedPersonal('grades', []);
+  let loaded = await loadTermScopedPersonal('grades', {});
+  // Migrate the older flat-list format (before grades were split per
+  // subject) into the new shape, filing whatever was there under a
+  // generic bucket so nobody's existing data just disappears.
+  if(Array.isArray(loaded)) loaded = loaded.length ? { __legacy: loaded } : {};
+  state.grades = loaded || {};
   state.__gradesLoaded = true;
 }
 async function saveGrades(){
@@ -4900,44 +5011,70 @@ function newGradeCategory(){
 function newGradeTask(){
   return { id:'gt_'+Math.random().toString(36).slice(2,9), name:'New Task', score:0, maxScore:100 };
 }
-async function addGradeCategory(){
-  state.grades = state.grades || [];
-  state.grades.push(newGradeCategory());
+// Which subjects the Grades tab's picker offers: every distinct class in
+// the signed-in person's OWN schedule THIS TERM (reusing the same
+// code+section identity Tasks uses), each labeled with its course title
+// when known. Deliberately excludes the Tasks-only "University Wide" /
+// "Others" / custom-category buckets — grades are always tied to a real
+// class.
+function gradeSubjectOptions(){
+  const entries = (state.schedules[state.meId]||[]).map(entryFor).filter(Boolean);
+  const seen = new Set();
+  const opts = [];
+  entries.forEach(e=>{
+    const key = catalogKey(e.code, e.section);
+    if(seen.has(key)) return;
+    seen.add(key);
+    const label = [(e.code||'').trim(), (e.section||'').trim()].filter(Boolean).join(' ') || 'Untitled class';
+    opts.push({key, label, title:e.title||''});
+  });
+  return opts;
+}
+async function addGradeCategory(subjectKey){
+  if(!subjectKey) return;
+  state.grades = state.grades || {};
+  state.grades[subjectKey] = state.grades[subjectKey] || [];
+  state.grades[subjectKey].push(newGradeCategory());
   await saveGrades();
   render();
 }
-async function deleteGradeCategory(catId){
-  const cat = state.grades.find(c=>c.id===catId);
+async function deleteGradeCategory(subjectKey, catId){
+  const list = (state.grades && state.grades[subjectKey]) || [];
+  const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   const ok = await customConfirm(`Delete "${cat.name||'this category'}" and all of its tasks?`);
   if(!ok) return;
-  state.grades = state.grades.filter(c=>c.id!==catId);
+  state.grades[subjectKey] = list.filter(c=>c.id!==catId);
   await saveGrades();
   render();
 }
-async function updateGradeCategoryField(catId, field, value){
-  const cat = state.grades.find(c=>c.id===catId);
+async function updateGradeCategoryField(subjectKey, catId, field, value){
+  const list = (state.grades && state.grades[subjectKey]) || [];
+  const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   cat[field] = value;
   await saveGrades();
 }
-async function addGradeTask(catId){
-  const cat = state.grades.find(c=>c.id===catId);
+async function addGradeTask(subjectKey, catId){
+  const list = (state.grades && state.grades[subjectKey]) || [];
+  const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   cat.tasks.push(newGradeTask());
   await saveGrades();
   render();
 }
-async function updateGradeTaskField(catId, taskId, field, value){
-  const cat = state.grades.find(c=>c.id===catId);
+async function updateGradeTaskField(subjectKey, catId, taskId, field, value){
+  const list = (state.grades && state.grades[subjectKey]) || [];
+  const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   const t = cat.tasks.find(x=>x.id===taskId);
   if(!t) return;
   t[field] = value;
   await saveGrades();
 }
-async function deleteGradeTask(catId, taskId){
-  const cat = state.grades.find(c=>c.id===catId);
+async function deleteGradeTask(subjectKey, catId, taskId){
+  const list = (state.grades && state.grades[subjectKey]) || [];
+  const cat = list.find(c=>c.id===catId);
   if(!cat) return;
   cat.tasks = cat.tasks.filter(x=>x.id!==taskId);
   await saveGrades();
@@ -4968,26 +5105,67 @@ function gradeScoreColor(pct){
 }
 
 function renderGradesTab(){
-  state.grades = state.grades || [];
-  const cats = state.grades;
+  state.grades = state.grades || {};
   const wrap = el(`<div></div>`);
 
+  // Semester picker — same term selector as My Schedule, so the classes
+  // (and their saved grade breakdowns) shown below always match whichever
+  // term is selected. Changing it here reloads term-scoped data and
+  // re-renders, same as it does from My Schedule.
+  wrap.appendChild(renderSemesterBar());
+
+  // Subject options come from the classes in your OWN schedule this term;
+  // any subject with saved grade data that ISN'T in the current schedule
+  // (e.g. it was dropped, or this is data from before subjects existed)
+  // is still offered so nothing typed in gets orphaned/hidden.
+  const scheduleSubjects = gradeSubjectOptions();
+  const knownKeys = new Set(scheduleSubjects.map(s=>s.key));
+  const orphanSubjects = Object.keys(state.grades)
+    .filter(k=> !knownKeys.has(k) && (state.grades[k]||[]).length)
+    .map(k=>{
+      if(k==='__legacy') return {key:k, label:'Unfiled grades (older data)'};
+      const [code, section] = k.split('|');
+      return {key:k, label:`${[code,section].filter(Boolean).join(' ')} (not in this term's schedule)`};
+    });
+  const subjects = [...scheduleSubjects, ...orphanSubjects];
+
+  if(!subjects.length){
+    wrap.appendChild(el(`<p class="hint">No classes yet for this term. Add your classes in the My Schedule tab, then come back here to set up each one's grade breakdown.</p>`));
+    return wrap;
+  }
+
+  if(!state.gradesActiveSubject || !subjects.some(s=>s.key===state.gradesActiveSubject)){
+    state.gradesActiveSubject = subjects[0].key;
+  }
+  const activeKey = state.gradesActiveSubject;
+
+  const subjectPanel = el(`<div class="panel">
+    <h3>Grade Calculator</h3>
+    <p class="hint">Pick a subject, then add categories (e.g. "Exams" at 40%, "Quizzes" at 30%) each with a weight (%) and a list of tasks with a score and max score. A category's score is its tasks' total score over total max score; the subject's final grade is every category's score multiplied by its weight, added together. Each subject keeps its own breakdown — switching subjects (or tabs) never loses what you typed.</p>
+    <div class="row" style="margin-top:10px;gap:14px;">
+      <div class="row" style="gap:8px;">
+        <span class="hint" style="margin:0;">Subject:</span>
+        <select id="gradeSubjectSelect"></select>
+      </div>
+      <button id="addGradeCategoryBtn">+ Add Category</button>
+    </div>
+  </div>`);
+  const subjectSelect = subjectPanel.querySelector('#gradeSubjectSelect');
+  subjects.forEach(s=>{
+    const text = s.title ? `${s.label} — ${s.title}` : s.label;
+    subjectSelect.appendChild(el(`<option value="${s.key}" ${s.key===activeKey?'selected':''}>${text}</option>`));
+  });
+  subjectSelect.onchange = ()=>{ state.gradesActiveSubject = subjectSelect.value; render(); };
+  subjectPanel.querySelector('#addGradeCategoryBtn').onclick = ()=> addGradeCategory(activeKey);
+  wrap.appendChild(subjectPanel);
+
+  const cats = state.grades[activeKey] || [];
   const totalWeight = cats.reduce((a,c)=> a + (Number(c.weight)||0), 0);
   const remaining = Math.max(0, 100 - totalWeight);
   const finalGrade = computeFinalGrade(cats);
 
-  const topPanel = el(`<div class="panel">
-    <h3>Grade Calculator</h3>
-    <p class="hint">Each category has a weight (%) and a list of tasks with a score and max score. A category's score is its tasks' total score over total max score; your final grade is every category's score multiplied by its weight, added together.</p>
-    <div class="row" style="margin-top:10px;">
-      <button id="addGradeCategoryBtn">+ Add Category</button>
-    </div>
-  </div>`);
-  topPanel.querySelector('#addGradeCategoryBtn').onclick = ()=> addGradeCategory();
-  wrap.appendChild(topPanel);
-
   if(!cats.length){
-    wrap.appendChild(el(`<p class="hint">No categories yet. Add one above — e.g. "Exams" at 40%, "Quizzes" at 30%.</p>`));
+    wrap.appendChild(el(`<p class="hint">No categories yet for this subject. Add one above — e.g. "Exams" at 40%, "Quizzes" at 30%.</p>`));
     return wrap;
   }
 
@@ -5021,18 +5199,18 @@ function renderGradesTab(){
 
     const nameInput = panel.querySelector('.grade-cat-name');
     nameInput.value = cat.name || '';
-    nameInput.onchange = (e)=> updateGradeCategoryField(cat.id, 'name', e.target.value);
+    nameInput.onchange = (e)=> updateGradeCategoryField(activeKey, cat.id, 'name', e.target.value);
 
     const weightInput = panel.querySelector('.grade-cat-weight');
     weightInput.value = cat.weight!=null ? cat.weight : '';
     weightInput.onchange = (e)=>{
       const val = Math.max(0, Math.min(100, Number(e.target.value)||0));
-      updateGradeCategoryField(cat.id, 'weight', val);
+      updateGradeCategoryField(activeKey, cat.id, 'weight', val);
       render();
     };
 
-    panel.querySelector('button.danger').onclick = ()=> deleteGradeCategory(cat.id);
-    panel.querySelector('.grade-add-task-btn').onclick = ()=> addGradeTask(cat.id);
+    panel.querySelector('button.danger').onclick = ()=> deleteGradeCategory(activeKey, cat.id);
+    panel.querySelector('.grade-add-task-btn').onclick = ()=> addGradeTask(activeKey, cat.id);
 
     const tbody = panel.querySelector('tbody');
     if(!cat.tasks.length){
@@ -5044,13 +5222,13 @@ function renderGradesTab(){
       const nameTd = elCell(`<td><input type="text" placeholder="Task name"/></td>`);
       const nameEl = nameTd.querySelector('input');
       nameEl.value = t.name || '';
-      nameEl.onchange = (e)=> updateGradeTaskField(cat.id, t.id, 'name', e.target.value);
+      nameEl.onchange = (e)=> updateGradeTaskField(activeKey, cat.id, t.id, 'name', e.target.value);
       tr.appendChild(nameTd);
 
       const scoreTd = elCell(`<td><input type="number" style="width:80px;"/></td>`);
       const scoreEl = scoreTd.querySelector('input');
       scoreEl.value = t.score!=null ? t.score : '';
-      scoreEl.onchange = (e)=> { updateGradeTaskField(cat.id, t.id, 'score', e.target.value); render(); };
+      scoreEl.onchange = (e)=> { updateGradeTaskField(activeKey, cat.id, t.id, 'score', e.target.value); render(); };
       tr.appendChild(scoreTd);
 
       const maxTd = elCell(`<td><input type="number" min="0" style="width:80px;"/></td>`);
@@ -5058,13 +5236,13 @@ function renderGradesTab(){
       maxEl.value = t.maxScore!=null ? t.maxScore : '';
       maxEl.onchange = (e)=>{
         const val = Math.max(0, Number(e.target.value)||0);
-        updateGradeTaskField(cat.id, t.id, 'maxScore', val);
+        updateGradeTaskField(activeKey, cat.id, t.id, 'maxScore', val);
         render();
       };
       tr.appendChild(maxTd);
 
       const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
-      delTd.querySelector('button').onclick = ()=> deleteGradeTask(cat.id, t.id);
+      delTd.querySelector('button').onclick = ()=> deleteGradeTask(activeKey, cat.id, t.id);
       tr.appendChild(delTd);
 
       tbody.appendChild(tr);
