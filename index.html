@@ -1423,9 +1423,10 @@ let state = {
   customCategories: [], // personal — [{id, label}] — user-defined task categories that don't belong to any class; never synced to other students
   sidequests: [],       // personal — [task,...] for the Sidequests tab; fully personal, never synced to anyone
   sidequestCategories: [], // personal — [{id, label}] — categories for Sidequests; starts empty, user adds their own
-  calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
+  grades: [],            // personal — term-scoped [{id,name,weight,tasks:[{id,name,score,maxScore}]}] for the Grades tab weighted grade calculator  calendarEvents: [],   // personal — YOUR OWN copy of every event you created (private or shared), for the Calendar tab
   receivedEvents: [],   // ephemeral cache of events other account friends invited you to (loaded from Firestore when signed in)
   holidays: [],          // SHARED across all users — [ {date:'YYYY-MM-DD', label:''}, ... ] — dates anyone has marked as no-class (with an optional name like "Typhoon suspension"); hides class chips on that date for everyone's Calendar tab
+  qpiData: null,        // personal — { includePE:false, semesters:[{id,label,courses:[{id,code,title,units,grade,isPE}]}] } for the QPI tab; not term-scoped since QPI spans your whole academic history
 };
 
 // =============================  GATE =============================
@@ -1458,6 +1459,7 @@ async function loadAll(){
   state.groups = (await sGet('groups', false)) || [];
   state.googleClientId = (await sGet('googleClientId', true)) || '';
   state.holidays = (await sGet('holidays', true)) || [];
+  state.qpiData = (await sGet('qpiData', false)) || defaultQpiData();
   loadAdminFlag();
 }
 
@@ -1468,7 +1470,7 @@ async function loadAll(){
 // taskStatuses, customCategories, sidequests, sidequestCategories) is
 // handled separately below since its key name depends on which term(s)
 // the guest used.
-const PERSONAL_KEYS = ['members','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear'];
+const PERSONAL_KEYS = ['members','groups','me-id','theme','fontScale','labelInterval','darkMode','semesterType','schoolYear','qpiData'];
 async function migrateGuestDataToAccount(){
   for(const key of PERSONAL_KEYS){
     let raw;
@@ -1688,12 +1690,15 @@ async function reloadTermScopedData(){
   state.sidequests = [];
   state.sidequestCategories = [];
   state.__sidequestsLoaded = false;
+  state.grades = [];
+  state.__gradesLoaded = false;
 
   // If already sitting on a tab that needs this data, reload it now
   // instead of waiting for a tab switch.
   if(state.activeTab==='tasks') await ensureTasksLoaded();
   if(state.activeTab==='sidequests') await ensureSidequestsLoaded();
   if(state.activeTab==='calendar'){ await ensureTasksLoaded(); await ensureSidequestsLoaded(); }
+  if(state.activeTab==='grades') await ensureGradesLoaded();
 }
 
 function getBlockColor(memberId, entryId, fallback){
@@ -2971,6 +2976,8 @@ function render(){
   else if(state.activeTab==='sidequests') app.appendChild(renderSidequestsTab());
   else if(state.activeTab==='calendar') app.appendChild(renderCalendarTab());
   else if(state.activeTab==='friends') app.appendChild(renderFriendsTab());
+  else if(state.activeTab==='qpi') app.appendChild(renderQpiTab());
+  else if(state.activeTab==='grades') app.appendChild(renderGradesTab());
   else app.appendChild(renderCombinedTab());
 }
 
@@ -3042,13 +3049,14 @@ function openSettingsMenu(anchorEl){
 
 function renderTabs(){
   const wrap = el(`<div class="tabs"></div>`);
-  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['calendar','Calendar'],['friends','Friends'],['combined','Combined']].forEach(([key,label])=>{
+  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['calendar','Calendar'],['friends','Friends'],['combined','Combined'],['qpi','QPI'],['grades','Grades']].forEach(([key,label])=>{
     const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
     b.onclick = async ()=>{
       state.activeTab=key;
       if(key==='tasks') await ensureTasksLoaded();
       if(key==='sidequests') await ensureSidequestsLoaded();
       if(key==='calendar'){ await ensureTasksLoaded(); await ensureSidequestsLoaded(); await ensureCalendarLoaded(); }
+      if(key==='grades') await ensureGradesLoaded();
       render();
     };
     wrap.appendChild(b);
@@ -4647,6 +4655,434 @@ function renderSidequestsTab(){
   });
 
   wrap.appendChild(panel);
+  return wrap;
+}
+
+/* ============================= QPI TAB ============================= */
+// Personal QPI (Quality Point Index) calculator, modeled on the standard
+// Ateneo-style weighted average: each course's letter grade maps to a
+// point value, multiplied by its units ("quality points"), summed and
+// divided by total counted units. Not term-scoped (unlike schedules/tasks)
+// since a QPI history spans every semester you've taken, not just the one
+// currently selected up top.
+const QPI_GRADE_POINTS = { 'A':4, 'B+':3.5, 'B':3, 'C+':2.5, 'C':2, 'D':1, 'F':0 };
+const QPI_GRADE_OPTIONS = ['A','B+','B','C+','C','D','F','W','N/A'];
+// Grades that never count toward quality points or units — withdrawn or
+// simply not graded yet.
+const QPI_EXCLUDED_GRADES = ['W','N/A'];
+
+function defaultQpiData(){
+  return { includePE:false, semesters:[] };
+}
+function newQpiSemester(label){
+  return { id:'qsem_'+Math.random().toString(36).slice(2,9), label: label||'New Semester', courses:[] };
+}
+function newQpiCourse(){
+  return { id:'qc_'+Math.random().toString(36).slice(2,9), code:'', title:'', units:'3', grade:'A', isPE:false, alwaysExcluded:false };
+}
+async function saveQpiData(){
+  await queueSave(()=> sSet('qpiData', state.qpiData, false));
+}
+async function addQpiSemester(){
+  state.qpiData = state.qpiData || defaultQpiData();
+  state.qpiData.semesters.push(newQpiSemester('Semester '+(state.qpiData.semesters.length+1)));
+  await saveQpiData();
+  render();
+}
+async function deleteQpiSemester(semId){
+  const sem = state.qpiData.semesters.find(s=>s.id===semId);
+  if(!sem) return;
+  const ok = await customConfirm(`Delete "${sem.label||'this semester'}" and all of its courses?`);
+  if(!ok) return;
+  state.qpiData.semesters = state.qpiData.semesters.filter(s=>s.id!==semId);
+  await saveQpiData();
+  render();
+}
+async function updateQpiSemesterLabel(semId, label){
+  const sem = state.qpiData.semesters.find(s=>s.id===semId);
+  if(!sem) return;
+  sem.label = label;
+  await saveQpiData();
+}
+async function addQpiCourse(semId){
+  const sem = state.qpiData.semesters.find(s=>s.id===semId);
+  if(!sem) return;
+  sem.courses.push(newQpiCourse());
+  await saveQpiData();
+  render();
+}
+async function updateQpiCourseField(semId, courseId, field, value){
+  const sem = state.qpiData.semesters.find(s=>s.id===semId);
+  if(!sem) return;
+  const c = sem.courses.find(x=>x.id===courseId);
+  if(!c) return;
+  c[field] = value;
+  await saveQpiData();
+}
+async function deleteQpiCourse(semId, courseId){
+  const sem = state.qpiData.semesters.find(s=>s.id===semId);
+  if(!sem) return;
+  sem.courses = sem.courses.filter(x=>x.id!==courseId);
+  await saveQpiData();
+  render();
+}
+async function setQpiIncludePE(val){
+  state.qpiData = state.qpiData || defaultQpiData();
+  state.qpiData.includePE = val;
+  await saveQpiData();
+  render();
+}
+// Weighted QPI over any list of courses — used for both a single
+// semester's QPI and the cumulative QPI across every semester.
+function computeQpiForCourses(courses, includePE){
+  let qualityPoints = 0, totalUnits = 0;
+  (courses||[]).forEach(c=>{
+    if(!c || !c.grade || c.alwaysExcluded || QPI_EXCLUDED_GRADES.includes(c.grade)) return;
+    if(c.isPE && !includePE) return;
+    const gp = QPI_GRADE_POINTS[c.grade];
+    if(gp==null) return;
+    const units = parseFloat(c.units) || 0;
+    if(units<=0) return;
+    qualityPoints += gp*units;
+    totalUnits += units;
+  });
+  return { qpi: totalUnits>0 ? qualityPoints/totalUnits : null, units: totalUnits };
+}
+
+function renderQpiTab(){
+  state.qpiData = state.qpiData || defaultQpiData();
+  const qd = state.qpiData;
+  const wrap = el(`<div></div>`);
+
+  const allCourses = qd.semesters.flatMap(s=>s.courses);
+  const cumulative = computeQpiForCourses(allCourses, qd.includePE);
+
+  const summaryRow = el(`<div class="row" style="align-items:flex-start;gap:16px;margin-bottom:0;"></div>`);
+  const cumCard = el(`<div class="stat-card">
+    <div class="stat-card-label">Cumulative QPI</div>
+    <div class="stat-card-value">${cumulative.qpi!=null ? cumulative.qpi.toFixed(2) : '—'}</div>
+  </div>`);
+  summaryRow.appendChild(cumCard);
+  const unitsCard = el(`<div class="stat-card">
+    <div class="stat-card-label">Units Counted</div>
+    <div class="stat-card-value">${cumulative.units}</div>
+  </div>`);
+  summaryRow.appendChild(unitsCard);
+  wrap.appendChild(summaryRow);
+
+  const topPanel = el(`<div class="panel">
+    <h3>QPI Calculator</h3>
+    <label class="row" style="gap:6px;cursor:pointer;">
+      <input type="checkbox" style="width:auto;margin:0;flex:none;" ${qd.includePE?'checked':''}/>
+      Include PE units in QPI
+    </label>
+    <p class="hint">Grade scale: A = 4.0, B+ = 3.5, B = 3.0, C+ = 2.5, C = 2.0, D = 1.0, F = 0.0. Quality points are each course's grade value multiplied by its units, summed and divided by total units. Courses graded W (withdrawn) or N/A (not yet graded) aren't counted. Mark a course "PE" and use the toggle above to include or exclude PE units from the QPI, same as it works during the actual term. Check "Always Exclude" for courses that never count toward QPI no matter what — e.g. NSTP.</p>
+    <div class="row" style="margin-top:10px;">
+      <button id="addQpiSemesterBtn">+ Add Semester</button>
+    </div>
+  </div>`);
+  topPanel.querySelector('input[type=checkbox]').onchange = (e)=> setQpiIncludePE(e.target.checked);
+  topPanel.querySelector('#addQpiSemesterBtn').onclick = ()=> addQpiSemester();
+  wrap.appendChild(topPanel);
+
+  if(!qd.semesters.length){
+    wrap.appendChild(el(`<p class="hint">No semesters yet. Add one above, then add your courses to see your QPI.</p>`));
+    return wrap;
+  }
+
+  qd.semesters.forEach(sem=>{
+    const semStat = computeQpiForCourses(sem.courses, qd.includePE);
+    const panel = el(`<div class="panel">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="row" style="gap:10px;flex:1;min-width:200px;">
+          <input type="text" class="qpi-sem-label" style="font-family:'Poppins',sans-serif;font-weight:700;max-width:260px;" placeholder="Semester label"/>
+        </div>
+        <div class="row" style="gap:14px;">
+          <span class="hint" style="margin:0;">Semester QPI: <b style="color:var(--ink);">${semStat.qpi!=null ? semStat.qpi.toFixed(2) : '—'}</b> (${semStat.units} units)</span>
+          <button class="danger" title="Delete semester">Delete</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="tasks">
+          <thead><tr>
+            <th>Code</th><th>Course Title</th><th>Units</th><th>Grade</th><th>PE</th><th>Always Excl.</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="ghost qpi-add-course-btn">+ Add Course</button>
+      </div>
+    </div>`);
+
+    const labelInput = panel.querySelector('.qpi-sem-label');
+    labelInput.value = sem.label || '';
+    labelInput.onchange = (e)=> updateQpiSemesterLabel(sem.id, e.target.value);
+
+    panel.querySelector('button.danger').onclick = ()=> deleteQpiSemester(sem.id);
+    panel.querySelector('.qpi-add-course-btn').onclick = ()=> addQpiCourse(sem.id);
+
+    const tbody = panel.querySelector('tbody');
+    if(!sem.courses.length){
+      tbody.appendChild(elRow(`<tr><td colspan="7" class="hint" style="padding:10px 6px;">No courses yet.</td></tr>`));
+    }
+    sem.courses.forEach(c=>{
+      const tr = elRow(`<tr></tr>`);
+
+      const codeTd = elCell(`<td><input type="text" placeholder="e.g. MATH 21"/></td>`);
+      const codeInput = codeTd.querySelector('input');
+      codeInput.value = c.code || '';
+      codeInput.onchange = (e)=> updateQpiCourseField(sem.id, c.id, 'code', e.target.value);
+      tr.appendChild(codeTd);
+
+      const titleTd = elCell(`<td><input type="text" placeholder="Course title"/></td>`);
+      const titleInput = titleTd.querySelector('input');
+      titleInput.value = c.title || '';
+      titleInput.onchange = (e)=> updateQpiCourseField(sem.id, c.id, 'title', e.target.value);
+      tr.appendChild(titleTd);
+
+      const unitsTd = elCell(`<td><input type="number" min="0" step="0.5" style="width:70px;"/></td>`);
+      const unitsInput = unitsTd.querySelector('input');
+      unitsInput.value = c.units!=null ? c.units : '';
+      unitsInput.onchange = (e)=> { updateQpiCourseField(sem.id, c.id, 'units', e.target.value); render(); };
+      tr.appendChild(unitsTd);
+
+      const gradeTd = elCell(`<td></td>`);
+      const gradeSel = el(`<select></select>`);
+      QPI_GRADE_OPTIONS.forEach(g=> gradeSel.appendChild(el(`<option value="${g}" ${c.grade===g?'selected':''}>${g}</option>`)));
+      gradeSel.onchange = ()=> { updateQpiCourseField(sem.id, c.id, 'grade', gradeSel.value); render(); };
+      gradeTd.appendChild(gradeSel);
+      tr.appendChild(gradeTd);
+
+      const peTd = elCell(`<td style="text-align:center;"><input type="checkbox" style="width:auto;margin:0;"/></td>`);
+      const peCheck = peTd.querySelector('input');
+      peCheck.checked = !!c.isPE;
+      peCheck.onchange = (e)=> { updateQpiCourseField(sem.id, c.id, 'isPE', e.target.checked); render(); };
+      tr.appendChild(peTd);
+
+      const exclTd = elCell(`<td style="text-align:center;"><input type="checkbox" title="Always excluded from QPI (e.g. NSTP)" style="width:auto;margin:0;"/></td>`);
+      const exclCheck = exclTd.querySelector('input');
+      exclCheck.checked = !!c.alwaysExcluded;
+      exclCheck.onchange = (e)=> { updateQpiCourseField(sem.id, c.id, 'alwaysExcluded', e.target.checked); render(); };
+      tr.appendChild(exclTd);
+
+      const delTd = elCell(`<td><button class="task-del" title="Delete course">×</button></td>`);
+      delTd.querySelector('button').onclick = ()=> deleteQpiCourse(sem.id, c.id);
+      tr.appendChild(delTd);
+
+      tbody.appendChild(tr);
+    });
+
+    wrap.appendChild(panel);
+  });
+
+  return wrap;
+}
+
+/* ============================= GRADES TAB ============================= */
+// A weighted grade calculator: categories (e.g. "Exams", "Quizzes") each
+// carry a weight (%) and a list of tasks (each with a score / max score).
+// A category's score is the sum of its task scores over the sum of its
+// max scores; the final grade is the weighted sum of every category's
+// score. Term-scoped like Tasks/Sidequests since a grade breakdown belongs
+// to one semester's classes, not your whole history.
+async function ensureGradesLoaded(){
+  if(state.__gradesLoaded) return;
+  state.grades = await loadTermScopedPersonal('grades', []);
+  state.__gradesLoaded = true;
+}
+async function saveGrades(){
+  await queueSave(()=> sSet(termScopedKey('grades'), state.grades, false));
+}
+function newGradeCategory(){
+  return { id:'gcat_'+Math.random().toString(36).slice(2,9), name:'New Category', weight:25, tasks:[] };
+}
+function newGradeTask(){
+  return { id:'gt_'+Math.random().toString(36).slice(2,9), name:'New Task', score:0, maxScore:100 };
+}
+async function addGradeCategory(){
+  state.grades = state.grades || [];
+  state.grades.push(newGradeCategory());
+  await saveGrades();
+  render();
+}
+async function deleteGradeCategory(catId){
+  const cat = state.grades.find(c=>c.id===catId);
+  if(!cat) return;
+  const ok = await customConfirm(`Delete "${cat.name||'this category'}" and all of its tasks?`);
+  if(!ok) return;
+  state.grades = state.grades.filter(c=>c.id!==catId);
+  await saveGrades();
+  render();
+}
+async function updateGradeCategoryField(catId, field, value){
+  const cat = state.grades.find(c=>c.id===catId);
+  if(!cat) return;
+  cat[field] = value;
+  await saveGrades();
+}
+async function addGradeTask(catId){
+  const cat = state.grades.find(c=>c.id===catId);
+  if(!cat) return;
+  cat.tasks.push(newGradeTask());
+  await saveGrades();
+  render();
+}
+async function updateGradeTaskField(catId, taskId, field, value){
+  const cat = state.grades.find(c=>c.id===catId);
+  if(!cat) return;
+  const t = cat.tasks.find(x=>x.id===taskId);
+  if(!t) return;
+  t[field] = value;
+  await saveGrades();
+}
+async function deleteGradeTask(catId, taskId){
+  const cat = state.grades.find(c=>c.id===catId);
+  if(!cat) return;
+  cat.tasks = cat.tasks.filter(x=>x.id!==taskId);
+  await saveGrades();
+  render();
+}
+// A category with no tasks yet scores 0 rather than blank, matching the
+// reference calculator. Scores/max-scores are rounded to whole cents
+// (×100) before dividing so repeating-decimal floating point drift never
+// creeps into the percentage.
+function computeGradeCategoryScore(tasks){
+  if(!tasks || !tasks.length) return 0;
+  let sumScore = 0, sumMax = 0;
+  tasks.forEach(t=>{
+    sumScore += Math.round(100*Number(t.score||0));
+    sumMax += Math.round(100*Number(t.maxScore||0));
+  });
+  return sumMax>0 ? sumScore/sumMax*100 : 0;
+}
+function computeFinalGrade(categories){
+  return (categories||[]).reduce((acc,cat)=> acc + Math.round(computeGradeCategoryScore(cat.tasks)*cat.weight*100)/1e4, 0);
+}
+function gradeScoreColor(pct){
+  if(pct>=90) return '#2E5B22';
+  if(pct>=80) return '#3A7D2C';
+  if(pct>=70) return '#7A5A12';
+  if(pct>=60) return '#E8862E';
+  return '#7A1E1E';
+}
+
+function renderGradesTab(){
+  state.grades = state.grades || [];
+  const cats = state.grades;
+  const wrap = el(`<div></div>`);
+
+  const totalWeight = cats.reduce((a,c)=> a + (Number(c.weight)||0), 0);
+  const remaining = Math.max(0, 100 - totalWeight);
+  const finalGrade = computeFinalGrade(cats);
+
+  const topPanel = el(`<div class="panel">
+    <h3>Grade Calculator</h3>
+    <p class="hint">Each category has a weight (%) and a list of tasks with a score and max score. A category's score is its tasks' total score over total max score; your final grade is every category's score multiplied by its weight, added together.</p>
+    <div class="row" style="margin-top:10px;">
+      <button id="addGradeCategoryBtn">+ Add Category</button>
+    </div>
+  </div>`);
+  topPanel.querySelector('#addGradeCategoryBtn').onclick = ()=> addGradeCategory();
+  wrap.appendChild(topPanel);
+
+  if(!cats.length){
+    wrap.appendChild(el(`<p class="hint">No categories yet. Add one above — e.g. "Exams" at 40%, "Quizzes" at 30%.</p>`));
+    return wrap;
+  }
+
+  cats.forEach(cat=>{
+    const catScore = computeGradeCategoryScore(cat.tasks);
+    const panel = el(`<div class="panel">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="row" style="gap:10px;flex:1;min-width:200px;">
+          <input type="text" class="grade-cat-name" style="font-family:'Poppins',sans-serif;font-weight:700;max-width:220px;" placeholder="Category name"/>
+          <span class="hint" style="margin:0;">Weight:</span>
+          <input type="number" class="grade-cat-weight" min="0" max="100" style="width:70px;"/>
+          <span class="hint" style="margin:0;">%</span>
+        </div>
+        <div class="row" style="gap:14px;">
+          <span class="hint" style="margin:0;">Category score: <b style="color:${gradeScoreColor(catScore)};">${catScore.toFixed(2)}%</b></span>
+          <button class="danger" title="Delete category">Delete</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="tasks">
+          <thead><tr>
+            <th>Task</th><th>Score</th><th>Max Score</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="ghost grade-add-task-btn">+ Add Task</button>
+      </div>
+    </div>`);
+
+    const nameInput = panel.querySelector('.grade-cat-name');
+    nameInput.value = cat.name || '';
+    nameInput.onchange = (e)=> updateGradeCategoryField(cat.id, 'name', e.target.value);
+
+    const weightInput = panel.querySelector('.grade-cat-weight');
+    weightInput.value = cat.weight!=null ? cat.weight : '';
+    weightInput.onchange = (e)=>{
+      const val = Math.max(0, Math.min(100, Number(e.target.value)||0));
+      updateGradeCategoryField(cat.id, 'weight', val);
+      render();
+    };
+
+    panel.querySelector('button.danger').onclick = ()=> deleteGradeCategory(cat.id);
+    panel.querySelector('.grade-add-task-btn').onclick = ()=> addGradeTask(cat.id);
+
+    const tbody = panel.querySelector('tbody');
+    if(!cat.tasks.length){
+      tbody.appendChild(elRow(`<tr><td colspan="4" class="hint" style="padding:10px 6px;">No tasks yet.</td></tr>`));
+    }
+    cat.tasks.forEach(t=>{
+      const tr = elRow(`<tr></tr>`);
+
+      const nameTd = elCell(`<td><input type="text" placeholder="Task name"/></td>`);
+      const nameEl = nameTd.querySelector('input');
+      nameEl.value = t.name || '';
+      nameEl.onchange = (e)=> updateGradeTaskField(cat.id, t.id, 'name', e.target.value);
+      tr.appendChild(nameTd);
+
+      const scoreTd = elCell(`<td><input type="number" style="width:80px;"/></td>`);
+      const scoreEl = scoreTd.querySelector('input');
+      scoreEl.value = t.score!=null ? t.score : '';
+      scoreEl.onchange = (e)=> { updateGradeTaskField(cat.id, t.id, 'score', e.target.value); render(); };
+      tr.appendChild(scoreTd);
+
+      const maxTd = elCell(`<td><input type="number" min="0" style="width:80px;"/></td>`);
+      const maxEl = maxTd.querySelector('input');
+      maxEl.value = t.maxScore!=null ? t.maxScore : '';
+      maxEl.onchange = (e)=>{
+        const val = Math.max(0, Number(e.target.value)||0);
+        updateGradeTaskField(cat.id, t.id, 'maxScore', val);
+        render();
+      };
+      tr.appendChild(maxTd);
+
+      const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
+      delTd.querySelector('button').onclick = ()=> deleteGradeTask(cat.id, t.id);
+      tr.appendChild(delTd);
+
+      tbody.appendChild(tr);
+    });
+
+    wrap.appendChild(panel);
+  });
+
+  const bottomRow = el(`<div class="row" style="justify-content:space-between;margin:6px 2px 18px;"></div>`);
+  bottomRow.appendChild(el(`<span class="hint" style="margin:0;">Remaining weight: ${remaining.toFixed(2)}%</span>`));
+  wrap.appendChild(bottomRow);
+
+  const finalPanel = el(`<div class="panel" style="text-align:left;">
+    <div class="stat-card-label" style="display:inline-flex;border-radius:8px;">Final Grade</div>
+    <p style="margin:10px 0 0;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(28px * var(--font-scale));color:${gradeScoreColor(finalGrade)};">${finalGrade.toFixed(2)}%</p>
+  </div>`);
+  wrap.appendChild(finalPanel);
+
   return wrap;
 }
 
