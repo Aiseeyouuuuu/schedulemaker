@@ -4849,16 +4849,22 @@ async function setQpiTarget(val){
   render();
 }
 // Reverses the weighted-average QPI formula: given the quality points
-// already earned and the units already counted, what average grade point
-// is needed across the remaining units to land on targetQpi by the time
-// totalUnitsRequired is reached. Returns null when it can't be computed
-// (no target set, no total units set, or no units remaining).
-function computeNeededQpiForTarget(qualityPoints, unitsTaken, totalUnitsRequired, targetQpi){
+// already earned, the QPI-countable units behind them, and how many
+// units are physically left to graduate, what average grade point is
+// needed across those remaining units to land on targetQpi. unitsLeft
+// is assumed to be entirely QPI-countable — qpiUnitsSoFar + unitsLeft is
+// therefore the eventual QPI-countable total used as the denominator,
+// NOT totalUnitsRequired itself (which also includes units, like NSTP or
+// excluded PE, that never count toward QPI even once taken — mixing
+// those into the denominator here would silently inflate the needed
+// average). Returns null when it can't be computed (no target set, no
+// total units set, or no units remaining).
+function computeNeededQpiForTarget(qualityPoints, qpiUnitsSoFar, unitsLeft, targetQpi){
   if(targetQpi==null || !Number.isFinite(targetQpi)) return null;
-  if(totalUnitsRequired==null || totalUnitsRequired<=0) return null;
-  const unitsLeft = totalUnitsRequired - unitsTaken;
-  if(unitsLeft<=0) return null;
-  return (targetQpi*totalUnitsRequired - qualityPoints) / unitsLeft;
+  if(unitsLeft==null || unitsLeft<=0) return null;
+  const finalQpiUnits = qpiUnitsSoFar + unitsLeft;
+  if(finalQpiUnits<=0) return null;
+  return (targetQpi*finalQpiUnits - qualityPoints) / unitsLeft;
 }
 // NSTP never counts toward QPI — matched by code prefix so it stays
 // automatic no matter how the section/program is written (e.g. "NSTP 11
@@ -4899,7 +4905,7 @@ function computeQpiForCourses(courses, includePE){
     qualityPoints += gp*units;
     qpiUnits += units;
   });
-  return { qpi: qpiUnits>0 ? qualityPoints/qpiUnits : null, units: takenUnits, qualityPoints };
+  return { qpi: qpiUnits>0 ? qualityPoints/qpiUnits : null, units: takenUnits, qpiUnits, qualityPoints };
 }
 
 // ===== Import from AISIS's "All Grades" page (Others -> View Grades ->
@@ -5040,7 +5046,7 @@ function renderQpiTab(){
   overviewRow.appendChild(overallCard);
 
   // ---- Target QPI card ----
-  const neededQpi = computeNeededQpiForTarget(cumulative.qualityPoints, unitsTaken, totalRequired, qd.targetQpi);
+  const neededQpi = computeNeededQpiForTarget(cumulative.qualityPoints, cumulative.qpiUnits, unitsLeft, qd.targetQpi);
   let targetResultHtml;
   if(qd.targetQpi==null){
     targetResultHtml = `<span class="hint" style="margin:0;">Enter a target QPI above to see what you'll need on your remaining units.</span>`;
