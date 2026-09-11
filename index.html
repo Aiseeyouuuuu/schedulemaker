@@ -4870,19 +4870,24 @@ function qpiGradeOptionsFor(code){
 }
 // Weighted QPI over any list of courses — used for both a single
 // semester's QPI and the cumulative QPI across every semester.
+// NSTP is excluded from the QPI average itself (never contributes grade
+// points or units to that ratio) but still counts toward "units taken",
+// since it's a required course load even though it doesn't affect QPI.
 function computeQpiForCourses(courses, includePE){
-  let qualityPoints = 0, totalUnits = 0;
+  let qualityPoints = 0, qpiUnits = 0, takenUnits = 0;
   (courses||[]).forEach(c=>{
-    if(!c || !c.grade || isNstpCourse(c.code) || QPI_EXCLUDED_GRADES.includes(c.grade)) return;
+    if(!c || !c.grade || QPI_EXCLUDED_GRADES.includes(c.grade)) return;
     if(c.isPE && !includePE) return;
-    const gp = QPI_GRADE_POINTS[c.grade];
-    if(gp==null) return;
     const units = parseFloat(c.units) || 0;
     if(units<=0) return;
+    takenUnits += units;
+    if(isNstpCourse(c.code)) return;
+    const gp = QPI_GRADE_POINTS[c.grade];
+    if(gp==null) return;
     qualityPoints += gp*units;
-    totalUnits += units;
+    qpiUnits += units;
   });
-  return { qpi: totalUnits>0 ? qualityPoints/totalUnits : null, units: totalUnits, qualityPoints };
+  return { qpi: qpiUnits>0 ? qualityPoints/qpiUnits : null, units: takenUnits, qualityPoints };
 }
 
 // ===== Import from AISIS's "All Grades" page (Others -> View Grades ->
@@ -5083,7 +5088,7 @@ function renderQpiTab(){
 
   const topPanel = el(`<div class="panel">
     <h3>QPI Calculator</h3>
-    <p class="hint">Grade scale: A = 4.0, B+ = 3.5, B = 3.0, C+ = 2.5, C = 2.0, D = 1.0, F = 0.0. Quality points are each course's grade value multiplied by its units, summed and divided by total units. Courses graded W (withdrawn) or N/A (not yet graded) aren't counted. Mark a course "PE" and use the toggle above to include or exclude PE units from the QPI, same as it works during the actual term. NSTP courses are excluded from QPI automatically; INTACT courses use a Satisfactory/Unsatisfactory scale instead of A–F, and (like S/U grades generally) never count toward quality points either way. Courses imported from AISIS with a subject code starting "PHYED" are marked PE automatically; anything graded "S"/"U" for a non-INTACT course or otherwise not on its scale comes in as N/A and is naturally excluded.</p>
+    <p class="hint">Grade scale: A = 4.0, B+ = 3.5, B = 3.0, C+ = 2.5, C = 2.0, D = 1.0, F = 0.0. Quality points are each course's grade value multiplied by its units, summed and divided by total units. Courses graded W (withdrawn) or N/A (not yet graded) aren't counted. Mark a course "PE" and use the toggle above to include or exclude PE units from the QPI, same as it works during the actual term. NSTP courses never factor into the QPI average itself, but their units still count toward units taken; INTACT courses use a Satisfactory/Unsatisfactory scale instead of A–F, and (like S/U grades generally) never count toward quality points either way. Courses imported from AISIS with a subject code starting "PHYED" are marked PE automatically; anything graded "S"/"U" for a non-INTACT course or otherwise not on its scale comes in as N/A and is naturally excluded.</p>
     <div class="row" style="margin-top:10px;">
       <button id="addQpiSemesterBtn">+ Add Semester</button>
     </div>
