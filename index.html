@@ -296,7 +296,6 @@
   .qpi-honor-badge.qpi-honor-magna{background:var(--medal-silver-bg);color:var(--medal-silver-ink);}
   .qpi-honor-badge.qpi-honor-cum{background:var(--medal-bronze-bg);color:var(--medal-bronze-ink);}
   .qpi-honor-badge.qpi-honor-mention{background:var(--gold);color:var(--gold-ink);}
-  .qpi-honor-badge.qpi-honor-none{background:var(--bg);color:var(--muted);border:1px solid var(--line);}
   .qpi-sem-honor-badge{
     display:inline-block;border-radius:20px;padding:3px 11px;
     font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(11px * var(--font-scale));
@@ -5026,7 +5025,7 @@ function renderQpiTab(){
   const overallCard = el(`<div class="panel" style="flex:1;min-width:260px;">
     <p class="qpi-overview-label">Overall QPI</p>
     <p class="qpi-overview-value" style="color:${qpiScoreColor(cumulative.qpi)};">${cumulative.qpi!=null ? cumulative.qpi.toFixed(2) : '—'}</p>
-    <span class="qpi-honor-badge${latinHonor ? ' '+latinHonor.cls : ' qpi-honor-none'}">${latinHonor ? latinHonor.emoji+' '+latinHonor.label : 'Not within Latin Honors range'}</span>
+    ${latinHonor ? `<span class="qpi-honor-badge ${latinHonor.cls}">${latinHonor.emoji} ${latinHonor.label}</span>` : ''}
     <label class="row" style="gap:6px;cursor:pointer;margin-bottom:10px;">
       <input type="checkbox" id="qpiIncludePeCheck" style="width:auto;margin:0;flex:none;" ${qd.includePE?'checked':''}/>
       Include PE
