@@ -4997,13 +4997,28 @@ const DEANS_LIST_SCALE = [
   { label:'First Honor',  min:3.70, max:4.00, cls:'qpi-sem-honor-first' },
   { label:'Second Honor', min:3.35, max:3.69, cls:'qpi-sem-honor-second' },
 ];
+// Rounds to 2 decimal places before bracket-matching so the honors badge
+// always agrees with the QPI value as displayed (toFixed(2)) — matching
+// against the raw float instead can drop a value into the gap between
+// two brackets, e.g. a true QPI of 3.494 displays as "3.49" but is
+// numerically above the Honorable Mention cutoff (3.49) and below the
+// Cum Laude cutoff (3.50), so it would match neither bracket. Uses the
+// exact same toFixed(2) the number is displayed with (rather than a
+// separate Math.round pass) so the two can never disagree on a
+// borderline float where toFixed's rounding and Math.round's happen to
+// land differently.
+function roundQpi(qpi){
+  return qpi==null ? qpi : Number(qpi.toFixed(2));
+}
 function latinHonorsStanding(qpi){
   if(qpi==null || !Number.isFinite(qpi)) return null;
-  return LATIN_HONORS_SCALE.find(h=> qpi>=h.min && qpi<=h.max) || null;
+  const r = roundQpi(qpi);
+  return LATIN_HONORS_SCALE.find(h=> r>=h.min && r<=h.max) || null;
 }
 function deansListHonor(qpi){
   if(qpi==null || !Number.isFinite(qpi)) return null;
-  return DEANS_LIST_SCALE.find(h=> qpi>=h.min && qpi<=h.max) || null;
+  const r = roundQpi(qpi);
+  return DEANS_LIST_SCALE.find(h=> r>=h.min && r<=h.max) || null;
 }
 
 function renderQpiTab(){
