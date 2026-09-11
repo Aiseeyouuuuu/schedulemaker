@@ -27,6 +27,12 @@
     --navy-rgb:65,105,225;
     --gold:#C9E4DE;
     --gold-ink:#3F5C4E;
+    --medal-gold-bg:#F6D97A;
+    --medal-gold-ink:#7A5B00;
+    --medal-silver-bg:#DCDFE3;
+    --medal-silver-ink:#51565C;
+    --medal-bronze-bg:#E6B98C;
+    --medal-bronze-ink:#6B3E17;
     --line:#D9E1F9;
     --muted:#6B7290;
     --danger:#C24F6A;
@@ -286,12 +292,18 @@
     font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(12.5px * var(--font-scale));
     letter-spacing:0.2px;background:var(--gold);color:var(--gold-ink);
   }
+  .qpi-honor-badge.qpi-honor-summa{background:var(--medal-gold-bg);color:var(--medal-gold-ink);}
+  .qpi-honor-badge.qpi-honor-magna{background:var(--medal-silver-bg);color:var(--medal-silver-ink);}
+  .qpi-honor-badge.qpi-honor-cum{background:var(--medal-bronze-bg);color:var(--medal-bronze-ink);}
+  .qpi-honor-badge.qpi-honor-mention{background:var(--gold);color:var(--gold-ink);}
   .qpi-honor-badge.qpi-honor-none{background:var(--bg);color:var(--muted);border:1px solid var(--line);}
   .qpi-sem-honor-badge{
     display:inline-block;border-radius:20px;padding:3px 11px;
     font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(11px * var(--font-scale));
     letter-spacing:0.2px;background:var(--navy-2);color:var(--navy-ink);white-space:nowrap;
   }
+  .qpi-sem-honor-badge.qpi-sem-honor-first{background:var(--medal-gold-bg);color:var(--medal-gold-ink);}
+  .qpi-sem-honor-badge.qpi-sem-honor-second{background:var(--medal-silver-bg);color:var(--medal-silver-ink);}
   .qpi-legend-card{flex:1;min-width:240px;}
   .qpi-legend-title{
     font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(11.5px * var(--font-scale));
@@ -4971,24 +4983,22 @@ function qpiScoreColor(qpi){
 // Reference ranges — also used to render the on-screen legend, so the
 // legend and the actual standing computed below always stay in sync.
 const LATIN_HONORS_SCALE = [
-  { label:'Summa Cum Laude', min:3.87, max:4.00 },
-  { label:'Magna Cum Laude', min:3.70, max:3.86 },
-  { label:'Cum Laude',       min:3.50, max:3.69 },
-  { label:'Honorable Mention', min:3.35, max:3.49 },
+  { label:'Summa Cum Laude', min:3.87, max:4.00, cls:'qpi-honor-summa', emoji:'🥇' },
+  { label:'Magna Cum Laude', min:3.70, max:3.86, cls:'qpi-honor-magna', emoji:'🥈' },
+  { label:'Cum Laude',       min:3.50, max:3.69, cls:'qpi-honor-cum', emoji:'🥉' },
+  { label:'Honorable Mention', min:3.35, max:3.49, cls:'qpi-honor-mention', emoji:'⭐' },
 ];
 const DEANS_LIST_SCALE = [
-  { label:'First Honor',  min:3.70, max:4.00 },
-  { label:'Second Honor', min:3.35, max:3.69 },
+  { label:'First Honor',  min:3.70, max:4.00, cls:'qpi-sem-honor-first' },
+  { label:'Second Honor', min:3.35, max:3.69, cls:'qpi-sem-honor-second' },
 ];
 function latinHonorsStanding(qpi){
   if(qpi==null || !Number.isFinite(qpi)) return null;
-  const hit = LATIN_HONORS_SCALE.find(h=> qpi>=h.min && qpi<=h.max);
-  return hit ? hit.label : null;
+  return LATIN_HONORS_SCALE.find(h=> qpi>=h.min && qpi<=h.max) || null;
 }
 function deansListHonor(qpi){
   if(qpi==null || !Number.isFinite(qpi)) return null;
-  const hit = DEANS_LIST_SCALE.find(h=> qpi>=h.min && qpi<=h.max);
-  return hit ? hit.label : null;
+  return DEANS_LIST_SCALE.find(h=> qpi>=h.min && qpi<=h.max) || null;
 }
 
 function renderQpiTab(){
@@ -5010,7 +5020,7 @@ function renderQpiTab(){
   const overallCard = el(`<div class="panel" style="flex:1;min-width:260px;">
     <p class="qpi-overview-label">Overall QPI</p>
     <p class="qpi-overview-value" style="color:${qpiScoreColor(cumulative.qpi)};">${cumulative.qpi!=null ? cumulative.qpi.toFixed(2) : '—'}</p>
-    <span class="qpi-honor-badge${latinHonor?'':' qpi-honor-none'}">${latinHonor ? '🎓 '+latinHonor : 'Not within Latin Honors range'}</span>
+    <span class="qpi-honor-badge${latinHonor ? ' '+latinHonor.cls : ' qpi-honor-none'}">${latinHonor ? latinHonor.emoji+' '+latinHonor.label : 'Not within Latin Honors range'}</span>
     <label class="row" style="gap:6px;cursor:pointer;margin-bottom:10px;">
       <input type="checkbox" id="qpiIncludePeCheck" style="width:auto;margin:0;flex:none;" ${qd.includePE?'checked':''}/>
       Include PE
@@ -5112,7 +5122,7 @@ function renderQpiTab(){
         </div>
         <div class="row" style="gap:14px;">
           <span class="hint" style="margin:0;">Semester QPI: <b style="color:var(--ink);">${semStat.qpi!=null ? semStat.qpi.toFixed(2) : '—'}</b> (${semStat.units} units)</span>
-          ${semHonor ? `<span class="qpi-sem-honor-badge">${semHonor}</span>` : ''}
+          ${semHonor ? `<span class="qpi-sem-honor-badge ${semHonor.cls}">${semHonor.label}</span>` : ''}
           <button class="danger" title="Delete semester">Delete</button>
         </div>
       </div>
