@@ -1510,13 +1510,19 @@ function setAdminFlag(on){
 }
 
 async function loadAll(){
-  state.catalog = (await sGet('catalog', true)) || [];
   state.members = (await sGet('members', false)) || [];
   state.meId = await sGet('me-id', false);
   state.semesterType = (await sGet('semesterType', false)) || 'first';
   state.schoolYear = (await sGet('schoolYear', false)) || defaultSchoolYear();
   // Term-scoped: must load AFTER semesterType/schoolYear are known. Falls
-  // back to (and claims) any pre-term-scoping data — see loadTermScopedPersonal.
+  // back to (and claims) any pre-term-scoping data — see loadTermScopedPersonal
+  // and loadTermScopedShared. The catalog is shared (visible to every
+  // classmate) but still term-scoped, same as schedules/manualEntries/
+  // blockColors — otherwise every term's sections pile into one
+  // undifferentiated list and picking a class in one term can surface (or
+  // even silently overwrite, via the code+section dedupe key) a class from
+  // a completely different term.
+  state.catalog = await loadTermScopedShared('catalog', []);
   state.schedules = await loadTermScopedPersonal('schedules', {});
   state.manualEntries = await loadTermScopedPersonal('manualEntries', {});
   state.blockColors = await loadTermScopedPersonal('blockColors', {});
@@ -1723,7 +1729,7 @@ async function loadFriendsData(){
   }catch(e){ console.error('loadFriendsData failed', e); }
 }
 
-async function saveCatalog(){ return queueSave(()=> sSet('catalog', state.catalog, true)); }
+async function saveCatalog(){ return queueSave(()=> sSet(termScopedKey('catalog'), state.catalog, true)); }
 async function saveMembers(){ return queueSave(()=> sSet('members', state.members, false)); }
 async function saveSchedules(){ return queueSave(()=> sSet(termScopedKey('schedules'), state.schedules, false)); }
 async function saveManual(){ return queueSave(()=> sSet(termScopedKey('manualEntries'), state.manualEntries, false)); }
@@ -1735,6 +1741,7 @@ async function saveGroups(){ return queueSave(()=> sSet('groups', state.groups, 
 // tasks, and sidequests — Calendar events are deliberately left untouched
 // (see the note above currentTermKey()).
 async function reloadTermScopedData(){
+  state.catalog = await loadTermScopedShared('catalog', []);
   state.schedules = await loadTermScopedPersonal('schedules', {});
   state.manualEntries = await loadTermScopedPersonal('manualEntries', {});
   state.blockColors = await loadTermScopedPersonal('blockColors', {});
