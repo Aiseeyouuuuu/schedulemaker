@@ -877,6 +877,19 @@ async function loadTermScopedShared(key, fallbackDefault){
   }
   return (val===null || val===undefined) ? fallbackDefault : val;
 }
+// The catalog CANNOT use loadTermScopedShared's legacy fallback above.
+// That fallback is safe for things like tasks/grades because their old
+// flat key only ever held one term's data. But the old flat 'catalog' key
+// holds every term's sections merged into one undifferentiated pile
+// (that was the original bug). Falling back to it for any not-yet-loaded
+// term would just re-serve that same mixed pile — including other terms'
+// sections — which is exactly what we're trying to eliminate. So an
+// empty/not-yet-loaded term's catalog starts genuinely empty here; use
+// "Load into shared catalog" (or re-parse/import) to populate it.
+async function loadTermScopedCatalog(){
+  const val = await sGet(termScopedKey('catalog'), true);
+  return (val===null || val===undefined) ? [] : val;
+}
 
 /* ============================= GOOGLE CALENDAR EXPORT (.ics) ============================= */
 // No backend/OAuth is configured for this deployment, so a true one-click
@@ -1515,14 +1528,16 @@ async function loadAll(){
   state.semesterType = (await sGet('semesterType', false)) || 'first';
   state.schoolYear = (await sGet('schoolYear', false)) || defaultSchoolYear();
   // Term-scoped: must load AFTER semesterType/schoolYear are known. Falls
-  // back to (and claims) any pre-term-scoping data — see loadTermScopedPersonal
-  // and loadTermScopedShared. The catalog is shared (visible to every
-  // classmate) but still term-scoped, same as schedules/manualEntries/
-  // blockColors — otherwise every term's sections pile into one
-  // undifferentiated list and picking a class in one term can surface (or
-  // even silently overwrite, via the code+section dedupe key) a class from
-  // a completely different term.
-  state.catalog = await loadTermScopedShared('catalog', []);
+  // back to (and claims) any pre-term-scoping data — see loadTermScopedPersonal.
+  // The catalog is shared (visible to every classmate) but still
+  // term-scoped, same as schedules/manualEntries/blockColors — otherwise
+  // every term's sections pile into one undifferentiated list and picking
+  // a class in one term can surface (or even silently overwrite, via the
+  // code+section dedupe key) a class from a completely different term.
+  // Uses loadTermScopedCatalog (not loadTermScopedShared) since the old
+  // flat 'catalog' key mixes every term together — see that function's
+  // comment for why it can't be used as a fallback here.
+  state.catalog = await loadTermScopedCatalog();
   state.schedules = await loadTermScopedPersonal('schedules', {});
   state.manualEntries = await loadTermScopedPersonal('manualEntries', {});
   state.blockColors = await loadTermScopedPersonal('blockColors', {});
@@ -1741,7 +1756,7 @@ async function saveGroups(){ return queueSave(()=> sSet('groups', state.groups, 
 // tasks, and sidequests — Calendar events are deliberately left untouched
 // (see the note above currentTermKey()).
 async function reloadTermScopedData(){
-  state.catalog = await loadTermScopedShared('catalog', []);
+  state.catalog = await loadTermScopedCatalog();
   state.schedules = await loadTermScopedPersonal('schedules', {});
   state.manualEntries = await loadTermScopedPersonal('manualEntries', {});
   state.blockColors = await loadTermScopedPersonal('blockColors', {});
