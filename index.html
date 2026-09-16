@@ -3206,7 +3206,7 @@ function openSettingsMenu(anchorEl){
 
 function renderTabs(){
   const wrap = el(`<div class="tabs"></div>`);
-  [['mine','My Schedule'],['enlistment','Enlistment'],['tasks','Tasks'],['sidequests','Sidequests'],['calendar','Calendar'],['friends','Friends'],['combined','Combined'],['qpi','QPI'],['grades','Grades']].forEach(([key,label])=>{
+  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['calendar','Calendar'],['friends','Friends'],['combined','Combined'],['enlistment','Enlistment'],['qpi','QPI'],['grades','Grades']].forEach(([key,label])=>{
     const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
     b.onclick = async ()=>{
       state.activeTab=key;
