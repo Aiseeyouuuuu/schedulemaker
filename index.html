@@ -1477,6 +1477,9 @@ let state = {
   groups: [],          // shared [{id, name, memberIds:[...]}] -- named subsets of members for quick Combined filtering
   meId: null,
   activeTab: 'mine',   // mine | friends | combined
+  enlistmentPlans: {},  // personal, term-scoped — { memberId: [ {id,name,color,schedule:[entryId,...],manualEntries:{entryId:obj},blockColors:{entryId:'#hex'},ranking:[entryId,...]} ] } — the Enlistment tab's Plan A/B/C/D "what-if" schedules, kept completely separate from the real state.schedules/manualEntries/blockColors used by My Schedule
+  activeEnlistmentPlanId: null, // ephemeral — which plan tab is showing in Enlistment; resets to the first plan on load
+  enlistmentCompareId: null,    // ephemeral — which member is selected in Enlistment's "Compare with a friend" panel
   friendEditingId: null,
   activeGroupId: null, // which group's members are currently shown in Combined view, or null for everyone
   combinedOn: new Set(),
@@ -1545,6 +1548,7 @@ async function loadAll(){
   state.googleClientId = (await sGet('googleClientId', true)) || '';
   state.holidays = (await sGet('holidays', true)) || [];
   state.qpiData = (await sGet('qpiData', false)) || defaultQpiData();
+  state.enlistmentPlans = await loadTermScopedPersonal('enlistmentPlans', {});
   loadAdminFlag();
 }
 
@@ -1750,6 +1754,7 @@ async function saveSchedules(){ return queueSave(()=> sSet(termScopedKey('schedu
 async function saveManual(){ return queueSave(()=> sSet(termScopedKey('manualEntries'), state.manualEntries, false)); }
 async function saveBlockColors(){ return queueSave(()=> sSet(termScopedKey('blockColors'), state.blockColors, false)); }
 async function saveGroups(){ return queueSave(()=> sSet('groups', state.groups, false)); }
+async function saveEnlistmentPlans(){ return queueSave(()=> sSet(termScopedKey('enlistmentPlans'), state.enlistmentPlans, false)); }
 
 // Called whenever the term/school-year picker changes. Swaps in a
 // completely separate data set for your own schedule, friends' schedules,
@@ -1760,6 +1765,8 @@ async function reloadTermScopedData(){
   state.schedules = await loadTermScopedPersonal('schedules', {});
   state.manualEntries = await loadTermScopedPersonal('manualEntries', {});
   state.blockColors = await loadTermScopedPersonal('blockColors', {});
+  state.enlistmentPlans = await loadTermScopedPersonal('enlistmentPlans', {});
+  state.activeEnlistmentPlanId = null;
   // Re-pull account friends' schedules for the newly selected term (their
   // side is stored under the same term-scoped key, so this fetches the
   // right slice of their data too).
@@ -1797,6 +1804,51 @@ function getBlockColor(memberId, entryId, fallback){
 function setBlockColor(memberId, entryId, color){
   state.blockColors[memberId] = state.blockColors[memberId] || {};
   state.blockColors[memberId][entryId] = color;
+}
+
+/* ============================= ENLISTMENT (what-if plans) ============================= */
+// A completely separate, personal, term-scoped sandbox: Plan A/B/C/D each
+// carry their own schedule/manualEntries/blockColors/ranking, so building
+// out a hypothetical enlistment never touches the real "My Schedule" data
+// above. See state.enlistmentPlans.
+function getEnlistmentPlans(memberId){
+  let plans = state.enlistmentPlans[memberId];
+  if(!plans || !plans.length){
+    plans = [makeEnlistmentPlan('Plan A', 0)];
+    state.enlistmentPlans[memberId] = plans;
+  }
+  return plans;
+}
+function makeEnlistmentPlan(name, colorIdx){
+  return {
+    id: 'eplan_'+Math.random().toString(36).slice(2,9),
+    name, color: PASTEL_COLORS[colorIdx % PASTEL_COLORS.length],
+    schedule: [], manualEntries: {}, blockColors: {}, ranking: [],
+  };
+}
+function nextPlanName(plans){
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for(const L of letters){ if(!plans.some(p=>p.name===('Plan '+L))) return 'Plan '+L; }
+  return 'Plan '+(plans.length+1);
+}
+// id could be a shared catalog id or this specific plan's own manual entry id.
+function entryForPlan(plan, id){
+  const c = state.catalog.find(c=>c.id===id);
+  if(c) return c;
+  return (plan.manualEntries && plan.manualEntries[id]) || null;
+}
+// Keeps ranking in sync with schedule: drops removed classes, appends any
+// newly-added ones to the end (lowest priority) without disturbing order
+// of the ones already ranked.
+function syncPlanRanking(plan){
+  plan.ranking = (plan.ranking||[]).filter(id=>plan.schedule.includes(id));
+  plan.schedule.forEach(id=>{ if(!plan.ranking.includes(id)) plan.ranking.push(id); });
+}
+function getActivePlan(memberId){
+  const plans = getEnlistmentPlans(memberId);
+  let plan = plans.find(p=>p.id===state.activeEnlistmentPlanId);
+  if(!plan){ plan = plans[0]; state.activeEnlistmentPlanId = plan.id; }
+  return plan;
 }
 
 async function removeMember(id){
@@ -3062,6 +3114,7 @@ function render(){
   app.appendChild(renderHeader());
   app.appendChild(renderTabs());
   if(state.activeTab==='mine') app.appendChild(renderMemberEditor(state.meId));
+  else if(state.activeTab==='enlistment') app.appendChild(renderEnlistmentTab());
   else if(state.activeTab==='tasks') app.appendChild(renderTasksTab());
   else if(state.activeTab==='sidequests') app.appendChild(renderSidequestsTab());
   else if(state.activeTab==='calendar') app.appendChild(renderCalendarTab());
@@ -3139,7 +3192,7 @@ function openSettingsMenu(anchorEl){
 
 function renderTabs(){
   const wrap = el(`<div class="tabs"></div>`);
-  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['calendar','Calendar'],['friends','Friends'],['combined','Combined'],['qpi','QPI'],['grades','Grades']].forEach(([key,label])=>{
+  [['mine','My Schedule'],['enlistment','Enlistment'],['tasks','Tasks'],['sidequests','Sidequests'],['calendar','Calendar'],['friends','Friends'],['combined','Combined'],['qpi','QPI'],['grades','Grades']].forEach(([key,label])=>{
     const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
     b.onclick = async ()=>{
       state.activeTab=key;
@@ -3889,6 +3942,352 @@ function renderSemesterBar(){
     await reloadTermScopedData();
     render();
   };
+
+  return wrap;
+}
+
+/* ============================= ENLISTMENT TAB ============================= */
+// Same basic building blocks as "My Schedule" (renderBoard/renderAddClassBar
+// pattern), but scoped to a plan object instead of the real schedule, so
+// you can sketch out Plan A/B/C/D side by side, rank each plan's classes by
+// priority, color-code them, and compare a plan against a friend's actual
+// schedule — see state.enlistmentPlans and the helpers above it.
+function renderEnlistmentTab(){
+  const memberId = state.meId;
+  const plans = getEnlistmentPlans(memberId);
+  const plan = getActivePlan(memberId);
+  syncPlanRanking(plan);
+
+  const wrap = el(`<div></div>`);
+  wrap.appendChild(el(`<p class="hint" style="margin:0 0 14px;">Sketch out a few different enlistment plans, rank each plan's subjects by priority, color-code them, and compare a plan against a friend's real schedule.</p>`));
+  wrap.appendChild(renderEnlistmentPlanBar(memberId, plans, plan));
+
+  const entries = plan.schedule.map(id=>entryForPlan(plan, id)).filter(Boolean);
+  const boardEl = renderBoard(
+    [{member:{id:memberId}, entries, color: plan.color}],
+    true,
+    {
+      onRemove: async (mid, entryId)=>{
+        plan.schedule = plan.schedule.filter(id=>id!==entryId);
+        syncPlanRanking(plan);
+        await saveEnlistmentPlans();
+      },
+      onColorChange: async (mid, entryId, color)=>{
+        plan.blockColors[entryId] = color;
+        await saveEnlistmentPlans();
+      },
+      getColor: (mid, entryId, fallback)=> (plan.blockColors && plan.blockColors[entryId]) || fallback,
+    }
+  );
+
+  wrap.appendChild(renderEnlistmentAddClassBar(plan, boardEl));
+  if(!entries.length){
+    wrap.appendChild(el(`<p class="hint" style="margin:0 0 12px;">No classes in <b>${plan.name}</b> yet. Search above to add one — hover a result to preview it on the grid below first.</p>`));
+  }
+  wrap.appendChild(boardEl);
+
+  wrap.appendChild(renderRankingPanel(plan));
+  wrap.appendChild(renderEnlistmentComparePanel(memberId, plan));
+
+  return wrap;
+}
+
+function renderEnlistmentPlanBar(memberId, plans, activePlan){
+  const wrap = el(`<div class="panel"><h3>Plans</h3><div class="row" id="planRow" style="gap:8px;"></div></div>`);
+  const row = wrap.querySelector('#planRow');
+  plans.forEach(p=>{
+    const active = p.id===activePlan.id;
+    const chip = el(`<div class="chip ${active?'active':''}" title="${active?'Double-click to rename':''}">
+      <button class="chip-dot" style="background:${p.color};" title="Change ${p.name}'s color"></button>
+      <span class="chip-label">${p.name}</span>
+      ${active && plans.length>1 ? '<span class="x" title="Delete this plan">×</span>' : ''}
+    </div>`);
+    chip.querySelector('.chip-label').onclick = ()=>{
+      state.activeEnlistmentPlanId = p.id;
+      render();
+    };
+    if(active){
+      chip.ondblclick = async ()=>{
+        const name = prompt('Rename plan', p.name);
+        if(name && name.trim()){ p.name = name.trim(); await saveEnlistmentPlans(); render(); }
+      };
+    }
+    const dotBtn = chip.querySelector('.chip-dot');
+    dotBtn.onclick = (e)=>{
+      e.stopPropagation();
+      openColorPicker(dotBtn, PASTEL_COLORS, async (color)=>{
+        p.color = color;
+        await saveEnlistmentPlans();
+        render();
+      }, p.color);
+    };
+    const xBtn = chip.querySelector('.x');
+    if(xBtn){
+      xBtn.onclick = async (e)=>{
+        e.stopPropagation();
+        const ok = await customConfirm(`Delete "${p.name}"? This can't be undone.`);
+        if(!ok) return;
+        const idx = plans.indexOf(p);
+        plans.splice(idx,1);
+        state.activeEnlistmentPlanId = plans[Math.max(0,idx-1)].id;
+        await saveEnlistmentPlans();
+        render();
+      };
+    }
+    row.appendChild(chip);
+  });
+  const addBtn = el(`<button class="ghost small" title="Add a new plan">+ New plan</button>`);
+  addBtn.onclick = async ()=>{
+    const p = makeEnlistmentPlan(nextPlanName(plans), plans.length);
+    plans.push(p);
+    state.activeEnlistmentPlanId = p.id;
+    await saveEnlistmentPlans();
+    render();
+  };
+  row.appendChild(addBtn);
+  wrap.appendChild(el(`<p class="hint" style="margin:8px 0 0;">Click the dot to recolor a plan, double-click its name to rename it.</p>`));
+  return wrap;
+}
+
+function renderEnlistmentAddClassBar(plan, boardEl){
+  const wrap = el(`
+    <div class="panel">
+      <h3>Add a class to ${plan.name}</h3>
+      <div class="row">
+        <div class="combo">
+          <input type="text" id="eSearchInput" placeholder="Search by code, section, or professor, e.g. CSCI 30 or Dela Cruz..." autocomplete="off" />
+          <div class="combo-list" id="eComboList"></div>
+        </div>
+        <button class="ghost" id="eManualToggle">+ Add Manually</button>
+      </div>
+      <div id="eManualForm" style="display:none;margin-top:12px;"></div>
+    </div>`);
+
+  const input = wrap.querySelector('#eSearchInput');
+  const list = wrap.querySelector('#eComboList');
+
+  function renderList(){
+    const q = input.value.trim().toLowerCase();
+    const terms = q.split(/\s+/).filter(Boolean);
+    const matches = state.catalog.filter(c=>{
+      const hay = (c.code+' '+c.section+' '+c.title+' '+(c.instructor||'')).toLowerCase();
+      return terms.every(t=>hay.includes(t));
+    });
+    list.innerHTML = '';
+    if(!state.catalog.length){
+      list.innerHTML = `<div class="combo-empty">The shared catalog is empty. Import the public schedule in My Schedule first.</div>`;
+    } else if(!matches.length){
+      list.innerHTML = `<div class="combo-empty">No matches. Try a different course code, or add manually.</div>`;
+    } else {
+      matches.forEach(c=>{
+        const meta = (c.meetings||[]).map(m=>
+          `${m.days.map(d=>DAY_LABEL[d]).join('/')} ${m.start!=null?minutesToLabel(m.start):''}${m.end!=null?' – '+minutesToLabel(m.end):''}${m.room?' · '+m.room:''}`
+        ).join('; ') + (c.instructor ? ` · ${c.instructor}` : '');
+        const remarkTag = c.remarks && c.remarks!=='-' ? ` <span style="color:var(--danger)">(${c.remarks})</span>` : '';
+
+        const existing = plan.schedule.map(id=>entryForPlan(plan,id)).filter(Boolean)
+          .filter(e => (e.code||'').trim() !== (c.code||'').trim());
+        const clashes = existing.some(e => entriesConflict(c, e));
+        const clashTag = clashes ? `<span class="clash-tag">clashes</span>` : '';
+
+        const item = el(`<div class="combo-item">
+          <div class="row" style="justify-content:space-between;gap:8px;">
+            <span><span class="code">${c.code||'—'} ${c.section||''}</span>${c.title||''}${remarkTag}</span>
+            ${clashTag}
+          </div>
+          <div class="meta">${meta}</div>
+        </div>`);
+        item.onclick = async ()=>{
+          if(!plan.schedule.includes(c.id)){
+            const colorIdx = plan.schedule.length;
+            plan.schedule.push(c.id);
+            plan.blockColors[c.id] = PASTEL_COLORS[colorIdx % PASTEL_COLORS.length];
+            syncPlanRanking(plan);
+          }
+          await saveEnlistmentPlans();
+          input.value=''; list.classList.remove('open');
+          boardEl.__clearGhosts();
+          render();
+        };
+        item.addEventListener('mouseenter', ()=>{
+          boardEl.__clearGhosts();
+          (c.meetings||[]).forEach(m=>{
+            if(m.start==null||m.end==null||!m.days.length) return;
+            m.days.forEach(day=>{
+              const colIdx = DAY_ORDER.indexOf(day);
+              if(colIdx<0) return;
+              const top = ((m.start-BOARD_START)/30)*ROW_H;
+              const height = Math.max(((m.end-m.start)/30)*ROW_H, 22);
+              const ghost = el(`<div class="ghost-block ${clashes?'ghost-clash':''}" style="top:${top}px;height:${height}px;"></div>`);
+              boardEl.__dayCols[colIdx].appendChild(ghost);
+            });
+          });
+        });
+        item.addEventListener('mouseleave', ()=> boardEl.__clearGhosts());
+        list.appendChild(item);
+      });
+    }
+  }
+  input.addEventListener('focus', ()=>{
+    if(input.value.trim().length){ renderList(); list.classList.add('open'); }
+  });
+  input.addEventListener('input', ()=>{
+    if(input.value.trim().length){
+      renderList();
+      list.classList.add('open');
+    } else {
+      list.classList.remove('open');
+      boardEl.__clearGhosts();
+    }
+  });
+  document.addEventListener('click', (e)=>{
+    if(!wrap.contains(e.target)){ list.classList.remove('open'); boardEl.__clearGhosts(); }
+  });
+
+  wrap.querySelector('#eManualToggle').onclick = ()=>{
+    const mf = wrap.querySelector('#eManualForm');
+    mf.style.display = mf.style.display==='none' ? 'block' : 'none';
+    if(mf.style.display==='block') renderEnlistmentManualForm(mf, plan);
+  };
+
+  return wrap;
+}
+
+function renderEnlistmentManualForm(container, plan){
+  container.innerHTML = '';
+  const form = el(`
+    <div class="row" style="flex-wrap:wrap;">
+      <input type="text" id="emCode" placeholder="Code (CSCI 30)" style="width:120px"/>
+      <input type="text" id="emSec" placeholder="Sec" style="width:50px"/>
+      <input type="text" id="emTitle" placeholder="Title" style="width:180px"/>
+      <input type="text" id="emDays" placeholder="Days (MWF)" style="width:90px"/>
+      <input type="text" id="emStart" placeholder="Start (9:00 AM)" style="width:110px"/>
+      <input type="text" id="emEnd" placeholder="End (10:00 AM)" style="width:110px"/>
+      <input type="text" id="emRoom" placeholder="Room" style="width:90px"/>
+      <button id="emAdd">Add</button>
+    </div>`);
+  form.querySelector('#emAdd').onclick = async ()=>{
+    const entry = {
+      id: 'eman_'+Math.random().toString(36).slice(2,9),
+      code: form.querySelector('#emCode').value,
+      section: form.querySelector('#emSec').value,
+      title: form.querySelector('#emTitle').value,
+      units:'', instructor:'', remarks:'',
+      meetings: [{
+        days: parseDays(form.querySelector('#emDays').value),
+        start: timeToMinutes(form.querySelector('#emStart').value),
+        end: timeToMinutes(form.querySelector('#emEnd').value),
+        room: form.querySelector('#emRoom').value,
+      }],
+    };
+    plan.manualEntries[entry.id] = entry;
+    const colorIdx = plan.schedule.length;
+    plan.schedule.push(entry.id);
+    plan.blockColors[entry.id] = PASTEL_COLORS[colorIdx % PASTEL_COLORS.length];
+    syncPlanRanking(plan);
+    await saveEnlistmentPlans();
+    render();
+  };
+  container.appendChild(form);
+}
+
+// The ranked, color-coded subject list — same idea as the "Enlistment
+// Ranking" table you'd fill in by hand, but reordered with the arrows and
+// tied to whatever color each class already has on the grid above.
+function renderRankingPanel(plan){
+  const wrap = el(`<div class="panel"><h3>Enlistment Ranking</h3></div>`);
+  if(!plan.ranking.length){
+    wrap.appendChild(el(`<p class="hint" style="margin:0;">Add classes above, then rank them here by priority using the arrows.</p>`));
+    return wrap;
+  }
+  wrap.appendChild(el(`<p class="hint" style="margin:0 0 10px;">Priority order for <b>${plan.name}</b> — reorder with the arrows; colors match the grid above.</p>`));
+  const list = el(`<div style="display:flex;flex-direction:column;gap:6px;"></div>`);
+  plan.ranking.forEach((entryId, idx)=>{
+    const entry = entryForPlan(plan, entryId);
+    if(!entry) return;
+    const color = plan.blockColors[entryId] || PASTEL_COLORS[idx % PASTEL_COLORS.length];
+    const textColor = getContrastTextColor(color);
+    const rankBadgeStyle = idx===0 ? 'background:var(--medal-gold-bg);color:var(--medal-gold-ink);'
+      : idx===1 ? 'background:var(--medal-silver-bg);color:var(--medal-silver-ink);'
+      : idx===2 ? 'background:var(--medal-bronze-bg);color:var(--medal-bronze-ink);'
+      : 'background:rgba(0,0,0,0.1);color:inherit;';
+    const row = el(`<div style="display:flex;align-items:center;gap:10px;background:${color};color:${textColor};border-radius:8px;padding:8px 12px;flex-wrap:wrap;">
+      <span style="flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:calc(12.5px * var(--font-scale));${rankBadgeStyle}">${idx+1}</span>
+      <span style="font-weight:600;">${entry.code||'—'} ${entry.section||''}</span>
+      <span style="flex:1;opacity:.85;font-size:calc(12px * var(--font-scale));min-width:120px;">${entry.title||''}</span>
+      <button class="rk-up ghost small" title="Move up" ${idx===0?'disabled':''}>↑</button>
+      <button class="rk-down ghost small" title="Move down" ${idx===plan.ranking.length-1?'disabled':''}>↓</button>
+    </div>`);
+    row.querySelector('.rk-up').onclick = async ()=>{
+      if(idx===0) return;
+      [plan.ranking[idx-1], plan.ranking[idx]] = [plan.ranking[idx], plan.ranking[idx-1]];
+      await saveEnlistmentPlans();
+      render();
+    };
+    row.querySelector('.rk-down').onclick = async ()=>{
+      if(idx===plan.ranking.length-1) return;
+      [plan.ranking[idx+1], plan.ranking[idx]] = [plan.ranking[idx], plan.ranking[idx+1]];
+      await saveEnlistmentPlans();
+      render();
+    };
+    list.appendChild(row);
+  });
+  wrap.appendChild(list);
+  return wrap;
+}
+
+// Overlays a plan against a friend's REAL "My Schedule" (already synced
+// for account friends, or typed in for manual friends) — friends don't get
+// their own separate Enlistment plans, so this compares your what-if
+// against what they've actually enlisted in.
+function renderEnlistmentComparePanel(memberId, plan){
+  const wrap = el(`<div class="panel"><h3>Compare with a friend</h3></div>`);
+  const friends = state.members.filter(m=>m.id!==memberId);
+  if(!friends.length){
+    wrap.appendChild(el(`<p class="hint" style="margin:0;">Add a friend in the Friends tab first, then come back here to compare their schedule against ${plan.name}.</p>`));
+    return wrap;
+  }
+  const row = el(`<div class="row" style="margin-bottom:12px;"></div>`);
+  const select = el(`<select id="eCompareSelect"></select>`);
+  select.appendChild(el(`<option value="">— choose a friend —</option>`));
+  friends.forEach(f=>{
+    select.appendChild(el(`<option value="${f.id}" ${state.enlistmentCompareId===f.id?'selected':''}>${f.name}</option>`));
+  });
+  select.onchange = ()=>{ state.enlistmentCompareId = select.value || null; render(); };
+  row.appendChild(select);
+  wrap.appendChild(row);
+
+  const friend = friends.find(f=>f.id===state.enlistmentCompareId);
+  if(!friend){
+    wrap.appendChild(el(`<p class="hint" style="margin:0;">Pick a friend above to overlay their real schedule against ${plan.name}.</p>`));
+    return wrap;
+  }
+
+  const planEntries = plan.schedule.map(id=>entryForPlan(plan,id)).filter(Boolean);
+  const friendEntries = (state.schedules[friend.id]||[]).map(entryFor).filter(Boolean);
+
+  const groups = [
+    {member:{id:'__eplan__'}, entries: planEntries, color: plan.color},
+    {member:friend, entries: friendEntries, color: friend.color},
+  ];
+
+  const legend = el(`<div class="legend"></div>`);
+  legend.appendChild(el(`<div class="item"><span class="dot" style="background:${plan.color}"></span>${plan.name} (you)</div>`));
+  legend.appendChild(el(`<div class="item"><span class="dot" style="background:${friend.color}"></span>${friend.name}</div>`));
+  wrap.appendChild(legend);
+
+  if(!planEntries.length && !friendEntries.length){
+    wrap.appendChild(el(`<div class="empty">Nothing to compare yet — add classes to ${plan.name}, and make sure ${friend.name} has classes in their own schedule.</div>`));
+    return wrap;
+  }
+  wrap.appendChild(renderBoard(groups, false));
+
+  const planCodes = new Set(planEntries.map(e=>(e.code||'').trim().toUpperCase()).filter(Boolean));
+  const friendCodes = new Set(friendEntries.map(e=>(e.code||'').trim().toUpperCase()).filter(Boolean));
+  const shared = [...planCodes].filter(c=>friendCodes.has(c));
+  if(shared.length){
+    wrap.appendChild(el(`<p class="hint" style="margin-top:10px;">Classes you'd share with ${friend.name}: <b>${shared.join(', ')}</b></p>`));
+  }
 
   return wrap;
 }
@@ -6869,7 +7268,21 @@ function packDayBlocks(blocks){
   return sorted;
 }
 
-function renderBoard(groups, allowDelete){
+function renderBoard(groups, allowDelete, handlers){
+  // handlers lets a caller (e.g. the Enlistment tab's plan boards) redirect
+  // remove/recolor actions and color lookups at a plan instead of the
+  // real state.schedules/blockColors — omit it to get the original
+  // My-Schedule/Friends-tab behavior unchanged.
+  handlers = handlers || {};
+  const onRemove = handlers.onRemove || (async (mid, entryId)=>{
+    state.schedules[mid] = (state.schedules[mid]||[]).filter(id=>id!==entryId);
+    await saveSchedules();
+  });
+  const onColorChange = handlers.onColorChange || (async (mid, entryId, color)=>{
+    setBlockColor(mid, entryId, color);
+    await saveBlockColors();
+  });
+  const getColor = handlers.getColor || getBlockColor;
   BOARD_START = computeBoardStart((groups||[]).flatMap(g=>g.entries||[]));
   const totalRows = (BOARD_END-BOARD_START)/30;
   const board = el(`
@@ -6936,7 +7349,7 @@ function renderBoard(groups, allowDelete){
       // Editable views (My Schedule / editing a friend) keep the per-class
       // pastel color, since there it's only ever one person's grid anyway.
       const blockColor = allowDelete
-        ? getBlockColor(b.group.member.id, b.entry.id, b.group.color)
+        ? getColor(b.group.member.id, b.entry.id, b.group.color)
         : b.group.color;
       const textColor = getContrastTextColor(blockColor);
       const blk = el(`
@@ -6952,17 +7365,14 @@ function renderBoard(groups, allowDelete){
         </div>`);
       if(allowDelete){
         blk.onclick = async ()=>{
-          const mid = b.group.member.id;
-          state.schedules[mid] = (state.schedules[mid]||[]).filter(id=>id!==b.entry.id);
-          await saveSchedules();
+          await onRemove(b.group.member.id, b.entry.id);
           render();
         };
         const swatchBtn = blk.querySelector('.swatch-btn');
         swatchBtn.onclick = (e)=>{
           e.stopPropagation();
           openColorPicker(swatchBtn, PASTEL_COLORS, async (color)=>{
-            setBlockColor(b.group.member.id, b.entry.id, color);
-            await saveBlockColors();
+            await onColorChange(b.group.member.id, b.entry.id, color);
             render();
           }, blockColor);
         };
