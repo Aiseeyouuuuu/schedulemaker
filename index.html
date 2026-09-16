@@ -3973,6 +3973,7 @@ function renderEnlistmentTab(){
   syncPlanRanking(plan);
 
   const wrap = el(`<div></div>`);
+  wrap.appendChild(renderSemesterBar());
   wrap.appendChild(el(`<p class="hint" style="margin:0 0 14px;">Sketch out a few different enlistment plans, rank each plan's subjects by priority, color-code them, and compare a plan against a friend's real schedule.</p>`));
   wrap.appendChild(renderEnlistmentPlanBar(memberId, plans, plan));
 
@@ -3998,7 +3999,12 @@ function renderEnlistmentTab(){
   if(!entries.length){
     wrap.appendChild(el(`<p class="hint" style="margin:0 0 12px;">No classes in <b>${plan.name}</b> yet. Search above to add one — hover a result to preview it on the grid below first.</p>`));
   }
-  wrap.appendChild(boardEl);
+
+  // Board + ranking side by side (wraps to stacked on narrow screens);
+  // the wallpaper download stays under the board since it only exports
+  // the grid, not the ranking list.
+  const boardCol = el(`<div style="flex:2 1 420px;min-width:0;"></div>`);
+  boardCol.appendChild(boardEl);
   if(entries.length){
     const wpRow = el(`<div class="row" style="margin-top:14px;">
       <button class="ghost" id="makeEnlistmentWallpaperBtn">⬇️ Download</button>
@@ -4008,10 +4014,16 @@ function renderEnlistmentTab(){
     // painter reads member.name/member.color directly (see paintTable).
     wpRow.querySelector('#makeEnlistmentWallpaperBtn').onclick = ()=>
       openWallpaperBuilder([{member:{id:'__eplan__', name:plan.name, color:plan.color}, color:plan.color, entries}]);
-    wrap.appendChild(wpRow);
+    boardCol.appendChild(wpRow);
   }
+  const rankingCol = el(`<div style="flex:1 1 280px;min-width:0;"></div>`);
+  rankingCol.appendChild(renderRankingPanel(plan));
 
-  wrap.appendChild(renderRankingPanel(plan));
+  const boardRow = el(`<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;"></div>`);
+  boardRow.appendChild(boardCol);
+  boardRow.appendChild(rankingCol);
+  wrap.appendChild(boardRow);
+
   wrap.appendChild(renderEnlistmentComparePanel(memberId, plan));
 
   return wrap;
