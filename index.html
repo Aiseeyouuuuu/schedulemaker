@@ -1473,13 +1473,16 @@ let state = {
   schedules: {},      // shared { memberId: [entryId,...] }  -- entries reference catalog OR are inline manual objects
   manualEntries: {},  // shared { memberId: {entryId: entryObj} } for manual (non-catalog) additions
   remoteManualEntries: {}, // { remoteUid: {entryId: entryObj} } -- cached copy of an account-friend's OWN manual entries, read-only
+  remoteEnlistmentPlans: {}, // { remoteUid: [plan,...] } -- cached copy of an account-friend's OWN Enlistment plans, read-only; see fetchFriendSchedule
   blockColors: {},    // shared { memberId: { entryId: '#hex' } } -- per-person color override for a class block
   groups: [],          // shared [{id, name, memberIds:[...]}] -- named subsets of members for quick Combined filtering
   meId: null,
   activeTab: 'mine',   // mine | friends | combined
   enlistmentPlans: {},  // personal, term-scoped — { memberId: [ {id,name,color,schedule:[entryId,...],manualEntries:{entryId:obj},blockColors:{entryId:'#hex'},ranking:[entryId,...]} ] } — the Enlistment tab's Plan A/B/C/D "what-if" schedules, kept completely separate from the real state.schedules/manualEntries/blockColors used by My Schedule
   activeEnlistmentPlanId: null, // ephemeral — which plan tab is showing in Enlistment; resets to the first plan on load
-  enlistmentCompareId: null,    // ephemeral — which member is selected in Enlistment's "Compare with a friend" panel
+  enlistmentCompareOn: new Set(),  // ephemeral — which friend id(s) are selected in Enlistment's "Compare with friends" panel
+  enlistmentCompareGroupId: null,  // ephemeral — which saved group (if any) currently matches the compare selection
+  enlistmentCompareSource: {},     // ephemeral — { friendId: 'schedule' | planId } — whether each selected friend is compared via their real schedule or one of their own Enlistment plans (account friends only; see remoteEnlistmentPlans)
   friendEditingId: null,
   activeGroupId: null, // which group's members are currently shown in Combined view, or null for everyone
   combinedOn: new Set(),
@@ -1683,6 +1686,7 @@ async function unfriendAccount(remoteUid){
   delete state.schedules[memberId];
   delete state.blockColors[memberId];
   delete state.remoteManualEntries[remoteUid];
+  delete state.remoteEnlistmentPlans[remoteUid];
   state.combinedOn.delete(memberId);
   if(state.friendEditingId===memberId) state.friendEditingId = null;
   render();
@@ -1691,18 +1695,27 @@ async function unfriendAccount(remoteUid){
 // Pulls one account-friend's OWN classes (never their friends-of-friends —
 // their 'me-id' doc says which entry in THEIR schedules map is really
 // theirs) into the local read-only cache so the Friends/Combined tabs can
-// show it via the normal renderBoard/entryFor pipeline.
+// show it via the normal renderBoard/entryFor pipeline. Also pulls their
+// own Enlistment plans (Plan A/B/C/D "what-ifs", same term-scoped doc
+// their own Enlistment tab writes via saveEnlistmentPlans) into
+// state.remoteEnlistmentPlans, read-only, so Enlistment's "Compare with
+// friends" panel can offer a friend's plan as a comparison source instead
+// of just their real schedule — no separate opt-in needed on their end
+// since firestore.rules already leaves sked_users/*/data wide open to any
+// signed-in client the same way schedules/manualEntries already are.
 async function fetchFriendSchedule(remoteUid){
   if(!__db) return;
   const memberId = 'acct:'+remoteUid;
   try{
     const base = __db.collection('sked_users').doc(remoteUid).collection('data');
-    const [meIdSnap, schedSnap, manualSnap] = await Promise.all([
+    const [meIdSnap, schedSnap, manualSnap, plansSnap] = await Promise.all([
       base.doc('me-id').get(), base.doc(termScopedKey('schedules')).get(), base.doc(termScopedKey('manualEntries')).get(),
+      base.doc(termScopedKey('enlistmentPlans')).get(),
     ]);
     const theirMeId = meIdSnap.exists ? meIdSnap.data().value : null;
     let remoteSchedules = schedSnap.exists ? (schedSnap.data().value||{}) : null;
     let remoteManual = manualSnap.exists ? (manualSnap.data().value||{}) : null;
+    const remotePlans = plansSnap.exists ? (plansSnap.data().value||{}) : {};
     // Their client may not have opened the updated app yet, so their data
     // could still sit under the old un-scoped doc — fall back to reading
     // that (read-only; we can't write to their account to migrate it).
@@ -1715,6 +1728,7 @@ async function fetchFriendSchedule(remoteUid){
     }
     state.schedules[memberId] = (theirMeId && remoteSchedules[theirMeId]) ? remoteSchedules[theirMeId] : [];
     state.remoteManualEntries[remoteUid] = (theirMeId && remoteManual[theirMeId]) ? remoteManual[theirMeId] : {};
+    state.remoteEnlistmentPlans[remoteUid] = (theirMeId && remotePlans[theirMeId]) ? remotePlans[theirMeId] : [];
   }catch(e){ console.error('fetchFriendSchedule failed', remoteUid, e); }
 }
 
@@ -3985,6 +3999,17 @@ function renderEnlistmentTab(){
     wrap.appendChild(el(`<p class="hint" style="margin:0 0 12px;">No classes in <b>${plan.name}</b> yet. Search above to add one — hover a result to preview it on the grid below first.</p>`));
   }
   wrap.appendChild(boardEl);
+  if(entries.length){
+    const wpRow = el(`<div class="row" style="margin-top:14px;">
+      <button class="ghost" id="makeEnlistmentWallpaperBtn">⬇️ Download</button>
+    </div>`);
+    // Solo download of just this plan — needs its own name/color on the
+    // pseudo-member since the wallpaper builder's legend/combined-mode
+    // painter reads member.name/member.color directly (see paintTable).
+    wpRow.querySelector('#makeEnlistmentWallpaperBtn').onclick = ()=>
+      openWallpaperBuilder([{member:{id:'__eplan__', name:plan.name, color:plan.color}, color:plan.color, entries}]);
+    wrap.appendChild(wpRow);
+  }
 
   wrap.appendChild(renderRankingPanel(plan));
   wrap.appendChild(renderEnlistmentComparePanel(memberId, plan));
@@ -4236,58 +4261,158 @@ function renderRankingPanel(plan){
   return wrap;
 }
 
-// Overlays a plan against a friend's REAL "My Schedule" (already synced
-// for account friends, or typed in for manual friends) — friends don't get
-// their own separate Enlistment plans, so this compares your what-if
-// against what they've actually enlisted in.
+// Overlays a plan against one or more friends' REAL "My Schedule" (already
+// synced for account friends, or typed in for manual friends) — friends
+// don't get their own separate Enlistment plans, so this compares your
+// what-if against what they've actually enlisted in. You can pick any
+// number of friends individually, or jump to a saved Friends-tab group in
+// one click, same idea as the Combined tab's group chips.
+// An account friend's own Enlistment plans, if any were fetched for them
+// (see fetchFriendSchedule/state.remoteEnlistmentPlans). Manual (non-
+// account) friends never have these — there's nothing to pick from, so
+// their only comparison source is the one schedule you typed in for them.
+function friendPlanOptions(f){
+  if(!f.isAccountFriend) return [];
+  return state.remoteEnlistmentPlans[f.remoteUid] || [];
+}
+// Resolves what to actually plot for a selected friend in the compare
+// panel below: their real schedule by default, or — if you've picked one
+// of their plans via the per-friend source selector — that plan's classes
+// instead, labeled so the legend/download make clear which one it is.
+function friendCompareEntries(f){
+  const source = state.enlistmentCompareSource[f.id];
+  if(source && source!=='schedule'){
+    const p = friendPlanOptions(f).find(pl=>pl.id===source);
+    if(p) return {entries: p.schedule.map(id=>entryForPlan(p,id)).filter(Boolean), label:`${f.name} — ${p.name}`};
+  }
+  return {entries:(state.schedules[f.id]||[]).map(entryFor).filter(Boolean), label:f.name};
+}
+
 function renderEnlistmentComparePanel(memberId, plan){
-  const wrap = el(`<div class="panel"><h3>Compare with a friend</h3></div>`);
+  const wrap = el(`<div class="panel"><h3>Compare with friends</h3></div>`);
   const friends = state.members.filter(m=>m.id!==memberId);
   if(!friends.length){
     wrap.appendChild(el(`<p class="hint" style="margin:0;">Add a friend in the Friends tab first, then come back here to compare their schedule against ${plan.name}.</p>`));
     return wrap;
   }
-  const row = el(`<div class="row" style="margin-bottom:12px;"></div>`);
-  const select = el(`<select id="eCompareSelect"></select>`);
-  select.appendChild(el(`<option value="">— choose a friend —</option>`));
-  friends.forEach(f=>{
-    select.appendChild(el(`<option value="${f.id}" ${state.enlistmentCompareId===f.id?'selected':''}>${f.name}</option>`));
-  });
-  select.onchange = ()=>{ state.enlistmentCompareId = select.value || null; render(); };
-  row.appendChild(select);
-  wrap.appendChild(row);
 
-  const friend = friends.find(f=>f.id===state.enlistmentCompareId);
-  if(!friend){
-    wrap.appendChild(el(`<p class="hint" style="margin:0;">Pick a friend above to overlay their real schedule against ${plan.name}.</p>`));
+  // Drop anyone no longer around (e.g. an unfriended account) from a stale selection.
+  const friendIds = new Set(friends.map(f=>f.id));
+  [...state.enlistmentCompareOn].forEach(id=>{ if(!friendIds.has(id)) state.enlistmentCompareOn.delete(id); });
+  Object.keys(state.enlistmentCompareSource).forEach(id=>{ if(!friendIds.has(id)) delete state.enlistmentCompareSource[id]; });
+
+  if(state.groups.length){
+    const groupRow = el(`<div class="row" id="eGroupFilterRow" style="margin-bottom:10px;"></div>`);
+    state.groups.forEach(g=>{
+      const idsInGroup = g.memberIds.filter(id=>friendIds.has(id));
+      if(!idsInGroup.length) return; // nothing comparable in this group
+      const chip = el(`<div class="chip ${state.enlistmentCompareGroupId===g.id?'active':''}">${g.name}</div>`);
+      chip.onclick = ()=>{
+        state.enlistmentCompareGroupId = g.id;
+        state.enlistmentCompareOn = new Set(idsInGroup);
+        render();
+      };
+      groupRow.appendChild(chip);
+    });
+    if(groupRow.children.length) wrap.appendChild(groupRow);
+  }
+
+  const toggleRow = el(`<div class="row" id="eCompareToggles" style="margin-bottom:12px;"></div>`);
+  friends.forEach(f=>{
+    const on = state.enlistmentCompareOn.has(f.id);
+    const chip = el(`<div class="chip ${on?'active':''}">
+      <button class="chip-dot" style="background:${f.color}" title="Change ${f.name}'s color"></button>
+      <span class="chip-label">${f.name}</span>
+    </div>`);
+    chip.querySelector('.chip-label').onclick = ()=>{
+      state.enlistmentCompareGroupId = null; // manual adjustment no longer matches a preset group exactly
+      if(state.enlistmentCompareOn.has(f.id)) state.enlistmentCompareOn.delete(f.id); else state.enlistmentCompareOn.add(f.id);
+      render();
+    };
+    const dotBtn = chip.querySelector('.chip-dot');
+    dotBtn.onclick = (e)=>{
+      e.stopPropagation();
+      openColorPicker(dotBtn, MEMBER_COLORS, async (color)=>{
+        f.color = color;
+        await saveMembers();
+        render();
+      }, f.color);
+    };
+    toggleRow.appendChild(chip);
+  });
+  wrap.appendChild(toggleRow);
+
+  const selectedFriends = friends.filter(f=>state.enlistmentCompareOn.has(f.id));
+  if(!selectedFriends.length){
+    wrap.appendChild(el(`<p class="hint" style="margin:0;">Pick one or more friends above (or a group) to overlay their real schedule against ${plan.name}.</p>`));
     return wrap;
   }
 
-  const planEntries = plan.schedule.map(id=>entryForPlan(plan,id)).filter(Boolean);
-  const friendEntries = (state.schedules[friend.id]||[]).map(entryFor).filter(Boolean);
+  // For any selected friend who's linked by account AND has their own
+  // Enlistment plans synced, let you pick "their real schedule" (default)
+  // or one of their plans as the thing to compare against. Manual friends
+  // skip this entirely — their one typed-in schedule is their only source.
+  const friendsWithPlans = selectedFriends.filter(f=>friendPlanOptions(f).length);
+  if(friendsWithPlans.length){
+    const srcPanel = el(`<div class="row" style="flex-wrap:wrap;gap:14px;margin-bottom:12px;" id="eCompareSources"></div>`);
+    friendsWithPlans.forEach(f=>{
+      const current = state.enlistmentCompareSource[f.id] || 'schedule';
+      const row = el(`<label style="display:flex;align-items:center;gap:6px;font-size:calc(12.5px * var(--font-scale));color:var(--muted);">${f.name}: <select></select></label>`);
+      const sel = row.querySelector('select');
+      sel.appendChild(el(`<option value="schedule">Real schedule</option>`));
+      friendPlanOptions(f).forEach(p=>sel.appendChild(el(`<option value="${p.id}">${p.name}</option>`)));
+      sel.value = current;
+      sel.onchange = ()=>{ state.enlistmentCompareSource[f.id] = sel.value; render(); };
+      srcPanel.appendChild(row);
+    });
+    wrap.appendChild(srcPanel);
+  }
 
-  const groups = [
-    {member:{id:'__eplan__'}, entries: planEntries, color: plan.color},
-    {member:friend, entries: friendEntries, color: friend.color},
-  ];
+  const planEntries = plan.schedule.map(id=>entryForPlan(plan,id)).filter(Boolean);
+  // The pseudo-member needs name/color set directly (not just group.color)
+  // since the download builder's combined-mode legend/blocks read
+  // member.name/member.color straight off it — see paintTable.
+  const planGroup = {member:{id:'__eplan__', name:`${plan.name} (you)`, color:plan.color}, color:plan.color, entries:planEntries};
+  const friendGroups = selectedFriends.map(f=>{
+    const {entries, label} = friendCompareEntries(f);
+    return {member:{...f, name:label}, color:f.color, entries};
+  });
+  const groups = [planGroup, ...friendGroups];
 
   const legend = el(`<div class="legend"></div>`);
   legend.appendChild(el(`<div class="item"><span class="dot" style="background:${plan.color}"></span>${plan.name} (you)</div>`));
-  legend.appendChild(el(`<div class="item"><span class="dot" style="background:${friend.color}"></span>${friend.name}</div>`));
+  friendGroups.forEach(g=>legend.appendChild(el(`<div class="item"><span class="dot" style="background:${g.color}"></span>${g.member.name}</div>`)));
   wrap.appendChild(legend);
 
-  if(!planEntries.length && !friendEntries.length){
-    wrap.appendChild(el(`<div class="empty">Nothing to compare yet — add classes to ${plan.name}, and make sure ${friend.name} has classes in their own schedule.</div>`));
+  const anyFriendEntries = friendGroups.some(g=>g.entries.length);
+  if(!planEntries.length && !anyFriendEntries){
+    const names = selectedFriends.map(f=>f.name).join(', ');
+    wrap.appendChild(el(`<div class="empty">Nothing to compare yet — add classes to ${plan.name}, and make sure ${names} ${selectedFriends.length>1?'have':'has'} classes in their own schedule.</div>`));
     return wrap;
   }
   wrap.appendChild(renderBoard(groups, false));
 
   const planCodes = new Set(planEntries.map(e=>(e.code||'').trim().toUpperCase()).filter(Boolean));
-  const friendCodes = new Set(friendEntries.map(e=>(e.code||'').trim().toUpperCase()).filter(Boolean));
-  const shared = [...planCodes].filter(c=>friendCodes.has(c));
-  if(shared.length){
-    wrap.appendChild(el(`<p class="hint" style="margin-top:10px;">Classes you'd share with ${friend.name}: <b>${shared.join(', ')}</b></p>`));
+  friendGroups.forEach(g=>{
+    const friendCodes = new Set(g.entries.map(e=>(e.code||'').trim().toUpperCase()).filter(Boolean));
+    const shared = [...planCodes].filter(c=>friendCodes.has(c));
+    if(shared.length){
+      wrap.appendChild(el(`<p class="hint" style="margin-top:8px;">Classes you'd share with ${g.member.name}: <b>${shared.join(', ')}</b></p>`));
+    }
+  });
+  if(friendGroups.length>1){
+    const friendCodeSets = friendGroups.map(g=>new Set(g.entries.map(e=>(e.code||'').trim().toUpperCase()).filter(Boolean)));
+    const sharedByAll = [...planCodes].filter(c=>friendCodeSets.every(s=>s.has(c)));
+    if(sharedByAll.length){
+      wrap.appendChild(el(`<p class="hint" style="margin-top:4px;">Classes all of you would share: <b>${sharedByAll.join(', ')}</b></p>`));
+    }
   }
+
+  const wpRow = el(`<div class="row" style="margin-top:14px;">
+    <button class="ghost" id="makeEnlistmentCompareWallpaperBtn">⬇️ Download this comparison</button>
+  </div>`);
+  wpRow.querySelector('#makeEnlistmentCompareWallpaperBtn').onclick = ()=> openWallpaperBuilder(groups);
+  wrap.appendChild(wpRow);
 
   return wrap;
 }
