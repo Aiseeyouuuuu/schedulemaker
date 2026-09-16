@@ -4250,10 +4250,12 @@ function renderRankingPanel(plan){
       : 'background:rgba(0,0,0,0.1);color:inherit;';
     const row = el(`<div style="display:flex;align-items:center;gap:10px;background:${color};color:${textColor};border-radius:8px;padding:8px 12px;flex-wrap:wrap;">
       <span style="flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:calc(12.5px * var(--font-scale));${rankBadgeStyle}">${idx+1}</span>
-      <span style="font-weight:600;">${entry.code||'—'} ${entry.section||''}</span>
-      <span style="flex:1;opacity:.85;font-size:calc(12px * var(--font-scale));min-width:120px;">${surnameOf(entry.instructor)}</span>
-      <button class="rk-up ghost small" title="Move up" ${idx===0?'disabled':''}>↑</button>
-      <button class="rk-down ghost small" title="Move down" ${idx===plan.ranking.length-1?'disabled':''}>↓</button>
+      <span style="font-weight:600;white-space:nowrap;">${entry.code||'—'} ${entry.section||''}</span>
+      <span style="flex:1 1 60px;min-width:0;opacity:.85;font-size:calc(12px * var(--font-scale));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${surnameOf(entry.instructor)}</span>
+      <div style="display:flex;gap:6px;flex:none;margin-left:auto;">
+        <button class="rk-up ghost small" title="Move up" ${idx===0?'disabled':''}>↑</button>
+        <button class="rk-down ghost small" title="Move down" ${idx===plan.ranking.length-1?'disabled':''}>↓</button>
+      </div>
     </div>`);
     row.querySelector('.rk-up').onclick = async ()=>{
       if(idx===0) return;
