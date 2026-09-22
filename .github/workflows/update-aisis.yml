@@ -53,13 +53,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-  - name: Test AISIS connection
-    run: curl -i -A "Mozilla/5.0" "https://aisis.ateneo.edu/j_aisis/classSkeds.do"
+      - name: Test AISIS connection
+        run: curl -i -A "Mozilla/5.0" "https://aisis.ateneo.edu/j_aisis/classSkeds.do"
 
-- name: Fetch, parse, and update Firestore
-  env:
-    FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-    INPUT_SCHOOL_YEAR_START: ${{ github.event.inputs.schoolYearStart }}
-    INPUT_TERM: ${{ github.event.inputs.term }}
-    INPUT_DEPARTMENTS: ${{ github.event.inputs.departments }}
-  run: npm run update
+      - name: Fetch, parse, and update Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          INPUT_SCHOOL_YEAR_START: ${{ github.event.inputs.schoolYearStart }}
+          INPUT_TERM: ${{ github.event.inputs.term }}
+          INPUT_DEPARTMENTS: ${{ github.event.inputs.departments }}
+        run: npm run update
