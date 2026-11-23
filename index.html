@@ -880,9 +880,27 @@ async function loadTermScopedShared(key, fallbackDefault){
   let val = await sGet(scoped, true);
   if(val===null || val===undefined){
     const legacy = await sGet(key, true);
-    if(legacy!==null && legacy!==undefined) val = legacy;
+    if(legacy!==null && legacy!==undefined){
+      // Old, un-scoped task lists (e.g. 'tasks:university-wide') hold tasks
+      // from every term in one pile. Without filtering, they'd show up in
+      // every semester. Keep only the tasks that belong to the term being
+      // viewed: dated ones whose due date falls in this term, and undated
+      // ones only in the term that contains today.
+      val = (key.startsWith('tasks:') && Array.isArray(legacy)) ? legacy.filter(legacyTaskBelongsToCurrentTerm) : legacy;
+    }
   }
   return (val===null || val===undefined) ? fallbackDefault : val;
+}
+function legacyTaskBelongsToCurrentTerm(t){
+  const range = semesterDateRange(state.semesterType, state.schoolYear);
+  const lo = new Date(range.start); lo.setDate(lo.getDate()-14);   // a little before classes start
+  const hi = new Date(range.end);   hi.setDate(hi.getDate()+21);   // finals and late deadlines
+  if(!t || !t.dueDate){
+    const today = new Date(); today.setHours(0,0,0,0);
+    return today >= lo && today <= hi;
+  }
+  const due = new Date(t.dueDate+'T00:00:00');
+  return due >= lo && due <= hi;
 }
 // The catalog CANNOT use loadTermScopedShared's legacy fallback above.
 // That fallback is safe for things like tasks/grades because their old
