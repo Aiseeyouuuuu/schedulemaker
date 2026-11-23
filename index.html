@@ -4732,7 +4732,9 @@ async function deleteTask(subjectKey, taskId){
 //   doesn't bring it back.
 // - Only assignments due inside the selected term (and no more than 14
 //   days in the past) are imported, so old terms don't flood in.
-const CANVAS_FEED_WORKER_URL = 'https://canvas-feed.aisis-manual-trigger.workers.dev/';
+// Google Apps Script web app that fetches the feed (see canvas-feed-apps-script.gs).
+// Cloudflare Workers can't be used: Canvas blocks requests coming from them.
+const CANVAS_FEED_WORKER_URL = 'https://script.google.com/macros/s/AKfycbyBtfUILXDzN4sqfS1bBdv8e7PIvuQZfUzaEUVgNU4I6TwuzG0DNt0iHXnnhF0ANxYM/exec';
 const CANVAS_AUTO_SYNC_MS = 30*60*1000; // re-sync every 30 min while the site is open
 
 async function ensureCanvasSettingsLoaded(){
@@ -4831,7 +4833,7 @@ async function syncCanvas({silent=false}={}){
   if(__canvasSyncRunning) return;
   await ensureCanvasSettingsLoaded();
   if(!state.canvasFeedUrl){ if(!silent) openCanvasSettingsModal(); return; }
-  if(/REPLACE-WITH-YOUR-SUBDOMAIN/.test(CANVAS_FEED_WORKER_URL)){
+  if(/PASTE-YOUR-APPS-SCRIPT/.test(CANVAS_FEED_WORKER_URL)){
     if(!silent) showToast('Canvas sync: set CANVAS_FEED_WORKER_URL in the code first');
     return;
   }
@@ -4839,13 +4841,16 @@ async function syncCanvas({silent=false}={}){
   state.canvasSyncing = true;
   if(!silent && state.activeTab==='tasks') render();
   try{
+    // text/plain keeps this a "simple" request, which Google Apps Script
+    // accepts from another site without a CORS preflight.
     const res = await fetch(CANVAS_FEED_WORKER_URL, {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({url: state.canvasFeedUrl}),
     });
-    if(!res.ok) throw new Error('Worker returned '+res.status+': '+(await res.text()).slice(0,200));
-    const events = parseCanvasIcs(await res.text());
+    const body = await res.text();
+    if(!res.ok || body.indexOf('BEGIN:VCALENDAR')<0) throw new Error('Feed proxy returned '+res.status+': '+body.slice(0,300));
+    const events = parseCanvasIcs(body);
 
     await ensureTasksLoaded();
     await ensureCanvasTermDataLoaded();
@@ -4931,7 +4936,7 @@ async function syncCanvas({silent=false}={}){
     }
   }catch(e){
     console.error('Canvas sync failed', e);
-    if(!silent) showToast('Canvas sync failed. Check the feed link and the Worker.');
+    if(!silent) showToast('Canvas sync failed. Check the feed link and the Apps Script.');
   }finally{
     __canvasSyncRunning = false;
     state.canvasSyncing = false;
