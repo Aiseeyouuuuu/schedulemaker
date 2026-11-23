@@ -248,6 +248,13 @@
     border-radius:20px;font-family:'Poppins',sans-serif;font-weight:700;font-size:calc(11.5px * var(--font-scale));
   }
 
+
+  /* ---- Cuts tab: cards share row tracks so their parts line up ---- */
+  .cuts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));column-gap:16px;row-gap:0;}
+  .cuts-card{display:grid;grid-row:span 7;grid-template-rows:subgrid;row-gap:10px;margin:0 0 16px;align-content:start;}
+  .cuts-card .cut-head{align-self:start;}
+  .cuts-card .cut-label{white-space:normal;}
+  .cuts-card .cut-status{display:block;text-align:center;align-self:center;white-space:nowrap;}
   /* ---- completed tasks stat card (Tasks tab) ---- */
   .stat-card{
     display:inline-flex;flex-direction:column;min-width:150px;background:var(--surface);
@@ -5480,34 +5487,35 @@ function renderCutsTab(){
     <div class="stat-card-value">${totalUsed}</div>
   </div>`));
 
-  const grid = el(`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;"></div>`);
+  // Each card uses the outer grid's rows (subgrid), so the same part of
+  // every card in a row (status, count, bar...) shares one row height and
+  // lines up, even when a long course title wraps to more lines.
+  const grid = el(`<div class="cuts-grid"></div>`);
   classes.forEach(cls=>{
     const cuts = ((state.cuts||{})[cls.key]||[]).slice().sort((a,b)=> a.date.localeCompare(b.date));
     const used = cuts.length;
     const sc = cutStatusColors(used, cls.max);
     const pct = cls.max ? Math.min(100, Math.round(used/cls.max*100)) : 100;
     const color = taskSubjectColor(cls.label, labels);
-    const card = el(`<div class="panel" style="margin:0;display:flex;flex-direction:column;gap:10px;">
-      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
-        <div>
-          <span class="task-badge" style="background:${color};color:#2A2E3D;font-size:calc(13px * var(--font-scale));"></span>
-          <div class="hint cut-title" style="margin-top:4px;"></div>
-        </div>
-        <span class="task-badge" style="background:${sc.bg};color:${sc.fg};white-space:nowrap;">${sc.text}</span>
+    const card = el(`<div class="panel cuts-card">
+      <div class="cut-head">
+        <span class="task-badge cut-label" style="background:${color};color:#2A2E3D;font-size:calc(13px * var(--font-scale));"></span>
+        <div class="hint cut-title" style="margin:4px 0 0;"></div>
       </div>
-      <div style="display:flex;align-items:baseline;gap:6px;font-family:'Poppins',sans-serif;">
+      <span class="task-badge cut-status" style="background:${sc.bg};color:${sc.fg};">${sc.text}</span>
+      <div style="display:flex;align-items:center;gap:6px;font-family:'Poppins',sans-serif;">
         <span style="font-size:calc(30px * var(--font-scale));font-weight:700;color:var(--ink);">${used}</span>
         <span style="color:var(--muted);font-weight:600;">/ ${cls.max} cuts</span>
         <button type="button" class="ghost cut-limit-btn" title="Change max cuts" style="padding:2px 8px;margin-left:auto;font-size:calc(11px * var(--font-scale));">${cls.overridden?'custom max':'edit max'}</button>
       </div>
-      <div style="height:8px;border-radius:8px;background:#EEF1F8;overflow:hidden;">
+      <div style="align-self:center;height:8px;border-radius:8px;background:#EEF1F8;overflow:hidden;">
         <div style="height:100%;width:${pct}%;background:${used>=cls.max?'#7A1E1E':(cls.max-used===1?'#E8862E':'#4169E1')};"></div>
       </div>
       <div class="hint" style="margin:0;">${cls.days.length ? 'Meets '+cls.days.map(d=>DAY_LABEL[d]).join(' / ') : 'No meeting days in schedule'}</div>
       <div class="cut-list" style="display:flex;flex-direction:column;gap:6px;"></div>
-      <button type="button" class="cut-add-btn">+ Log a cut</button>
+      <button type="button" class="cut-add-btn" style="align-self:end;">+ Log a cut</button>
     </div>`);
-    card.querySelector('.task-badge').textContent = cls.label;
+    card.querySelector('.cut-label').textContent = cls.label;
     card.querySelector('.cut-title').textContent = cls.title;
     const list = card.querySelector('.cut-list');
     if(!cuts.length) list.appendChild(el(`<div class="hint" style="margin:0;">No cuts yet 🎉</div>`));
