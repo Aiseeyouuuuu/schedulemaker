@@ -1797,6 +1797,9 @@ async function reloadTermScopedData(){
   state.sidequests = [];
   state.sidequestCategories = [];
   state.__sidequestsLoaded = false;
+  state.cuts = {};
+  state.cutLimits = {};
+  state.__cutsLoaded = false;
   state.gradeCategories = {};
   state.grades = {};
   state.gradeScales = {};
@@ -1808,6 +1811,7 @@ async function reloadTermScopedData(){
   // instead of waiting for a tab switch.
   if(state.activeTab==='tasks') await ensureTasksLoaded();
   if(state.activeTab==='sidequests') await ensureSidequestsLoaded();
+  if(state.activeTab==='cuts') await ensureCutsLoaded();
   if(state.activeTab==='calendar'){ await ensureTasksLoaded(); await ensureSidequestsLoaded(); }
   if(state.activeTab==='grades') await ensureGradesLoaded();
 }
@@ -3131,6 +3135,7 @@ function render(){
   else if(state.activeTab==='enlistment') app.appendChild(renderEnlistmentTab());
   else if(state.activeTab==='tasks') app.appendChild(renderTasksTab());
   else if(state.activeTab==='sidequests') app.appendChild(renderSidequestsTab());
+  else if(state.activeTab==='cuts') app.appendChild(renderCutsTab());
   else if(state.activeTab==='calendar') app.appendChild(renderCalendarTab());
   else if(state.activeTab==='friends') app.appendChild(renderFriendsTab());
   else if(state.activeTab==='qpi') app.appendChild(renderQpiTab());
@@ -3206,12 +3211,13 @@ function openSettingsMenu(anchorEl){
 
 function renderTabs(){
   const wrap = el(`<div class="tabs"></div>`);
-  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['calendar','Calendar'],['friends','Friends'],['combined','Combined'],['enlistment','Enlistment'],['qpi','QPI'],['grades','Grades']].forEach(([key,label])=>{
+  [['mine','My Schedule'],['tasks','Tasks'],['sidequests','Sidequests'],['cuts','Cuts'],['calendar','Calendar'],['friends','Friends'],['combined','Combined'],['enlistment','Enlistment'],['qpi','QPI'],['grades','Grades']].forEach(([key,label])=>{
     const b = el(`<button class="tab-btn ${state.activeTab===key?'active':''}">${label}</button>`);
     b.onclick = async ()=>{
       state.activeTab=key;
       if(key==='tasks') await ensureTasksLoaded();
       if(key==='sidequests') await ensureSidequestsLoaded();
+      if(key==='cuts') await ensureCutsLoaded();
       if(key==='calendar'){ await ensureTasksLoaded(); await ensureSidequestsLoaded(); await ensureCalendarLoaded(); }
       if(key==='grades') await ensureGradesLoaded();
       render();
@@ -5320,6 +5326,211 @@ function renderTasksTab(){
   });
 
   wrap.appendChild(panel);
+  return wrap;
+}
+
+/* ============================= CUTS TAB ============================= */
+// Counts absences ("cuts") per class for the selected term. Personal only,
+// never shared. The limit is 3 cuts per weekly meeting day (1x a week = 3,
+// 2x a week = 6), based on the class's meeting days in the user's schedule.
+// The limit can be overridden per class for special cases.
+const CUTS_PER_WEEKLY_MEETING = 3;
+
+async function ensureCutsLoaded(){
+  if(state.__cutsLoaded) return;
+  state.cuts = await loadTermScopedPersonal('cuts', {});          // { subjectKey: [{id,date,note}] }
+  state.cutLimits = await loadTermScopedPersonal('cutLimits', {}); // { subjectKey: number } overrides
+  state.__cutsLoaded = true;
+}
+async function saveCuts(){
+  await queueSave(()=> sSet(termScopedKey('cuts'), state.cuts||{}, false));
+}
+async function saveCutLimits(){
+  await queueSave(()=> sSet(termScopedKey('cutLimits'), state.cutLimits||{}, false));
+}
+
+// Every class in the user's own schedule, with its meeting days.
+function cutClassList(){
+  const entries = (state.schedules[state.meId]||[]).map(entryFor).filter(Boolean);
+  const byKey = new Map();
+  entries.forEach(e=>{
+    const key = catalogKey(e.code, e.section);
+    if(!byKey.has(key)){
+      const label = `${e.code||''} ${e.section||''}`.trim() || 'Untitled class';
+      byKey.set(key, {key, label, title:e.title||'', days:new Set()});
+    }
+    const c = byKey.get(key);
+    (e.meetings||[]).forEach(m=> (m.days||[]).forEach(d=> c.days.add(d)));
+  });
+  return [...byKey.values()].map(c=>{
+    const days = DAY_ORDER.filter(d=> c.days.has(d));
+    const auto = Math.max(1, days.length) * CUTS_PER_WEEKLY_MEETING;
+    const override = (state.cutLimits||{})[c.key];
+    return {...c, days, autoMax:auto, max: Number.isFinite(override) ? override : auto, overridden: Number.isFinite(override)};
+  });
+}
+function cutDateLabel(iso){
+  const d = new Date(iso+'T00:00:00');
+  return d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric', year:'numeric'});
+}
+function cutDayKey(iso){
+  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(iso+'T00:00:00').getDay()];
+}
+function cutStatusColors(used, max){
+  if(used > max)        return {bg:'#111111', fg:'#FFFFFF', text:`Over the limit by ${used-max}`};
+  if(used === max)      return {bg:'#7A1E1E', fg:'#FFFFFF', text:'No cuts left'};
+  if(max-used === 1)    return {bg:'#F6D6D6', fg:'#7A1E1E', text:'1 cut left'};
+  if(used/max >= 0.5)   return {bg:'#FFE7B0', fg:'#7A5A12', text:`${max-used} cuts left`};
+  return                       {bg:'#BEEFA9', fg:'#2E5B22', text:`${max-used} cuts left`};
+}
+
+function openLogCutModal(cls){
+  const pad = n=> String(n).padStart(2,'0');
+  const t = new Date();
+  const today = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Log a cut: ${cls.label}</h2>
+        <p class="hint">${cls.days.length ? 'Meets '+cls.days.map(d=>DAY_FULL[d]).join(' & ') : 'No meeting days found in your schedule'}</p>
+        <input id="cutDateInput" type="date" value="${today}" />
+        <p class="hint" id="cutDateWarn" style="color:#B5462F;margin:4px 0 0;min-height:1em;"></p>
+        <input id="cutNoteInput" type="text" placeholder="Reason (optional), e.g. sick, org event" style="margin-top:8px;" />
+        <div class="row" style="justify-content:center;margin-top:10px;">
+          <button class="ghost" id="cutCancel">Cancel</button>
+          <button id="cutSave">Log cut</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const dateInput = backdrop.querySelector('#cutDateInput');
+  const warn = backdrop.querySelector('#cutDateWarn');
+  const checkDay = ()=>{
+    const v = dateInput.value;
+    const already = ((state.cuts||{})[cls.key]||[]).some(c=>c.date===v);
+    if(!v) warn.textContent = '';
+    else if(already) warn.textContent = 'You already logged a cut on this date.';
+    else if(cls.days.length && !cls.days.includes(cutDayKey(v))) warn.textContent = `Heads up: this class doesn't meet on ${cutDayKey(v)}s.`;
+    else warn.textContent = '';
+  };
+  dateInput.onchange = checkDay; dateInput.oninput = checkDay; checkDay();
+  backdrop.querySelector('#cutCancel').onclick = ()=> backdrop.remove();
+  backdrop.querySelector('#cutSave').onclick = async ()=>{
+    const date = dateInput.value;
+    if(!date){ showToast('Pick a date first.'); return; }
+    state.cuts = state.cuts || {};
+    state.cuts[cls.key] = state.cuts[cls.key] || [];
+    state.cuts[cls.key].push({id:'cut_'+Math.random().toString(36).slice(2,9), date, note: backdrop.querySelector('#cutNoteInput').value.trim()});
+    state.cuts[cls.key].sort((a,b)=> a.date.localeCompare(b.date));
+    await saveCuts();
+    backdrop.remove();
+    render();
+  };
+}
+async function deleteCut(classKey, cutId){
+  const list = (state.cuts||{})[classKey]||[];
+  const c = list.find(x=>x.id===cutId);
+  if(!c) return;
+  const ok = await customConfirm(`Remove the cut on ${cutDateLabel(c.date)}?`);
+  if(!ok) return;
+  state.cuts[classKey] = list.filter(x=>x.id!==cutId);
+  await saveCuts();
+  render();
+}
+function openCutLimitModal(cls){
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Max cuts: ${cls.label}</h2>
+        <p class="hint">Based on your schedule this is ${cls.autoMax} (${CUTS_PER_WEEKLY_MEETING} per weekly meeting). Change it if your teacher set a different limit.</p>
+        <input id="cutLimitInput" type="number" min="0" max="99" value="${cls.max}" />
+        <div class="row" style="justify-content:center;margin-top:10px;">
+          ${cls.overridden ? '<button class="ghost" id="cutLimitReset">Reset to '+cls.autoMax+'</button>' : ''}
+          <button class="ghost" id="cutLimitCancel">Cancel</button>
+          <button id="cutLimitSave">Save</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#cutLimitCancel').onclick = ()=> backdrop.remove();
+  const resetBtn = backdrop.querySelector('#cutLimitReset');
+  if(resetBtn) resetBtn.onclick = async ()=>{ delete state.cutLimits[cls.key]; await saveCutLimits(); backdrop.remove(); render(); };
+  backdrop.querySelector('#cutLimitSave').onclick = async ()=>{
+    const n = parseInt(backdrop.querySelector('#cutLimitInput').value, 10);
+    if(!Number.isFinite(n) || n<0){ showToast('Enter a number of cuts.'); return; }
+    state.cutLimits = state.cutLimits || {};
+    if(n===cls.autoMax) delete state.cutLimits[cls.key]; else state.cutLimits[cls.key] = n;
+    await saveCutLimits();
+    backdrop.remove();
+    render();
+  };
+}
+
+function renderCutsTab(){
+  const wrap = el(`<div></div>`);
+  const classes = cutClassList();
+  if(!classes.length){
+    wrap.appendChild(el(`<div class="panel"><p class="hint" style="margin:0;">Add classes in My Schedule first. Each class will show up here with its cut count.</p></div>`));
+    return wrap;
+  }
+  const labels = classes.map(c=>c.label);
+  const totalUsed = classes.reduce((n,c)=> n + ((state.cuts||{})[c.key]||[]).length, 0);
+  wrap.appendChild(el(`<div class="stat-card" style="align-self:flex-start;">
+    <div class="stat-card-label" style="background:#E3E9FB;color:#274E70;">Total cuts this term</div>
+    <div class="stat-card-value">${totalUsed}</div>
+  </div>`));
+
+  const grid = el(`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;"></div>`);
+  classes.forEach(cls=>{
+    const cuts = ((state.cuts||{})[cls.key]||[]).slice().sort((a,b)=> a.date.localeCompare(b.date));
+    const used = cuts.length;
+    const sc = cutStatusColors(used, cls.max);
+    const pct = cls.max ? Math.min(100, Math.round(used/cls.max*100)) : 100;
+    const color = taskSubjectColor(cls.label, labels);
+    const card = el(`<div class="panel" style="margin:0;display:flex;flex-direction:column;gap:10px;">
+      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div>
+          <span class="task-badge" style="background:${color};color:#2A2E3D;font-size:calc(13px * var(--font-scale));"></span>
+          <div class="hint cut-title" style="margin-top:4px;"></div>
+        </div>
+        <span class="task-badge" style="background:${sc.bg};color:${sc.fg};white-space:nowrap;">${sc.text}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px;font-family:'Poppins',sans-serif;">
+        <span style="font-size:calc(30px * var(--font-scale));font-weight:700;color:var(--ink);">${used}</span>
+        <span style="color:var(--muted);font-weight:600;">/ ${cls.max} cuts</span>
+        <button type="button" class="ghost cut-limit-btn" title="Change max cuts" style="padding:2px 8px;margin-left:auto;font-size:calc(11px * var(--font-scale));">${cls.overridden?'custom max':'edit max'}</button>
+      </div>
+      <div style="height:8px;border-radius:8px;background:#EEF1F8;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${used>=cls.max?'#7A1E1E':(cls.max-used===1?'#E8862E':'#4169E1')};"></div>
+      </div>
+      <div class="hint" style="margin:0;">${cls.days.length ? 'Meets '+cls.days.map(d=>DAY_LABEL[d]).join(' / ') : 'No meeting days in schedule'}</div>
+      <div class="cut-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+      <button type="button" class="cut-add-btn">+ Log a cut</button>
+    </div>`);
+    card.querySelector('.task-badge').textContent = cls.label;
+    card.querySelector('.cut-title').textContent = cls.title;
+    const list = card.querySelector('.cut-list');
+    if(!cuts.length) list.appendChild(el(`<div class="hint" style="margin:0;">No cuts yet 🎉</div>`));
+    cuts.forEach((c,i)=>{
+      const row = el(`<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;">
+        <span style="font-weight:700;color:var(--muted);min-width:22px;">#${i+1}</span>
+        <div style="flex:1;min-width:0;">
+          <div class="cut-date" style="font-weight:600;"></div>
+          <div class="hint cut-note" style="margin:0;"></div>
+        </div>
+        <button type="button" class="task-del" title="Remove this cut">×</button>
+      </div>`);
+      row.querySelector('.cut-date').textContent = cutDateLabel(c.date);
+      const noteEl = row.querySelector('.cut-note');
+      if(c.note) noteEl.textContent = c.note; else noteEl.remove();
+      row.querySelector('button').onclick = ()=> deleteCut(cls.key, c.id);
+      list.appendChild(row);
+    });
+    card.querySelector('.cut-add-btn').onclick = ()=> openLogCutModal(cls);
+    card.querySelector('.cut-limit-btn').onclick = ()=> openCutLimitModal(cls);
+    grid.appendChild(card);
+  });
+  wrap.appendChild(grid);
   return wrap;
 }
 
