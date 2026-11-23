@@ -4619,6 +4619,8 @@ async function ensureTasksLoaded(){
       state.tasks[s.key] = await loadTermScopedShared(`tasks:${s.key}`, []);
     }
   }
+  await ensureCanvasSettingsLoaded();
+  startCanvasAutoSync();
 }
 async function saveCustomCategories(){
   await queueSave(()=> sSet(termScopedKey('customCategories'), state.customCategories, false));
@@ -4677,6 +4679,10 @@ async function updateTaskField(subjectKey, taskId, field, value){
 async function moveTaskSubject(oldKey, taskId, newKey){
   const oldPersonal = isPersonalSubject(oldKey);
   const newPersonal = isPersonalSubject(newKey);
+  {
+    const src = oldPersonal ? state.personalTasks : (state.tasks[oldKey]||[]);
+    await canvasRememberCourseSubject(src.find(x=>x.id===taskId), newKey);
+  }
   if(oldPersonal && newPersonal){
     const t = state.personalTasks.find(x=>x.id===taskId);
     if(!t) return;
@@ -4695,11 +4701,319 @@ async function moveTaskSubject(oldKey, taskId, newKey){
   render();
 }
 async function deleteTask(subjectKey, taskId){
+  {
+    const list = isPersonalSubject(subjectKey) ? state.personalTasks : (state.tasks[subjectKey]||[]);
+    await canvasRememberDismissed(list.find(x=>x.id===taskId));
+  }
   if(isPersonalSubject(subjectKey)){ state.personalTasks = state.personalTasks.filter(x=>x.id!==taskId); await savePersonalTasks(); }
   else { state.tasks[subjectKey] = (state.tasks[subjectKey]||[]).filter(x=>x.id!==taskId); await saveSubjectTasks(subjectKey); }
   if(taskId in state.personalStatuses){ delete state.personalStatuses[taskId]; await saveTaskStatuses(); }
   render();
 }
+/* ============================= CANVAS SYNC ============================= */
+// Pulls assignments from a person's Canvas Calendar Feed (.ics) into the
+// Tasks tab. Canvas doesn't allow a web page to read the feed directly
+// (CORS), so the page asks a tiny Cloudflare Worker to fetch it and hand
+// the text back. See canvas-feed-worker.js for the Worker's code.
+//
+// How imported tasks behave:
+// - Each one carries canvasId (Canvas's UID, e.g. "event-assignment-123"),
+//   which is the same for everyone in that course. So when a task lands in a
+//   SHARED class list, the first classmate to sync adds it and everyone
+//   else's sync sees it's already there and skips it.
+// - A course is filed under a class by matching the class code (e.g.
+//   "LAS 21") inside the Canvas course name. If nothing matches, the task
+//   comes in unassigned. Picking a subject for one of those teaches the
+//   site: every later task from that Canvas course goes to the same place.
+// - Re-syncing only touches the name or due date if YOU haven't edited it
+//   (if Canvas moves a deadline and you never changed it, it follows Canvas).
+//   Status, notes, link and Onsite/Online are never overwritten.
+// - Deleting an imported task remembers its canvasId so your next sync
+//   doesn't bring it back.
+// - Only assignments due inside the selected term (and no more than 14
+//   days in the past) are imported, so old terms don't flood in.
+const CANVAS_FEED_WORKER_URL = 'https://canvas-feed.aisis-manual-trigger.workers.dev/';
+const CANVAS_AUTO_SYNC_MS = 30*60*1000; // re-sync every 30 min while the site is open
+
+async function ensureCanvasSettingsLoaded(){
+  if(state.__canvasSettingsLoaded) return;
+  state.canvasFeedUrl = (await sGet('canvasFeedUrl', false)) || '';
+  state.canvasLastSync = (await sGet('canvasLastSync', false)) || null;
+  state.__canvasSettingsLoaded = true;
+}
+async function ensureCanvasTermDataLoaded(){
+  const term = currentTermKey();
+  if(state.__canvasTermLoaded === term) return;
+  state.canvasDismissed = await loadTermScopedPersonal('canvasDismissed', []);
+  state.canvasCourseMap = await loadTermScopedPersonal('canvasCourseMap', {});
+  state.__canvasTermLoaded = term;
+}
+async function saveCanvasDismissed(){
+  await queueSave(()=> sSet(termScopedKey('canvasDismissed'), state.canvasDismissed||[], false));
+}
+async function saveCanvasCourseMap(){
+  await queueSave(()=> sSet(termScopedKey('canvasCourseMap'), state.canvasCourseMap||{}, false));
+}
+
+// --- .ics parsing ---------------------------------------------------------
+function canvasUnescapeIcs(s){
+  return String(s||'').replace(/\\n/gi,'\n').replace(/\\([,;\\])/g,'$1');
+}
+function canvasIcsDateToLocalYmd(raw, params){
+  const v = String(raw||'').trim();
+  const pad = n=> String(n).padStart(2,'0');
+  // All-day: 20261130
+  if(/^\d{8}$/.test(v) || /VALUE=DATE(?!-)/i.test(params||'')){
+    return `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`;
+  }
+  const m = v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
+  if(!m) return '';
+  const [ , y, mo, d, h, mi, se, z ] = m;
+  // UTC times (Canvas's usual format) are converted to this browser's
+  // local date, so an 11:59 PM Manila deadline stays on the right day.
+  const dt = z ? new Date(Date.UTC(+y, +mo-1, +d, +h, +mi, +se)) : new Date(+y, +mo-1, +d, +h, +mi, +se);
+  return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
+}
+function parseCanvasIcs(text){
+  // Undo line folding (a line starting with a space/tab continues the previous one).
+  const lines = String(text||'').replace(/\r\n/g,'\n').replace(/\n[ \t]/g,'').split('\n');
+  const events = [];
+  let cur = null;
+  for(const line of lines){
+    if(line==='BEGIN:VEVENT'){ cur = {}; continue; }
+    if(line==='END:VEVENT'){ if(cur) events.push(cur); cur = null; continue; }
+    if(!cur) continue;
+    const idx = line.indexOf(':');
+    if(idx<0) continue;
+    const head = line.slice(0, idx);
+    const value = line.slice(idx+1);
+    const [name, ...paramParts] = head.split(';');
+    const key = name.toUpperCase();
+    if(key==='DTSTART' || key==='DTEND'){ cur[key] = value; cur[key+'_PARAMS'] = paramParts.join(';'); }
+    else if(!(key in cur)) cur[key] = canvasUnescapeIcs(value);
+  }
+  return events.map(ev=>{
+    let title = ev.SUMMARY || '';
+    let course = '';
+    // Canvas appends the course in brackets: "Reflection Paper 2 [LAS 21 - A]"
+    const bm = title.match(/^(.*)\s\[([^\[\]]+)\]\s*$/);
+    if(bm){ title = bm[1].trim(); course = bm[2].trim(); }
+    return {
+      uid: ev.UID || '',
+      title,
+      course,
+      dueDate: canvasIcsDateToLocalYmd(ev.DTSTART || ev.DTEND, ev.DTSTART_PARAMS || ev.DTEND_PARAMS),
+      url: ev.URL || '',
+    };
+  }).filter(e=> e.uid && e.title);
+}
+
+// --- course -> subject matching ---------------------------------------------
+function canvasMatchSubjectKey(course){
+  if(!course) return '';
+  const mapped = (state.canvasCourseMap||{})[course];
+  const subjects = taskSubjectOptions();
+  if(mapped && subjects.some(s=>s.key===mapped)) return mapped;
+  const classSubjects = subjects.filter(s=> !isPersonalSubject(s.key) && s.key!==UNIVERSITY_WIDE_KEY);
+  const hits = classSubjects.filter(s=>{
+    const code = s.key.split('|')[0];
+    if(!code) return false;
+    // "LAS 21" matches "LAS 21", "LAS21", "LAS 21 - A" but not "LAS 211".
+    const pattern = code.split(/\s+/).map(p=>p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s*');
+    return new RegExp('(^|[^A-Z0-9])'+pattern+'(?![A-Z0-9])', 'i').test(course);
+  });
+  return hits.length===1 ? hits[0].key : '';
+}
+
+// --- sync -------------------------------------------------------------------
+let __canvasSyncRunning = false;
+async function syncCanvas({silent=false}={}){
+  if(__canvasSyncRunning) return;
+  await ensureCanvasSettingsLoaded();
+  if(!state.canvasFeedUrl){ if(!silent) openCanvasSettingsModal(); return; }
+  if(/REPLACE-WITH-YOUR-SUBDOMAIN/.test(CANVAS_FEED_WORKER_URL)){
+    if(!silent) showToast('Canvas sync: set CANVAS_FEED_WORKER_URL in the code first');
+    return;
+  }
+  __canvasSyncRunning = true;
+  state.canvasSyncing = true;
+  if(!silent && state.activeTab==='tasks') render();
+  try{
+    const res = await fetch(CANVAS_FEED_WORKER_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url: state.canvasFeedUrl}),
+    });
+    if(!res.ok) throw new Error('Worker returned '+res.status+': '+(await res.text()).slice(0,200));
+    const events = parseCanvasIcs(await res.text());
+
+    await ensureTasksLoaded();
+    await ensureCanvasTermDataLoaded();
+    // Let any pending saves land, then re-read the shared class lists so we
+    // see assignments a classmate's sync already added.
+    await __saveChain;
+    const sharedKeys = taskSubjectOptions().map(s=>s.key).filter(k=>!isPersonalSubject(k));
+    for(const k of sharedKeys) state.tasks[k] = await loadTermScopedShared(`tasks:${k}`, []);
+
+    const range = semesterDateRange(state.semesterType, state.schoolYear);
+    const pad = n=> String(n).padStart(2,'0');
+    const ymd = d=> `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const floor = new Date(); floor.setHours(0,0,0,0); floor.setDate(floor.getDate()-14);
+    const lo = ymd(range.start > floor ? range.start : floor);
+    const endPlus = new Date(range.end); endPlus.setDate(endPlus.getDate()+21); // finals/late deadlines
+    const hi = ymd(endPlus);
+
+    // Index every existing Canvas task, wherever the user has filed it.
+    const existing = new Map();
+    const dirtyShared = new Set();
+    let dirtyPersonal = false;
+    state.personalTasks.forEach(t=>{ if(t.canvasId && !existing.has(t.canvasId)) existing.set(t.canvasId, {t, key:null}); });
+    for(const k of sharedKeys){
+      const seen = new Set();
+      const before = state.tasks[k].length;
+      // Clean up any duplicates left by two classmates syncing at the same moment.
+      state.tasks[k] = state.tasks[k].filter(t=>{
+        if(!t.canvasId) return true;
+        if(seen.has(t.canvasId)) return false;
+        seen.add(t.canvasId);
+        if(!existing.has(t.canvasId)) existing.set(t.canvasId, {t, key:k});
+        return true;
+      });
+      if(state.tasks[k].length!==before) dirtyShared.add(k);
+    }
+    const dismissed = new Set(state.canvasDismissed||[]);
+
+    let added = 0, updated = 0;
+    for(const ev of events){
+      if(!/^event-assignment/i.test(ev.uid)) continue; // skip plain calendar events
+      if(!ev.dueDate || ev.dueDate < lo || ev.dueDate > hi) continue;
+      const found = existing.get(ev.uid);
+      if(found){
+        const t = found.t;
+        let changed = false;
+        if(t.canvasDue !== ev.dueDate){
+          if(!t.dueDate || t.dueDate === t.canvasDue) t.dueDate = ev.dueDate;
+          t.canvasDue = ev.dueDate; changed = true;
+        }
+        if(t.canvasTitle !== ev.title){
+          if(!t.task || t.task === t.canvasTitle) t.task = ev.title;
+          t.canvasTitle = ev.title; changed = true;
+        }
+        if(changed){
+          updated++;
+          if(found.key) dirtyShared.add(found.key); else dirtyPersonal = true;
+        }
+        continue;
+      }
+      if(dismissed.has(ev.uid)) continue;
+      const key = canvasMatchSubjectKey(ev.course);
+      const t = newTaskObj(isPersonalSubject(key) ? key : undefined);
+      Object.assign(t, {
+        task: ev.title, dueDate: ev.dueDate, link: ev.url, onsite: 'Online',
+        notes: key ? '' : (ev.course ? `Canvas: ${ev.course}` : ''),
+        canvasId: ev.uid, canvasCourse: ev.course, canvasDue: ev.dueDate, canvasTitle: ev.title,
+      });
+      if(isPersonalSubject(key)){ state.personalTasks.push(t); dirtyPersonal = true; existing.set(ev.uid, {t, key:null}); }
+      else { delete t.category; state.tasks[key].push(t); dirtyShared.add(key); existing.set(ev.uid, {t, key}); }
+      added++;
+    }
+
+    if(dirtyPersonal) await savePersonalTasks();
+    for(const k of dirtyShared) await saveSubjectTasks(k);
+    state.canvasLastSync = new Date().toISOString();
+    await queueSave(()=> sSet('canvasLastSync', state.canvasLastSync, false));
+
+    if(!silent || added || updated){
+      const parts = [];
+      if(added) parts.push(`${added} new`);
+      if(updated) parts.push(`${updated} updated`);
+      showToast('Canvas: ' + (parts.length ? parts.join(', ') : 'already up to date'));
+    }
+  }catch(e){
+    console.error('Canvas sync failed', e);
+    if(!silent) showToast('Canvas sync failed. Check the feed link and the Worker.');
+  }finally{
+    __canvasSyncRunning = false;
+    state.canvasSyncing = false;
+    if(state.activeTab==='tasks') render();
+  }
+}
+
+// Runs once per page load the first time Tasks data is ready, then every
+// 30 minutes while the site stays open. Silent unless something changed.
+let __canvasAutoSyncStarted = false;
+async function startCanvasAutoSync(){
+  if(__canvasAutoSyncStarted) return;
+  await ensureCanvasSettingsLoaded();
+  if(!state.canvasFeedUrl || __canvasAutoSyncStarted) return;
+  __canvasAutoSyncStarted = true;
+  syncCanvas({silent:true});
+  setInterval(()=> syncCanvas({silent:true}), CANVAS_AUTO_SYNC_MS);
+}
+
+// Hooks used by deleteTask / moveTaskSubject.
+async function canvasRememberDismissed(task){
+  if(!task || !task.canvasId) return;
+  await ensureCanvasTermDataLoaded();
+  state.canvasDismissed = state.canvasDismissed || [];
+  if(!state.canvasDismissed.includes(task.canvasId)){
+    state.canvasDismissed.push(task.canvasId);
+    await saveCanvasDismissed();
+  }
+}
+async function canvasRememberCourseSubject(task, newKey){
+  if(!task || !task.canvasCourse || !newKey) return;
+  await ensureCanvasTermDataLoaded();
+  state.canvasCourseMap = state.canvasCourseMap || {};
+  if(state.canvasCourseMap[task.canvasCourse] === newKey) return;
+  state.canvasCourseMap[task.canvasCourse] = newKey;
+  await saveCanvasCourseMap();
+}
+
+function openCanvasSettingsModal(){
+  const last = state.canvasLastSync ? new Date(state.canvasLastSync).toLocaleString() : 'never';
+  const backdrop = el(`
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>Canvas sync</h2>
+        <p class="hint">In Canvas, open <b>Calendar</b> and click <b>Calendar Feed</b> (bottom right). Copy that link and paste it here. It's private to you and isn't shared with classmates. Treat it like a password.</p>
+        <input id="canvasFeedInput" type="url" placeholder="https://ateneo.instructure.com/feeds/calendars/user_....ics" />
+        <p class="hint" style="margin-top:6px;">Last synced: ${last}</p>
+        <div class="row" style="justify-content:center;margin-top:6px;">
+          <button class="ghost" id="canvasFeedRemove">Disconnect</button>
+          <button class="ghost" id="canvasFeedCancel">Cancel</button>
+          <button id="canvasFeedSave">Save &amp; sync</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#canvasFeedInput');
+  input.value = state.canvasFeedUrl || '';
+  input.focus();
+  backdrop.querySelector('#canvasFeedCancel').onclick = ()=> backdrop.remove();
+  backdrop.querySelector('#canvasFeedRemove').onclick = async ()=>{
+    state.canvasFeedUrl = '';
+    await queueSave(()=> sSet('canvasFeedUrl', '', false));
+    backdrop.remove();
+    showToast('Canvas disconnected. Imported tasks were kept.');
+    render();
+  };
+  const save = async ()=>{
+    const val = input.value.trim();
+    if(val && !/^https:\/\/[a-z0-9.-]+\.instructure\.com\/feeds\/calendars\/[^\s]+\.ics$/i.test(val)){
+      showToast('That doesn\'t look like a Canvas Calendar Feed link');
+      return;
+    }
+    state.canvasFeedUrl = val;
+    await queueSave(()=> sSet('canvasFeedUrl', val, false));
+    backdrop.remove();
+    if(val){ await syncCanvas(); startCanvasAutoSync(); }
+    else render();
+  };
+  backdrop.querySelector('#canvasFeedSave').onclick = save;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') save(); });
+}
+
 // Prompts for a name and adds a new personal, unsynced category that tasks
 // can be filed under — for things that don't belong to any class.
 function openNewCategoryModal(){
@@ -4912,6 +5226,8 @@ function renderTasksTab(){
     <div class="row" style="justify-content:space-between;margin-bottom:8px;">
       <div class="row" style="gap:8px;">
         <button id="addTaskBtn">+ Add Task</button>
+        <button class="ghost" id="canvasSyncBtn" ${state.canvasSyncing?'disabled':''}>${state.canvasSyncing ? 'Syncing Canvas…' : (state.canvasFeedUrl ? '⟳ Sync Canvas' : 'Connect Canvas')}</button>
+        ${state.canvasFeedUrl ? '<button class="ghost" id="canvasSettingsBtn" title="Canvas sync settings">⚙</button>' : ''}
       </div>
     </div>
     <div style="overflow-x:auto;">
@@ -4926,6 +5242,9 @@ function renderTasksTab(){
   </div>`);
 
   panel.querySelector('#addTaskBtn').onclick = ()=> addTask();
+  panel.querySelector('#canvasSyncBtn').onclick = ()=> state.canvasFeedUrl ? syncCanvas() : openCanvasSettingsModal();
+  const canvasSettingsBtn = panel.querySelector('#canvasSettingsBtn');
+  if(canvasSettingsBtn) canvasSettingsBtn.onclick = ()=> openCanvasSettingsModal();
 
   const tbody = panel.querySelector('#tasksBody');
   if(!decorated.length){
