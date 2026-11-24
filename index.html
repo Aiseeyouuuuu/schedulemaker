@@ -264,6 +264,11 @@
   .toggle-switch input:checked + .toggle-switch-track{background:#7BC86C;}
   .toggle-switch input:checked + .toggle-switch-track .toggle-switch-thumb{transform:translateX(20px);}
   .toggle-switch input:focus-visible + .toggle-switch-track{outline:2px solid var(--navy);outline-offset:2px;}
+
+  /* Tasks table: still scrolls sideways on narrow screens (swipe, trackpad,
+     or Shift + mouse wheel), but without showing a scrollbar. */
+  .tasks-scroll{overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;}
+  .tasks-scroll::-webkit-scrollbar{display:none;}
   /* ---- completed tasks stat card (Tasks tab) ---- */
   .stat-card{
     display:inline-flex;flex-direction:column;min-width:150px;background:var(--surface);
@@ -5284,7 +5289,7 @@ function renderTasksTab(){
         <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
       </label>
     </div>
-    <div style="overflow-x:auto;">
+    <div class="tasks-scroll">
       <table class="tasks">
         <thead><tr>
           <th>Task</th><th>Status</th><th>Subject</th><th>Onsite or Online</th><th>Due date</th>
@@ -5318,6 +5323,7 @@ function renderTasksTab(){
   }
   visibleTasks.forEach(t=>{
     const tr = elRow(`<tr></tr>`);
+    if(t.status==='Completed') tr.classList.add('task-row-completed');
 
     const taskTd = elCell(`<td class="grow-cell task-name-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
     const taskInput = taskTd.querySelector('textarea');
@@ -5367,8 +5373,12 @@ function renderTasksTab(){
     tr.appendChild(dueTd);
 
     const uc = taskUrgencyColors(t.urgency);
-    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
-    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
+    // Completed rows use short labels ("DONE" / "✓") so the Urgency and Rank
+    // columns stay the same width whether completed rows are shown or hidden.
+    const urgencyText = t.urgency==='COMPLETED' ? 'DONE' : t.urgency;
+    const rankText = t.rank==='COMPLETED' ? '✓' : t.rank;
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};" title="${t.urgency}">${urgencyText}</span></td>`));
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};" title="${t.urgency}">${rankText}</span></td>`));
 
     tr.appendChild(makeLinkCell(t.link, 'https://…', (val)=> updateTaskField(t.__subjectKey, t.id, 'link', val)));
     tr.appendChild(makeLinkCell(t.notes, 'Notes', (val)=> updateTaskField(t.__subjectKey, t.id, 'notes', val)));
@@ -5379,6 +5389,26 @@ function renderTasksTab(){
 
     tbody.appendChild(tr);
   });
+
+  // Lock the column widths to how the table looks with completed rows
+  // hidden, so flipping "Show completed" never shifts the columns.
+  // Runs right after the table is on the page, before it's drawn.
+  if(state.showCompletedTasks!==false && visibleTasks.some(t=> t.status==='Completed')){
+    const table = panel.querySelector('table.tasks');
+    const doneRows = [...tbody.querySelectorAll('tr.task-row-completed')];
+    requestAnimationFrame(()=>{
+      if(!table.isConnected) return;
+      doneRows.forEach(r=> r.style.display='none');
+      const ths = [...table.querySelectorAll('thead th')];
+      const widths = ths.map(th=> th.getBoundingClientRect().width);
+      const total = table.getBoundingClientRect().width;
+      ths.forEach((th,k)=> th.style.width = widths[k]+'px');
+      table.style.tableLayout = 'fixed';
+      table.style.width = total+'px';
+      doneRows.forEach(r=> r.style.display='');
+      doneRows.forEach(r=> r.querySelectorAll('textarea').forEach(ta=>{ if(typeof autoResizeTextarea==='function') autoResizeTextarea(ta); }));
+    });
+  }
 
   wrap.appendChild(panel);
   return wrap;
