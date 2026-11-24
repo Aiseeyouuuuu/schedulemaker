@@ -5314,8 +5314,10 @@ function renderTasksTab(){
   // The toggle only hides rows in this table. The Completed Tasks count
   // above still counts everything.
   const hiddenCompleted = state.showCompletedTasks===false ? decorated.filter(t=> t.status==='Completed').length : 0;
-  const visibleTasks = hiddenCompleted ? decorated.filter(t=> t.status!=='Completed') : decorated;
-  if(decorated.length && !visibleTasks.length){
+  // Every row is built (completed ones too) so column widths always come out
+  // the same; completed rows are then hidden below when the switch is off.
+  const visibleTasks = decorated;
+  if(hiddenCompleted && hiddenCompleted===decorated.length){
     tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">All ${hiddenCompleted} task${hiddenCompleted===1?' is':'s are'} completed and hidden. Turn on "Show completed" to see them.</td></tr>`));
   }
   if(!decorated.length){
@@ -5373,12 +5375,8 @@ function renderTasksTab(){
     tr.appendChild(dueTd);
 
     const uc = taskUrgencyColors(t.urgency);
-    // Completed rows use short labels ("DONE" / "✓") so the Urgency and Rank
-    // columns stay the same width whether completed rows are shown or hidden.
-    const urgencyText = t.urgency==='COMPLETED' ? 'DONE' : t.urgency;
-    const rankText = t.rank==='COMPLETED' ? '✓' : t.rank;
-    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};" title="${t.urgency}">${urgencyText}</span></td>`));
-    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};" title="${t.urgency}">${rankText}</span></td>`));
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
 
     tr.appendChild(makeLinkCell(t.link, 'https://…', (val)=> updateTaskField(t.__subjectKey, t.id, 'link', val)));
     tr.appendChild(makeLinkCell(t.notes, 'Notes', (val)=> updateTaskField(t.__subjectKey, t.id, 'notes', val)));
@@ -5390,25 +5388,24 @@ function renderTasksTab(){
     tbody.appendChild(tr);
   });
 
-  // Lock the column widths to how the table looks with completed rows
-  // hidden, so flipping "Show completed" never shifts the columns.
-  // Runs right after the table is on the page, before it's drawn.
-  if(state.showCompletedTasks!==false && visibleTasks.some(t=> t.status==='Completed')){
+  // When "Show completed" is off, size the columns with completed rows
+  // included (exactly like the switch-on layout), lock those widths, then
+  // hide the completed rows. Runs before the table is first drawn.
+  if(hiddenCompleted){
     const table = panel.querySelector('table.tasks');
     const doneRows = [...tbody.querySelectorAll('tr.task-row-completed')];
     requestAnimationFrame(()=>{
       if(!table.isConnected) return;
-      doneRows.forEach(r=> r.style.display='none');
       const ths = [...table.querySelectorAll('thead th')];
       const widths = ths.map(th=> th.getBoundingClientRect().width);
       const total = table.getBoundingClientRect().width;
       ths.forEach((th,k)=> th.style.width = widths[k]+'px');
       table.style.tableLayout = 'fixed';
       table.style.width = total+'px';
-      doneRows.forEach(r=> r.style.display='');
-      doneRows.forEach(r=> r.querySelectorAll('textarea').forEach(ta=>{ if(typeof autoResizeTextarea==='function') autoResizeTextarea(ta); }));
+      doneRows.forEach(r=> r.style.display='none');
     });
   }
+
 
   wrap.appendChild(panel);
   return wrap;
