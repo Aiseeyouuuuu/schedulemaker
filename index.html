@@ -255,6 +255,15 @@
   .cuts-card .cut-head{align-self:start;}
   .cuts-card .cut-label{white-space:normal;}
   .cuts-card .cut-status{display:block;text-align:center;align-self:center;white-space:nowrap;}
+
+  /* ---- on/off switch (Tasks tab: Show completed) ---- */
+  .toggle-switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(13px * var(--font-scale));color:var(--muted);}
+  .toggle-switch input{position:absolute;opacity:0;width:0;height:0;}
+  .toggle-switch-track{position:relative;width:44px;height:24px;border-radius:24px;background:#D3D7E3;transition:background .2s;flex-shrink:0;}
+  .toggle-switch-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s;}
+  .toggle-switch input:checked + .toggle-switch-track{background:#7BC86C;}
+  .toggle-switch input:checked + .toggle-switch-track .toggle-switch-thumb{transform:translateX(20px);}
+  .toggle-switch input:focus-visible + .toggle-switch-track{outline:2px solid var(--navy);outline-offset:2px;}
   /* ---- completed tasks stat card (Tasks tab) ---- */
   .stat-card{
     display:inline-flex;flex-direction:column;min-width:150px;background:var(--surface);
@@ -4650,6 +4659,10 @@ async function ensureTasksLoaded(){
       state.tasks[s.key] = await loadTermScopedShared(`tasks:${s.key}`, []);
     }
   }
+  if(state.showCompletedTasks===undefined){
+    const pref = await sGet('showCompletedTasks', false);
+    state.showCompletedTasks = pref===null || pref===undefined ? true : !!pref;
+  }
   await ensureCanvasSettingsLoaded();
   startCanvasAutoSync();
 }
@@ -5265,6 +5278,11 @@ function renderTasksTab(){
         <button class="ghost" id="canvasSyncBtn" ${state.canvasSyncing?'disabled':''}>${state.canvasSyncing ? 'Syncing Canvas…' : (state.canvasFeedUrl ? '⟳ Sync Canvas' : 'Connect Canvas')}</button>
         ${state.canvasFeedUrl ? '<button class="ghost" id="canvasSettingsBtn" title="Canvas sync settings">⚙</button>' : ''}
       </div>
+      <label class="toggle-switch" title="Show or hide tasks marked Completed">
+        <span class="toggle-switch-label">Show completed</span>
+        <input type="checkbox" id="showCompletedToggle" ${state.showCompletedTasks!==false?'checked':''} />
+        <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+      </label>
     </div>
     <div style="overflow-x:auto;">
       <table class="tasks">
@@ -5278,15 +5296,27 @@ function renderTasksTab(){
   </div>`);
 
   panel.querySelector('#addTaskBtn').onclick = ()=> addTask();
+  panel.querySelector('#showCompletedToggle').onchange = async (e)=>{
+    state.showCompletedTasks = e.target.checked;
+    render();
+    await queueSave(()=> sSet('showCompletedTasks', state.showCompletedTasks, false));
+  };
   panel.querySelector('#canvasSyncBtn').onclick = ()=> state.canvasFeedUrl ? syncCanvas() : openCanvasSettingsModal();
   const canvasSettingsBtn = panel.querySelector('#canvasSettingsBtn');
   if(canvasSettingsBtn) canvasSettingsBtn.onclick = ()=> openCanvasSettingsModal();
 
   const tbody = panel.querySelector('#tasksBody');
+  // The toggle only hides rows in this table. The Completed Tasks count
+  // above still counts everything.
+  const hiddenCompleted = state.showCompletedTasks===false ? decorated.filter(t=> t.status==='Completed').length : 0;
+  const visibleTasks = hiddenCompleted ? decorated.filter(t=> t.status!=='Completed') : decorated;
+  if(decorated.length && !visibleTasks.length){
+    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">All ${hiddenCompleted} task${hiddenCompleted===1?' is':'s are'} completed and hidden. Turn on "Show completed" to see them.</td></tr>`));
+  }
   if(!decorated.length){
     tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No tasks yet. Add one above, then use the Subject pill on the row to file it under a class (shared with classmates), University Wide (shared with everyone), a category of your own, or Others — the last two stay private to you.</td></tr>`));
   }
-  decorated.forEach(t=>{
+  visibleTasks.forEach(t=>{
     const tr = elRow(`<tr></tr>`);
 
     const taskTd = elCell(`<td class="grow-cell task-name-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
