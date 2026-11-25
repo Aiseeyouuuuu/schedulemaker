@@ -2151,6 +2151,24 @@ function openLabelIntervalPicker(anchorEl){
 // table fields (Status, Subject) where a native <select> can't show long
 // text in full. items: [{value, label, bg, fg}]. onSelect gets the chosen
 // value; the popover closes itself first either way.
+// Keeps a dropdown (field-popover) fully on screen. These menus are pinned
+// to the window, so one that runs past the bottom edge can't be scrolled
+// into view. If it doesn't fit below its button, it opens upward instead
+// (or, if neither side has room, it gets a scrollbar).
+function fitPopoverInView(popover, rect){
+  const margin = 8, gap = 4;
+  const h = popover.offsetHeight;
+  const below = window.innerHeight - rect.bottom - gap - margin;
+  const above = rect.top - gap - margin;
+  if(h <= below) return;
+  if(h <= above || above > below){
+    const maxH = Math.min(h, above);
+    popover.style.maxHeight = maxH+'px';
+    popover.style.top = Math.max(margin, rect.top - gap - maxH)+'px';
+  } else {
+    popover.style.maxHeight = Math.max(80, below)+'px';
+  }
+}
 function openFieldPicker(anchorEl, items, onSelect){
   document.querySelectorAll('.field-popover').forEach(p=>p.remove());
   const rect = anchorEl.getBoundingClientRect();
@@ -2163,6 +2181,7 @@ function openFieldPicker(anchorEl, items, onSelect){
     popover.appendChild(item);
   });
   document.body.appendChild(popover);
+  fitPopoverInView(popover, rect);
   const closeHandler = (ev)=>{
     if(!popover.contains(ev.target) && ev.target!==anchorEl){
       popover.remove();
@@ -5167,6 +5186,8 @@ function openSubjectPicker(anchorEl, subjects, subjectLabels, onSelect){
   addItem.onclick = (e)=>{ e.stopPropagation(); popover.remove(); document.removeEventListener('click', closeHandler); openNewCategoryModal(); };
   popover.appendChild(addItem);
   document.body.appendChild(popover);
+  fitPopoverInView(popover, rect);
+  fitPopoverInView(popover, rect);
   setTimeout(()=> document.addEventListener('click', closeHandler), 0);
 }
 
@@ -5467,6 +5488,10 @@ async function ensureInternalLoaded(){
     state.personalInternal = await loadTermScopedPersonal('personalInternal', []);
     state.__internalLoaded = true;
   }
+  if(state.showCompletedInternal===undefined){
+    const pref = await sGet('showCompletedInternal', false);
+    state.showCompletedInternal = pref===null || pref===undefined ? true : !!pref;
+  }
   state.internalShared = state.internalShared || {};
   const shareable = taskSubjectOptions().filter(s=>!isPersonalSubject(s.key));
   for(const s of shareable){
@@ -5603,14 +5628,21 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
     (state.internalShared?.[s.key]||[]).forEach(t=> merged.push({...t, status:getEffectiveStatus(s.key, t), __subjectKey:s.key, __subjectLabel:s.label, __shared:true}));
   });
   const decorated = computeTaskUrgencyAndRank(merged);
-  const hiddenCompleted = state.showCompletedTasks===false ? decorated.filter(t=> t.status==='Completed').length : 0;
+  const hiddenCompleted = state.showCompletedInternal===false ? decorated.filter(t=> t.status==='Completed').length : 0;
 
   const panel = el(`<div class="urgent-panel internal-panel" style="margin-top:18px;">
     <div class="urgent-banner internal-banner"><span class="dot"></span>Internal Deadlines</div>
     <div class="internal-body">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;">
       <p class="hint" style="margin:0;">Your own or your group's target dates. Each one is private unless you switch it to Shared.</p>
-      <button id="addInternalBtn">+ Add Internal Deadline</button>
+      <div class="row" style="gap:16px;align-items:center;">
+        <label class="toggle-switch" title="Show or hide internal deadlines marked Completed">
+          <span class="toggle-switch-label">Show completed</span>
+          <input type="checkbox" id="showCompletedInternalToggle" ${state.showCompletedInternal!==false?'checked':''} />
+          <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+        </label>
+        <button id="addInternalBtn">+ Add Internal Deadline</button>
+      </div>
     </div>
     <div class="tasks-scroll">
       <table class="tasks internal-table">
@@ -5624,12 +5656,17 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
     </div>
   </div>`);
   panel.querySelector('#addInternalBtn').onclick = ()=> addInternalDeadline();
+  panel.querySelector('#showCompletedInternalToggle').onchange = async (e)=>{
+    state.showCompletedInternal = e.target.checked;
+    render();
+    await queueSave(()=> sSet('showCompletedInternal', state.showCompletedInternal, false));
+  };
   const tbody = panel.querySelector('tbody');
 
   if(!decorated.length){
     tbody.appendChild(elRow(`<tr><td colspan="11" class="hint" style="padding:14px 6px;">No internal deadlines yet. Add one above. It starts private; pick a class or University Wide as its subject if you want to share it.</td></tr>`));
   } else if(hiddenCompleted && hiddenCompleted===decorated.length){
-    tbody.appendChild(elRow(`<tr><td colspan="11" class="hint" style="padding:14px 6px;">All ${hiddenCompleted} internal deadline${hiddenCompleted===1?' is':'s are'} completed and hidden. Turn on "Show completed" to see them.</td></tr>`));
+    tbody.appendChild(elRow(`<tr><td colspan="11" class="hint" style="padding:14px 6px;">All ${hiddenCompleted} internal deadline${hiddenCompleted===1?' is':'s are'} completed and hidden. Turn on "Show completed" above this table to see them.</td></tr>`));
   }
 
   const ops = {
