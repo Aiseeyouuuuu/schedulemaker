@@ -280,8 +280,13 @@
   .share-switch input:checked + .toggle-switch-track .toggle-switch-thumb{transform:translateX(14px);}
   .share-switch input:disabled + .toggle-switch-track{opacity:.45;cursor:not-allowed;}
   /* the extra Sharing column is paid for by slightly narrower Link/Notes columns */
-  table.internal-table td.grow-cell:not(.task-name-cell){min-width:105px;}
-  table.internal-table .link-cell-wrap{max-width:105px;}
+  table.internal-table td.grow-cell:not(.task-name-cell){min-width:80px;}
+  table.internal-table .link-cell-wrap{max-width:80px;}
+  table.internal-table td.task-name-cell{min-width:120px;}
+  table.internal-table td.share-cell{white-space:nowrap;}
+  table.internal-table select{width:100px;min-width:0;}
+  table.internal-table .share-switch{gap:5px;}
+  table.internal-table th{padding:8px 5px;}
   .share-switch input:checked:disabled + .toggle-switch-track{opacity:.75;}
   /* ---- completed tasks stat card (Tasks tab) ---- */
   .stat-card{
@@ -5644,8 +5649,8 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
     <div class="tasks-scroll">
       <table class="tasks internal-table">
         <thead><tr>
-          <th>Task</th><th>Status</th><th>Subject</th><th>Sharing</th><th>Onsite or Online</th><th>Internal deadline</th>
-          <th>Urgency</th><th>Rank</th><th>Link to Task</th><th>Notes</th><th></th>
+          <th>Task</th><th>Status</th><th>Subject</th><th>Onsite or Online</th><th>Internal deadline</th>
+          <th>Urgency</th><th>Rank</th><th>Link to Task</th><th>Notes</th><th>Sharing</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -5672,7 +5677,7 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
     move: (t,k)=> moveInternalSubject(t, k),
     del: (t)=> deleteInternalDeadline(t),
     deleteTitle: 'Delete internal deadline',
-    afterSubjectCell: (t)=>{
+    extraCells: (t)=>{
       const td = elCell(`<td class="share-cell"></td>`);
       const canShare = !isPersonalSubject(t.__subjectKey);
       const fromOther = t.__shared && t.sharedBy && t.sharedBy!==internalOwnerId();
@@ -5688,7 +5693,7 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
       const input = label.querySelector('input');
       input.onchange = ()=>{ const want = input.checked; input.checked = !!t.__shared; setInternalSharing(t, want); };
       td.appendChild(label);
-      return td;
+      return [td];
     },
   };
   decorated.forEach(t=> tbody.appendChild(buildTaskRow(t, ops, subjects, subjectLabels)));
