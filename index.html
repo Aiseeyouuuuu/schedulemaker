@@ -269,6 +269,14 @@
      or Shift + mouse wheel), but without showing a scrollbar. */
   .tasks-scroll{overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;}
   .tasks-scroll::-webkit-scrollbar{display:none;}
+
+  /* Internal Deadlines: Private/Shared switch */
+  .share-switch{display:flex;width:max-content;gap:6px;margin-top:6px;font-size:calc(11px * var(--font-scale));white-space:nowrap;}
+  .share-switch .toggle-switch-track{width:32px;height:18px;}
+  .share-switch .toggle-switch-thumb{top:2px;left:2px;width:14px;height:14px;}
+  .share-switch input:checked + .toggle-switch-track .toggle-switch-thumb{transform:translateX(14px);}
+  .share-switch input:disabled + .toggle-switch-track{opacity:.45;cursor:not-allowed;}
+  .share-switch input:checked:disabled + .toggle-switch-track{opacity:.75;}
   /* ---- completed tasks stat card (Tasks tab) ---- */
   .stat-card{
     display:inline-flex;flex-direction:column;min-width:150px;background:var(--surface);
@@ -1833,6 +1841,9 @@ async function reloadTermScopedData(){
   state.personalStatuses = {};
   state.customCategories = [];
   state.__personalTasksLoaded = false;
+  state.personalInternal = [];
+  state.internalShared = {};
+  state.__internalLoaded = false;
   state.sidequests = [];
   state.sidequestCategories = [];
   state.__sidequestsLoaded = false;
@@ -4668,6 +4679,7 @@ async function ensureTasksLoaded(){
     const pref = await sGet('showCompletedTasks', false);
     state.showCompletedTasks = pref===null || pref===undefined ? true : !!pref;
   }
+  await ensureInternalLoaded();
   await ensureCanvasSettingsLoaded();
   startCanvasAutoSync();
 }
@@ -5200,6 +5212,101 @@ function computeTaskUrgencyAndRank(tasks){
   });
 }
 
+// Builds one editable row of a task table. Shared by the main Tasks table
+// and the Internal Deadlines table; `ops` says where each edit is saved.
+//   ops.setStatus(t, status)   ops.update(t, field, value)
+//   ops.move(t, subjectKey)    ops.del(t)
+//   ops.subjectExtra(t) -> el  (optional, shown under the Subject pill)
+//   ops.extraCells(t) -> [td]  (optional, added before the delete button)
+function buildTaskRow(t, ops, subjects, subjectLabels){
+    const tr = elRow(`<tr></tr>`);
+    if(t.status==='Completed') tr.classList.add('task-row-completed');
+
+    const taskTd = elCell(`<td class="grow-cell task-name-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
+    const taskInput = taskTd.querySelector('textarea');
+    taskInput.value = t.task || '';
+    taskInput.oninput = ()=> autoResizeTextarea(taskInput);
+    taskInput.onchange = (e)=> ops.update(t, 'task', e.target.value);
+    scheduleAutoResize(taskInput);
+    tr.appendChild(taskTd);
+
+    const statusTd = elCell(`<td></td>`);
+    const statusBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
+    const statusLabel = statusBtn.querySelector('.pill-label');
+    const paintStatus = ()=>{ const c=taskStatusColors(t.status); statusBtn.style.background=c.bg; statusBtn.style.color=c.fg; statusLabel.textContent=t.status; };
+    paintStatus();
+    statusBtn.onclick = (e)=>{
+      e.stopPropagation();
+      const items = TASK_STATUSES.map(s=>{ const c=taskStatusColors(s); return {value:s, label:s, bg:c.bg, fg:c.fg}; });
+      openFieldPicker(statusBtn, items, async (val)=>{ await ops.setStatus(t, val); render(); });
+    };
+    statusTd.appendChild(statusBtn); tr.appendChild(statusTd);
+
+    const subjTd = elCell(`<td></td>`);
+    const subjBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
+    if(t.__subjectLabel){
+      const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
+      subjBtn.style.background = c; subjBtn.style.color = '#2A2E3D';
+      subjBtn.querySelector('.pill-label').textContent = t.__subjectLabel;
+    } else {
+      subjBtn.style.background = 'transparent'; subjBtn.style.color = 'var(--muted)'; subjBtn.style.border = '1px dashed var(--muted)';
+      subjBtn.querySelector('.pill-label').textContent = 'Choose subject';
+    }
+    subjBtn.onclick = (e)=>{
+      e.stopPropagation();
+      openSubjectPicker(subjBtn, subjects, subjectLabels, (val)=> ops.move(t, val));
+    };
+    subjTd.appendChild(subjBtn);
+    if(ops.subjectExtra) subjTd.appendChild(ops.subjectExtra(t));
+    tr.appendChild(subjTd);
+
+    const onsiteTd = elCell(`<td></td>`);
+    const onsiteSel = el(`<select></select>`);
+    TASK_ONSITE_OPTS.forEach(o=> onsiteSel.appendChild(el(`<option value="${o}" ${t.onsite===o?'selected':''}>${o}</option>`)));
+    const paintOnsite = ()=>{ const c=taskOnsiteColors(onsiteSel.value); onsiteSel.style.background=c.bg; onsiteSel.style.color=c.fg; };
+    paintOnsite();
+    onsiteSel.onchange = ()=>{ paintOnsite(); ops.update(t, 'onsite', onsiteSel.value); };
+    onsiteTd.appendChild(onsiteSel); tr.appendChild(onsiteTd);
+
+    const dueTd = createDueDateCell(t.dueDate, async (val)=>{ await ops.update(t, 'dueDate', val); render(); });
+    tr.appendChild(dueTd);
+
+    const uc = taskUrgencyColors(t.urgency);
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
+    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
+
+    tr.appendChild(makeLinkCell(t.link, 'https://…', (val)=> ops.update(t, 'link', val)));
+    tr.appendChild(makeLinkCell(t.notes, 'Notes', (val)=> ops.update(t, 'notes', val)));
+
+    if(ops.extraCells) ops.extraCells(t).forEach(td=> tr.appendChild(td));
+
+    const delTd = elCell(`<td><button class="task-del" title="${ops.deleteTitle||'Delete task'}">×</button></td>`);
+    delTd.querySelector('button').onclick = ()=> ops.del(t);
+    tr.appendChild(delTd);
+
+    return tr;
+}
+
+// When "Show completed" is off, size a task table's columns with completed
+// rows included (exactly like the switch-on layout), lock those widths, then
+// hide the completed rows, so flipping the switch never shifts the columns.
+// Runs right after the table is on the page, before it's drawn.
+function lockWidthsThenHideCompleted(table){
+  if(!table) return;
+  const doneRows = [...table.querySelectorAll('tbody tr.task-row-completed')];
+  if(!doneRows.length) return;
+  requestAnimationFrame(()=>{
+    if(!table.isConnected) return;
+    const ths = [...table.querySelectorAll('thead th')];
+    const widths = ths.map(th=> th.getBoundingClientRect().width);
+    const total = table.getBoundingClientRect().width;
+    ths.forEach((th,k)=> th.style.width = widths[k]+'px');
+    table.style.tableLayout = 'fixed';
+    table.style.width = total+'px';
+    doneRows.forEach(r=> r.style.display='none');
+  });
+}
+
 function renderTasksTab(){
   const wrap = el(`<div></div>`);
 
@@ -5323,92 +5430,229 @@ function renderTasksTab(){
   if(!decorated.length){
     tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No tasks yet. Add one above, then use the Subject pill on the row to file it under a class (shared with classmates), University Wide (shared with everyone), a category of your own, or Others — the last two stay private to you.</td></tr>`));
   }
-  visibleTasks.forEach(t=>{
-    const tr = elRow(`<tr></tr>`);
-    if(t.status==='Completed') tr.classList.add('task-row-completed');
+  const mainTaskOps = {
+    setStatus: (t,v)=> setTaskStatus(t.__subjectKey, t.id, v),
+    update: (t,f,v)=> updateTaskField(t.__subjectKey, t.id, f, v),
+    move: (t,k)=> moveTaskSubject(t.__subjectKey, t.id, k),
+    del: (t)=> deleteTask(t.__subjectKey, t.id),
+  };
+  visibleTasks.forEach(t=> tbody.appendChild(buildTaskRow(t, mainTaskOps, subjects, subjectLabels)));
 
-    const taskTd = elCell(`<td class="grow-cell task-name-cell"><textarea rows="1" placeholder="Task name"></textarea></td>`);
-    const taskInput = taskTd.querySelector('textarea');
-    taskInput.value = t.task || '';
-    taskInput.oninput = ()=> autoResizeTextarea(taskInput);
-    taskInput.onchange = (e)=> updateTaskField(t.__subjectKey, t.id, 'task', e.target.value);
-    scheduleAutoResize(taskInput);
-    tr.appendChild(taskTd);
-
-    const statusTd = elCell(`<td></td>`);
-    const statusBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
-    const statusLabel = statusBtn.querySelector('.pill-label');
-    const paintStatus = ()=>{ const c=taskStatusColors(t.status); statusBtn.style.background=c.bg; statusBtn.style.color=c.fg; statusLabel.textContent=t.status; };
-    paintStatus();
-    statusBtn.onclick = (e)=>{
-      e.stopPropagation();
-      const items = TASK_STATUSES.map(s=>{ const c=taskStatusColors(s); return {value:s, label:s, bg:c.bg, fg:c.fg}; });
-      openFieldPicker(statusBtn, items, async (val)=>{ await setTaskStatus(t.__subjectKey, t.id, val); render(); });
-    };
-    statusTd.appendChild(statusBtn); tr.appendChild(statusTd);
-
-    const subjTd = elCell(`<td></td>`);
-    const subjBtn = el(`<button type="button" class="task-pill-btn"><span class="pill-label"></span><span class="pill-caret">▾</span></button>`);
-    if(t.__subjectLabel){
-      const c = taskSubjectColor(t.__subjectLabel, subjectLabels);
-      subjBtn.style.background = c; subjBtn.style.color = '#2A2E3D';
-      subjBtn.querySelector('.pill-label').textContent = t.__subjectLabel;
-    } else {
-      subjBtn.style.background = 'transparent'; subjBtn.style.color = 'var(--muted)'; subjBtn.style.border = '1px dashed var(--muted)';
-      subjBtn.querySelector('.pill-label').textContent = 'Choose subject';
-    }
-    subjBtn.onclick = (e)=>{
-      e.stopPropagation();
-      openSubjectPicker(subjBtn, subjects, subjectLabels, (val)=> moveTaskSubject(t.__subjectKey, t.id, val));
-    };
-    subjTd.appendChild(subjBtn); tr.appendChild(subjTd);
-
-    const onsiteTd = elCell(`<td></td>`);
-    const onsiteSel = el(`<select></select>`);
-    TASK_ONSITE_OPTS.forEach(o=> onsiteSel.appendChild(el(`<option value="${o}" ${t.onsite===o?'selected':''}>${o}</option>`)));
-    const paintOnsite = ()=>{ const c=taskOnsiteColors(onsiteSel.value); onsiteSel.style.background=c.bg; onsiteSel.style.color=c.fg; };
-    paintOnsite();
-    onsiteSel.onchange = ()=>{ paintOnsite(); updateTaskField(t.__subjectKey, t.id, 'onsite', onsiteSel.value); };
-    onsiteTd.appendChild(onsiteSel); tr.appendChild(onsiteTd);
-
-    const dueTd = createDueDateCell(t.dueDate, async (val)=>{ await updateTaskField(t.__subjectKey, t.id, 'dueDate', val); render(); });
-    tr.appendChild(dueTd);
-
-    const uc = taskUrgencyColors(t.urgency);
-    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.urgency}</span></td>`));
-    tr.appendChild(elCell(`<td><span class="task-badge" style="background:${uc.bg};color:${uc.fg};">${t.rank}</span></td>`));
-
-    tr.appendChild(makeLinkCell(t.link, 'https://…', (val)=> updateTaskField(t.__subjectKey, t.id, 'link', val)));
-    tr.appendChild(makeLinkCell(t.notes, 'Notes', (val)=> updateTaskField(t.__subjectKey, t.id, 'notes', val)));
-
-    const delTd = elCell(`<td><button class="task-del" title="Delete task">×</button></td>`);
-    delTd.querySelector('button').onclick = ()=> deleteTask(t.__subjectKey, t.id);
-    tr.appendChild(delTd);
-
-    tbody.appendChild(tr);
-  });
-
-  // When "Show completed" is off, size the columns with completed rows
-  // included (exactly like the switch-on layout), lock those widths, then
-  // hide the completed rows. Runs before the table is first drawn.
-  if(hiddenCompleted){
-    const table = panel.querySelector('table.tasks');
-    const doneRows = [...tbody.querySelectorAll('tr.task-row-completed')];
-    requestAnimationFrame(()=>{
-      if(!table.isConnected) return;
-      const ths = [...table.querySelectorAll('thead th')];
-      const widths = ths.map(th=> th.getBoundingClientRect().width);
-      const total = table.getBoundingClientRect().width;
-      ths.forEach((th,k)=> th.style.width = widths[k]+'px');
-      table.style.tableLayout = 'fixed';
-      table.style.width = total+'px';
-      doneRows.forEach(r=> r.style.display='none');
-    });
-  }
+  if(hiddenCompleted) lockWidthsThenHideCompleted(panel.querySelector('table.tasks'));
 
 
   wrap.appendChild(panel);
+  wrap.appendChild(renderInternalDeadlinesPanel(subjects, subjectLabels));
   return wrap;
+}
+
+/* ========================= INTERNAL DEADLINES ========================= */
+// A second table under the Tasks list for internal deadlines (your own or a
+// group's target date before the real one). Same columns as tasks, plus a
+// per-row Private / Shared switch:
+// - Private: saved only to your account (personalInternal), like "Others".
+// - Shared: saved to the shared list for its subject, so everyone who has
+//   that class in their schedule sees it (University Wide: everyone).
+//   Only the person who shared it can switch it back to private.
+// Status is always personal, even on shared rows: marking one Completed
+// doesn't complete it for classmates (same rule as shared tasks).
+// Urgency and rank are worked out among internal deadlines only.
+async function ensureInternalLoaded(){
+  if(!state.__internalLoaded){
+    state.personalInternal = await loadTermScopedPersonal('personalInternal', []);
+    state.__internalLoaded = true;
+  }
+  state.internalShared = state.internalShared || {};
+  const shareable = taskSubjectOptions().filter(s=>!isPersonalSubject(s.key));
+  for(const s of shareable){
+    if(!(s.key in state.internalShared)){
+      state.internalShared[s.key] = await loadTermScopedShared(`internal:${s.key}`, []);
+    }
+  }
+}
+async function savePersonalInternal(){
+  await queueSave(()=> sSet(termScopedKey('personalInternal'), state.personalInternal||[], false));
+}
+async function saveSharedInternal(key){
+  await queueSave(()=> sSet(termScopedKey(`internal:${key}`), state.internalShared[key]||[], true));
+}
+function internalOwnerId(){
+  return (typeof currentUid==='function' && currentUid()) || state.meId || '';
+}
+function internalFind(t){
+  if(t.__shared){
+    const list = state.internalShared[t.__subjectKey]||[];
+    return {list, item:list.find(x=>x.id===t.id), save:()=> saveSharedInternal(t.__subjectKey)};
+  }
+  const list = state.personalInternal||[];
+  return {list, item:list.find(x=>x.id===t.id), save:()=> savePersonalInternal()};
+}
+async function addInternalDeadline(){
+  const t = newTaskObj('');
+  t.id = 'i_'+Math.random().toString(36).slice(2,9);
+  state.personalInternal = state.personalInternal || [];
+  state.personalInternal.unshift(t);
+  await savePersonalInternal();
+  render();
+}
+async function updateInternalField(t, field, value){
+  const {item, save} = internalFind(t);
+  if(!item) return;
+  item[field] = value;
+  await save();
+}
+async function setInternalStatus(t, status){
+  if(!t.__shared){ await updateInternalField(t, 'status', status); return; }
+  state.personalStatuses[t.id] = status;
+  await saveTaskStatuses();
+}
+async function moveInternalSubject(t, newKey){
+  if(!t.__shared){
+    // Private rows can be filed under anything and stay private.
+    const {item, save} = internalFind(t);
+    if(!item) return;
+    item.category = newKey;
+    await save(); render(); return;
+  }
+  const oldKey = t.__subjectKey;
+  if(newKey===oldKey) return;
+  const oldList = state.internalShared[oldKey]||[];
+  const idx = oldList.findIndex(x=>x.id===t.id);
+  if(idx<0) return;
+  const [item] = oldList.splice(idx,1);
+  await saveSharedInternal(oldKey);
+  if(isPersonalSubject(newKey)){
+    // A personal category can't be shared, so the row becomes private.
+    item.category = newKey; delete item.sharedBy;
+    state.personalInternal.push(item); await savePersonalInternal();
+    showToast('Moved to a private category, so this deadline is now private.');
+  } else {
+    state.internalShared[newKey] = state.internalShared[newKey]||[];
+    state.internalShared[newKey].push(item); await saveSharedInternal(newKey);
+  }
+  render();
+}
+async function setInternalSharing(t, share){
+  if(share===!!t.__shared) return;
+  if(share){
+    if(isPersonalSubject(t.__subjectKey)){
+      showToast('Pick a class or University Wide as the subject first, so it\'s clear who it\'s shared with.');
+      return;
+    }
+    const idx = state.personalInternal.findIndex(x=>x.id===t.id);
+    if(idx<0) return;
+    const [item] = state.personalInternal.splice(idx,1);
+    const status = item.status || 'Not Started';
+    delete item.category;
+    item.sharedBy = internalOwnerId();
+    item.status = 'Not Started';                 // classmates start fresh
+    state.personalStatuses[item.id] = status;    // keep your own progress
+    state.internalShared[t.__subjectKey] = state.internalShared[t.__subjectKey]||[];
+    state.internalShared[t.__subjectKey].push(item);
+    await savePersonalInternal();
+    await saveSharedInternal(t.__subjectKey);
+    await saveTaskStatuses();
+  } else {
+    if(t.sharedBy && t.sharedBy!==internalOwnerId()){
+      showToast('Only the classmate who shared this can make it private.');
+      return;
+    }
+    const ok = await customConfirm('Make this deadline private? It will disappear for everyone else.');
+    if(!ok) return;
+    const list = state.internalShared[t.__subjectKey]||[];
+    const idx = list.findIndex(x=>x.id===t.id);
+    if(idx<0) return;
+    const [item] = list.splice(idx,1);
+    item.category = t.__subjectKey; delete item.sharedBy;
+    item.status = getEffectiveStatus(t.__subjectKey, item);
+    delete state.personalStatuses[item.id];
+    state.personalInternal.push(item);
+    await saveSharedInternal(t.__subjectKey);
+    await savePersonalInternal();
+    await saveTaskStatuses();
+  }
+  render();
+}
+async function deleteInternalDeadline(t){
+  if(t.__shared){
+    const ok = await customConfirm('Delete this shared deadline? It will be removed for everyone it\'s shared with.');
+    if(!ok) return;
+    state.internalShared[t.__subjectKey] = (state.internalShared[t.__subjectKey]||[]).filter(x=>x.id!==t.id);
+    await saveSharedInternal(t.__subjectKey);
+    if(t.id in state.personalStatuses){ delete state.personalStatuses[t.id]; await saveTaskStatuses(); }
+  } else {
+    state.personalInternal = (state.personalInternal||[]).filter(x=>x.id!==t.id);
+    await savePersonalInternal();
+  }
+  render();
+}
+
+function renderInternalDeadlinesPanel(subjects, subjectLabels){
+  const merged = [];
+  (state.personalInternal||[]).forEach(t=>{
+    const key = t.category||'';
+    const opt = subjects.find(s=>s.key===key);
+    merged.push({...t, status:t.status||'Not Started', __subjectKey: opt?key:'', __subjectLabel: opt?opt.label:'', __shared:false});
+  });
+  subjects.filter(s=>!isPersonalSubject(s.key)).forEach(s=>{
+    (state.internalShared?.[s.key]||[]).forEach(t=> merged.push({...t, status:getEffectiveStatus(s.key, t), __subjectKey:s.key, __subjectLabel:s.label, __shared:true}));
+  });
+  const decorated = computeTaskUrgencyAndRank(merged);
+  const hiddenCompleted = state.showCompletedTasks===false ? decorated.filter(t=> t.status==='Completed').length : 0;
+
+  const panel = el(`<div class="panel" style="margin-top:18px;">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;">
+      <div>
+        <h2 style="margin:0;">Internal Deadlines</h2>
+        <p class="hint" style="margin:2px 0 0;">Your own or your group's target dates. Each one is private unless you switch it to Shared.</p>
+      </div>
+      <button id="addInternalBtn">+ Add Internal Deadline</button>
+    </div>
+    <div class="tasks-scroll">
+      <table class="tasks internal-table">
+        <thead><tr>
+          <th>Task</th><th>Status</th><th>Subject</th><th>Onsite or Online</th><th>Internal deadline</th>
+          <th>Urgency</th><th>Rank</th><th>Link to Task</th><th>Notes</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>`);
+  panel.querySelector('#addInternalBtn').onclick = ()=> addInternalDeadline();
+  const tbody = panel.querySelector('tbody');
+
+  if(!decorated.length){
+    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No internal deadlines yet. Add one above. It starts private; pick a class or University Wide as its subject if you want to share it.</td></tr>`));
+  } else if(hiddenCompleted && hiddenCompleted===decorated.length){
+    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">All ${hiddenCompleted} internal deadline${hiddenCompleted===1?' is':'s are'} completed and hidden. Turn on "Show completed" to see them.</td></tr>`));
+  }
+
+  const ops = {
+    setStatus: (t,v)=> setInternalStatus(t, v),
+    update: (t,f,v)=> updateInternalField(t, f, v),
+    move: (t,k)=> moveInternalSubject(t, k),
+    del: (t)=> deleteInternalDeadline(t),
+    deleteTitle: 'Delete internal deadline',
+    subjectExtra: (t)=>{
+      const canShare = !isPersonalSubject(t.__subjectKey);
+      const fromOther = t.__shared && t.sharedBy && t.sharedBy!==internalOwnerId();
+      const label = el(`<label class="toggle-switch share-switch">
+        <input type="checkbox" ${t.__shared?'checked':''} ${(!t.__shared && !canShare) || fromOther ? 'disabled':''} />
+        <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+        <span class="toggle-switch-label">${t.__shared ? (fromOther?'👥 Shared':'Shared') : 'Private'}</span>
+      </label>`);
+      label.title = fromOther ? 'A classmate shared this. Only they can make it private.'
+        : t.__shared ? (t.__subjectKey===UNIVERSITY_WIDE_KEY ? 'Everyone using the site sees this' : `Everyone in ${t.__subjectLabel} sees this`)
+        : canShare ? `Only you see this. Switch on to share with ${t.__subjectKey===UNIVERSITY_WIDE_KEY?'everyone':'everyone in '+t.__subjectLabel}.`
+        : 'Only you see this. To share, set the subject to a class or University Wide first.';
+      const input = label.querySelector('input');
+      input.onchange = ()=>{ const want = input.checked; input.checked = !!t.__shared; setInternalSharing(t, want); };
+      return label;
+    },
+  };
+  decorated.forEach(t=> tbody.appendChild(buildTaskRow(t, ops, subjects, subjectLabels)));
+  if(hiddenCompleted) lockWidthsThenHideCompleted(panel.querySelector('table'));
+  return panel;
 }
 
 /* ============================= CUTS TAB ============================= */
