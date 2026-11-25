@@ -5633,15 +5633,13 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
   const panel = el(`<div class="urgent-panel internal-panel" style="margin-top:18px;">
     <div class="urgent-banner internal-banner"><span class="dot"></span>Internal Deadlines</div>
     <div class="internal-body">
-    <div class="row" style="justify-content:flex-end;align-items:center;margin-bottom:8px;gap:12px;">
-      <div class="row" style="gap:16px;align-items:center;">
-        <label class="toggle-switch" title="Show or hide internal deadlines marked Completed">
-          <span class="toggle-switch-label">Show completed</span>
-          <input type="checkbox" id="showCompletedInternalToggle" ${state.showCompletedInternal!==false?'checked':''} />
-          <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
-        </label>
-        <button id="addInternalBtn">+ Add Internal Deadline</button>
-      </div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;">
+      <button id="addInternalBtn">+ Add Internal Deadline</button>
+      <label class="toggle-switch" title="Show or hide internal deadlines marked Completed">
+        <span class="toggle-switch-label">Show completed</span>
+        <input type="checkbox" id="showCompletedInternalToggle" ${state.showCompletedInternal!==false?'checked':''} />
+        <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+      </label>
     </div>
     <div class="tasks-scroll">
       <table class="tasks internal-table">
