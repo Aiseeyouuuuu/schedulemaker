@@ -271,11 +271,14 @@
   .tasks-scroll::-webkit-scrollbar{display:none;}
 
   /* Internal Deadlines: Private/Shared switch */
-  .share-switch{display:flex;width:max-content;gap:6px;margin-top:6px;font-size:calc(11px * var(--font-scale));white-space:nowrap;}
+  .share-switch{display:flex;width:max-content;gap:6px;margin:0;font-size:calc(11px * var(--font-scale));white-space:nowrap;}
   .share-switch .toggle-switch-track{width:32px;height:18px;}
   .share-switch .toggle-switch-thumb{top:2px;left:2px;width:14px;height:14px;}
   .share-switch input:checked + .toggle-switch-track .toggle-switch-thumb{transform:translateX(14px);}
   .share-switch input:disabled + .toggle-switch-track{opacity:.45;cursor:not-allowed;}
+  /* the extra Sharing column is paid for by slightly narrower Link/Notes columns */
+  table.internal-table td.grow-cell:not(.task-name-cell){min-width:105px;}
+  table.internal-table .link-cell-wrap{max-width:105px;}
   .share-switch input:checked:disabled + .toggle-switch-track{opacity:.75;}
   /* ---- completed tasks stat card (Tasks tab) ---- */
   .stat-card{
@@ -5216,7 +5219,7 @@ function computeTaskUrgencyAndRank(tasks){
 // and the Internal Deadlines table; `ops` says where each edit is saved.
 //   ops.setStatus(t, status)   ops.update(t, field, value)
 //   ops.move(t, subjectKey)    ops.del(t)
-//   ops.subjectExtra(t) -> el  (optional, shown under the Subject pill)
+//   ops.afterSubjectCell(t) -> td  (optional, a column right after Subject)
 //   ops.extraCells(t) -> [td]  (optional, added before the delete button)
 function buildTaskRow(t, ops, subjects, subjectLabels){
     const tr = elRow(`<tr></tr>`);
@@ -5256,9 +5259,8 @@ function buildTaskRow(t, ops, subjects, subjectLabels){
       e.stopPropagation();
       openSubjectPicker(subjBtn, subjects, subjectLabels, (val)=> ops.move(t, val));
     };
-    subjTd.appendChild(subjBtn);
-    if(ops.subjectExtra) subjTd.appendChild(ops.subjectExtra(t));
-    tr.appendChild(subjTd);
+    subjTd.appendChild(subjBtn); tr.appendChild(subjTd);
+    if(ops.afterSubjectCell) tr.appendChild(ops.afterSubjectCell(t));
 
     const onsiteTd = elCell(`<td></td>`);
     const onsiteSel = el(`<select></select>`);
@@ -5611,7 +5613,7 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
     <div class="tasks-scroll">
       <table class="tasks internal-table">
         <thead><tr>
-          <th>Task</th><th>Status</th><th>Subject</th><th>Onsite or Online</th><th>Internal deadline</th>
+          <th>Task</th><th>Status</th><th>Subject</th><th>Sharing</th><th>Onsite or Online</th><th>Internal deadline</th>
           <th>Urgency</th><th>Rank</th><th>Link to Task</th><th>Notes</th><th></th>
         </tr></thead>
         <tbody></tbody>
@@ -5622,9 +5624,9 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
   const tbody = panel.querySelector('tbody');
 
   if(!decorated.length){
-    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">No internal deadlines yet. Add one above. It starts private; pick a class or University Wide as its subject if you want to share it.</td></tr>`));
+    tbody.appendChild(elRow(`<tr><td colspan="11" class="hint" style="padding:14px 6px;">No internal deadlines yet. Add one above. It starts private; pick a class or University Wide as its subject if you want to share it.</td></tr>`));
   } else if(hiddenCompleted && hiddenCompleted===decorated.length){
-    tbody.appendChild(elRow(`<tr><td colspan="10" class="hint" style="padding:14px 6px;">All ${hiddenCompleted} internal deadline${hiddenCompleted===1?' is':'s are'} completed and hidden. Turn on "Show completed" to see them.</td></tr>`));
+    tbody.appendChild(elRow(`<tr><td colspan="11" class="hint" style="padding:14px 6px;">All ${hiddenCompleted} internal deadline${hiddenCompleted===1?' is':'s are'} completed and hidden. Turn on "Show completed" to see them.</td></tr>`));
   }
 
   const ops = {
@@ -5633,7 +5635,8 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
     move: (t,k)=> moveInternalSubject(t, k),
     del: (t)=> deleteInternalDeadline(t),
     deleteTitle: 'Delete internal deadline',
-    subjectExtra: (t)=>{
+    afterSubjectCell: (t)=>{
+      const td = elCell(`<td class="share-cell"></td>`);
       const canShare = !isPersonalSubject(t.__subjectKey);
       const fromOther = t.__shared && t.sharedBy && t.sharedBy!==internalOwnerId();
       const label = el(`<label class="toggle-switch share-switch">
@@ -5647,7 +5650,8 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
         : 'Only you see this. To share, set the subject to a class or University Wide first.';
       const input = label.querySelector('input');
       input.onchange = ()=>{ const want = input.checked; input.checked = !!t.__shared; setInternalSharing(t, want); };
-      return label;
+      td.appendChild(label);
+      return td;
     },
   };
   decorated.forEach(t=> tbody.appendChild(buildTaskRow(t, ops, subjects, subjectLabels)));
