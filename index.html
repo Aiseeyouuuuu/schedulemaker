@@ -280,13 +280,17 @@
   .share-switch input:checked + .toggle-switch-track .toggle-switch-thumb{transform:translateX(14px);}
   .share-switch input:disabled + .toggle-switch-track{opacity:.45;cursor:not-allowed;}
   /* the extra Sharing column is paid for by slightly narrower Link/Notes columns */
-  table.internal-table td.grow-cell:not(.task-name-cell){min-width:100px;}
-  table.internal-table .link-cell-wrap{max-width:100px;}
-  table.internal-table td.task-name-cell{min-width:140px;}
+  table.internal-table td.grow-cell:not(.task-name-cell){min-width:85px;}
+  table.internal-table .link-cell-wrap{max-width:85px;}
+  table.internal-table td.task-name-cell{min-width:130px;}
   table.internal-table td.share-cell{white-space:nowrap;}
   table.internal-table select{width:100px;min-width:0;}
   table.internal-table .share-switch{gap:5px;}
   table.internal-table th{padding:8px 5px;}
+  /* Keep Urgency/Rank as wide as a COMPLETED badge even when the rows are
+     blank (no date yet), so the date column doesn't soak up the extra space. */
+  table.internal-table th.col-badge{width:96px;min-width:96px;}
+  table.internal-table th.col-date{width:130px;}
   table.internal-table td.shared-by-cell{white-space:nowrap;}
   .shared-by-pill{display:inline-block;font-family:'Poppins',sans-serif;font-weight:600;font-size:calc(11px * var(--font-scale));padding:3px 10px;border-radius:20px;background:#E6E0F5;color:#4B3B7A;max-width:130px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;}
 
@@ -5665,8 +5669,8 @@ function renderInternalDeadlinesPanel(subjects, subjectLabels){
     <div class="tasks-scroll">
       <table class="tasks internal-table">
         <thead><tr>
-          <th>Task</th><th>Status</th><th>Subject</th><th>Internal deadline</th>
-          <th>Urgency</th><th>Rank</th><th>Link to Task</th><th>Notes</th><th>Shared by</th><th>Sharing</th><th></th>
+          <th>Task</th><th>Status</th><th>Subject</th><th class="col-date">Internal deadline</th>
+          <th class="col-badge">Urgency</th><th class="col-badge">Rank</th><th>Link to Task</th><th>Notes</th><th>Shared by</th><th>Sharing</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
